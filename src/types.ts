@@ -2,24 +2,23 @@ export type CompetitorId = "mixpanel" | "amplitude";
 
 export type SourceId = "changelog" | "blog" | "x" | "newsletter";
 
-export const IMPACTS = ["low", "medium", "high"] as const;
+export const IMPACTS = ["minor", "notable", "major"] as const;
 export type Impact = (typeof IMPACTS)[number];
 
-/** Phase 1 wrote these; rows and model replies still using them are read as impact. */
-export const LEGACY_SEVERITIES = ["minor", "notable", "major"] as const;
-export type LegacySeverity = (typeof LEGACY_SEVERITIES)[number];
+/** Rows and model replies written on the low/medium/high scale are read as impact. */
+export const LEGACY_IMPACTS = ["low", "medium", "high"] as const;
+export type LegacyImpact = (typeof LEGACY_IMPACTS)[number];
 
-export const IMPACT_FROM_SEVERITY: Record<LegacySeverity, Impact> = {
-  minor: "low",
-  notable: "medium",
-  major: "high",
-};
-
-export const SEVERITY_FROM_IMPACT: Record<Impact, LegacySeverity> = {
+export const IMPACT_FROM_LEGACY: Record<LegacyImpact, Impact> = {
   low: "minor",
   medium: "notable",
   high: "major",
 };
+
+/** Accepts either scale so a stored row never has to be migrated to be read. */
+export function toImpact(token: Impact | LegacyImpact): Impact {
+  return token in IMPACT_FROM_LEGACY ? IMPACT_FROM_LEGACY[token as LegacyImpact] : (token as Impact);
+}
 
 export const ACTIONS = [
   "update_pages",
@@ -55,9 +54,9 @@ export interface PostHogRef {
 
 export interface Analysis {
   impact: Impact;
-  /** One sentence. It is the first line Slack shows, so it carries the whole change. */
+  /** One sentence. Slack shows it under "What you need to KNOW", so it carries the change. */
   summary: string;
-  /** The substance, as short lines under "What you need to KNOW". */
+  /** The elaboration, as short lines under "More detail". */
   keyPoints: string[];
   action: Action;
   /** Full reasoning. Slack shows its first sentence; the GitHub issue gets all of it. */

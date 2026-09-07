@@ -7,7 +7,7 @@ import { extractJsonObject, parseAnalysis, parseStoredAlert } from "../src/analy
 import type { StoredItem } from "../src/types.js";
 
 const valid = {
-  impact: "medium",
+  impact: "notable",
   summary: "Fixture Co shipped scheduled widget sync.",
   key_points: ["Syncs run on a cron the user picks."],
   action: "update_pages",
@@ -44,7 +44,7 @@ describe("extractJsonObject", () => {
 describe("parseAnalysis", () => {
   it("parses a well-formed response", () => {
     const analysis = parseAnalysis(JSON.stringify(valid));
-    expect(analysis.impact).toBe("medium");
+    expect(analysis.impact).toBe("notable");
     expect(analysis.action).toBe("update_pages");
     expect(analysis.keyPoints).toEqual(["Syncs run on a cron the user picks."]);
     expect(analysis.openQuestions).toEqual(["Is it available on the free plan?"]);
@@ -56,7 +56,7 @@ describe("parseAnalysis", () => {
   it("accepts camelCase keys", () => {
     const analysis = parseAnalysis(
       JSON.stringify({
-        impact: "low",
+        impact: "minor",
         summary: "s",
         keyPoints: ["k"],
         action: "consider_building",
@@ -71,16 +71,29 @@ describe("parseAnalysis", () => {
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
   });
 
-  it("reads a legacy severity as its impact level", () => {
+  it("reads a legacy severity field as its impact level", () => {
     const legacy = { ...valid, severity: "major" } as Record<string, unknown>;
     delete legacy.impact;
-    expect(parseAnalysis(JSON.stringify(legacy)).impact).toBe("high");
-    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "notable" })).impact).toBe("medium");
-    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "minor" })).impact).toBe("low");
+    expect(parseAnalysis(JSON.stringify(legacy)).impact).toBe("major");
+    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "notable" })).impact).toBe("notable");
+    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "minor" })).impact).toBe("minor");
+  });
+
+  it("maps a low/medium/high reply back onto the impact scale", () => {
+    for (const [token, expected] of [
+      ["low", "minor"],
+      ["medium", "notable"],
+      ["high", "major"],
+    ] as const) {
+      expect(parseAnalysis(JSON.stringify({ ...valid, impact: token })).impact).toBe(expected);
+      expect(
+        parseAnalysis(JSON.stringify({ ...valid, impact: undefined, severity: token })).impact,
+      ).toBe(expected);
+    }
   });
 
   it("prefers impact when a reply sends both", () => {
-    expect(parseAnalysis(JSON.stringify({ ...valid, severity: "minor" })).impact).toBe("medium");
+    expect(parseAnalysis(JSON.stringify({ ...valid, severity: "minor" })).impact).toBe("notable");
   });
 
   it("rejects a response with neither impact nor severity", () => {
@@ -115,14 +128,18 @@ describe("parseStoredAlert", () => {
     });
     expect(stored.image?.url).toBe("https://cdn.invalid/a.png");
     expect(stored.issue?.number).toBe(3);
-    expect(stored.analysis.impact).toBe("medium");
+    expect(stored.analysis.impact).toBe("notable");
   });
 
   it("reads a phase 1 row that has neither", () => {
     const stored = parseStoredAlert({ ...valid, impact: undefined, severity: "minor" });
     expect(stored.image).toBeNull();
     expect(stored.issue).toBeNull();
-    expect(stored.analysis.impact).toBe("low");
+    expect(stored.analysis.impact).toBe("minor");
+  });
+
+  it("reads a row stored on the low/medium/high scale", () => {
+    expect(parseStoredAlert({ ...valid, impact: "high" }).analysis.impact).toBe("major");
   });
 });
 
@@ -159,7 +176,7 @@ describe("heuristicAnalysis", () => {
   it("restates the source rather than inventing an assessment", () => {
     const analysis = heuristicAnalysis(item, []);
     expect(analysis.summary).toContain("Introducing Widget Sync");
-    expect(analysis.impact).toBe("medium");
+    expect(analysis.impact).toBe("notable");
   });
 
   it("keeps the summary to one sentence and puts the rest in key points", () => {
@@ -258,6 +275,10 @@ describe("buildAnalysisPrompt", () => {
       expect(withRefs).toContain(field);
     }
     expect(withRefs).not.toContain("severity");
-    expect(withRefs).not.toContain("notable");
+  });
+
+  it("asks for the minor/notable/major scale, not low/medium/high", () => {
+    expect(withRefs).toContain('"minor" | "notable" | "major"');
+    expect(withRefs).not.toContain('"low" | "medium" | "high"');
   });
 });

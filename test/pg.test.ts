@@ -100,7 +100,7 @@ describe("PostgresStore", () => {
       itemId: stored!.id,
       model: "claude-opus-5",
       analysis: {
-        impact: "medium",
+        impact: "notable",
         summary: "s",
         keyPoints: ["k"],
         action: "update_pages",
@@ -135,11 +135,11 @@ describe("PostgresStore", () => {
       analysisId,
     ]);
     const row = rows.rows[0];
-    expect(row?.analysis.impact).toBe("medium");
+    expect(row?.analysis.impact).toBe("notable");
     expect(row?.analysis.action).toBe("update_pages");
     expect(row?.analysis.image.url).toBe("https://cdn.invalid/a.png");
     expect(row?.analysis.issue.number).toBe(1);
-    // The legacy column keeps the mapped old token so no migration is needed.
+    // The legacy column keeps the impact token so no migration is needed.
     expect(row?.severity).toBe("notable");
     expect(new Date(row!.slack_posted_at).toISOString()).toBe(postedAt.toISOString());
   });
@@ -152,7 +152,7 @@ describe("PostgresStore", () => {
       itemId: stored!.id,
       model: "claude-opus-5",
       analysis: {
-        impact: "high",
+        impact: "major",
         summary: "s",
         keyPoints: [],
         action: "new_compare_page",
@@ -168,7 +168,7 @@ describe("PostgresStore", () => {
     const target = pending.find((row) => row.item.externalId === "retry-target");
     expect(target).toBeDefined();
     expect(target?.model).toBe("claude-opus-5");
-    expect(target?.analysis.impact).toBe("high");
+    expect(target?.analysis.impact).toBe("major");
     expect(target?.analysis.action).toBe("new_compare_page");
     expect(target?.analysis.posthogRefs[0]?.url).toBe("https://posthog.com/compare/y");
     // A retry re-posts the same picture and links the same issue.
@@ -205,7 +205,7 @@ describe("PostgresStore", () => {
 
     const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
     const target = pending.find((row) => row.item.externalId === "legacy-target");
-    expect(target?.analysis.impact).toBe("medium");
+    expect(target?.analysis.impact).toBe("notable");
     expect(target?.image).toBeNull();
     expect(target?.issue).toBeNull();
   });

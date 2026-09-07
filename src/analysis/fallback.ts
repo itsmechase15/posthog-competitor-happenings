@@ -47,7 +47,7 @@ function firstSentences(text: string, max: number): string {
 }
 
 function impactOf(haystack: string): Impact {
-  return NOTABLE_SIGNALS.some((signal) => haystack.includes(signal)) ? "medium" : "low";
+  return NOTABLE_SIGNALS.some((signal) => haystack.includes(signal)) ? "notable" : "minor";
 }
 
 /**

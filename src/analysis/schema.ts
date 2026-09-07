@@ -3,8 +3,8 @@ import {
   ACTIONS,
   IMAGE_ORIGINS,
   IMPACTS,
-  IMPACT_FROM_SEVERITY,
-  LEGACY_SEVERITIES,
+  LEGACY_IMPACTS,
+  toImpact,
   type Analysis,
   type FeatureImage,
   type IssueRef,
@@ -19,10 +19,13 @@ const refSchema = z.object({
 
 const lines = z.array(z.string().min(1)).max(8);
 
+/** Either scale, so a row or a reply on the low/medium/high tokens still parses. */
+const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
+
 export const analysisSchema = z.object({
-  impact: z.enum(IMPACTS).optional(),
-  /** Phase 1 rows and older model replies still say severity. */
-  severity: z.enum(LEGACY_SEVERITIES).optional(),
+  impact: impactToken.optional(),
+  /** Phase 1 rows and older model replies call the same field severity. */
+  severity: impactToken.optional(),
   summary: z.string().min(1).max(600),
   key_points: lines.optional(),
   keyPoints: lines.optional(),
@@ -40,8 +43,9 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
   const detail = parsed.action_detail ?? parsed.actionDetail;
   if (!detail) throw new Error("analysis is missing action_detail");
 
-  const impact = parsed.impact ?? (parsed.severity ? IMPACT_FROM_SEVERITY[parsed.severity] : null);
-  if (!impact) throw new Error("analysis is missing impact");
+  const token = parsed.impact ?? parsed.severity;
+  if (!token) throw new Error("analysis is missing impact");
+  const impact = toImpact(token);
 
   const refs = parsed.posthog_refs ?? parsed.posthogRefs ?? [];
   const keyPoints = parsed.key_points ?? parsed.keyPoints ?? [];
