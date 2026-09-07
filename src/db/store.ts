@@ -14,6 +14,13 @@ export interface RecordAnalysisInput {
   model: string;
 }
 
+export interface PendingPost {
+  analysisId: string;
+  item: StoredItem;
+  analysis: Analysis;
+  model: string;
+}
+
 /**
  * Everything the pipeline needs from persistence. Backed by Postgres in
  * production and by an in-memory implementation for dry runs, so a dry run
@@ -38,6 +45,13 @@ export interface Store {
   recordAnalysis(input: RecordAnalysisInput): Promise<string>;
 
   markSlackPosted(analysisId: string, postedAt: Date): Promise<void>;
+
+  /**
+   * Analyses that were recorded but never made it to Slack. An item is only
+   * deduped once, so without this a transient Slack failure would lose the
+   * message permanently.
+   */
+  getUnpostedAnalyses(since: Date, limit: number): Promise<PendingPost[]>;
 
   /** URLs already indexed, mapped to when they were last fetched. */
   getIndexedPageUrls(): Promise<Map<string, Date>>;

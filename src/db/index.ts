@@ -60,6 +60,10 @@ class ReadOnlyStore implements Store {
     // No-op in dry run.
   }
 
+  getUnpostedAnalyses(...args: Parameters<Store["getUnpostedAnalyses"]>) {
+    return this.inner.getUnpostedAnalyses(...args);
+  }
+
   getIndexedPageUrls() {
     return this.inner.getIndexedPageUrls();
   }

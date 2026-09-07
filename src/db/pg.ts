@@ -1,4 +1,5 @@
 import pg from "pg";
+import { analysisSchema, normalizeAnalysis } from "../analysis/schema.js";
 import { createLogger } from "../log.js";
 import type {
   CandidateItem,
@@ -8,7 +9,7 @@ import type {
   SourceId,
   StoredItem,
 } from "../types.js";
-import { itemKey, type RecordAnalysisInput, type Store } from "./store.js";
+import { itemKey, type PendingPost, type RecordAnalysisInput, type Store } from "./store.js";
 
 const log = createLogger("db");
 
@@ -126,6 +127,58 @@ export class PostgresStore implements Store {
       analysisId,
       postedAt,
     ]);
+  }
+
+  async getUnpostedAnalyses(since: Date, limit: number): Promise<PendingPost[]> {
+    const result = await this.pool.query<{
+      analysis_id: string;
+      analysis: unknown;
+      model: string;
+      item_id: string;
+      competitor: CompetitorId;
+      source: SourceId;
+      external_id: string;
+      title: string;
+      url: string;
+      published_at: Date | null;
+      raw: Record<string, unknown> | null;
+    }>(
+      `SELECT a.id::text AS analysis_id, a.analysis, a.model,
+              i.id::text AS item_id, i.competitor, i.source, i.external_id,
+              i.title, i.url, i.published_at, i.raw
+       FROM analyses a
+       JOIN items i ON i.id = a.item_id
+       WHERE a.slack_posted_at IS NULL AND a.created_at >= $1
+       ORDER BY a.created_at ASC
+       LIMIT $2`,
+      [since, limit],
+    );
+
+    const pending: PendingPost[] = [];
+    for (const row of result.rows) {
+      try {
+        pending.push({
+          analysisId: row.analysis_id,
+          model: row.model,
+          analysis: normalizeAnalysis(analysisSchema.parse(row.analysis)),
+          item: {
+            id: row.item_id,
+            competitor: row.competitor,
+            source: row.source,
+            externalId: row.external_id,
+            title: row.title,
+            url: row.url,
+            publishedAt: row.published_at,
+            raw: row.raw ?? {},
+          },
+        });
+      } catch (error) {
+        // A row we cannot parse is not worth failing the run over; it would
+        // only ever have produced a malformed message.
+        log.warn(`skipping unreadable analysis ${row.analysis_id}`, error);
+      }
+    }
+    return pending;
   }
 
   async getIndexedPageUrls(): Promise<Map<string, Date>> {

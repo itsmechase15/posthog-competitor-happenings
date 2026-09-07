@@ -23,11 +23,25 @@ Two things degrade gracefully in that mode, and both say so in the log:
 ## Setup
 
 1. `npm install`
-2. Copy `.env.example` to `.env` and fill in `DATABASE_URL`, `SLACK_WEBHOOK_URL`, and `CURSOR_API_KEY`.
+2. Copy `.env.example` to `.env` and fill in `DATABASE_URL` (the Supabase pooler connection string), `CURSOR_API_KEY`, and `SLACK_BOT_TOKEN`.
 3. Apply [`migrations/001_init.sql`](./migrations/001_init.sql) if your database does not already have the four tables. The Supabase project already does.
 4. `npm run run`
 
 The first run for each competitor and source records that source's existing backlog without alerting, then exits. That is deliberate: switching on a new source would otherwise fire its entire archive at Slack at once. The second run onwards only alerts on things that appeared since.
+
+## Slack delivery
+
+Messages land in the private `#posthog-competitor-happenings` channel, id `C0C07A1DM09`. There are two ways to get them there, and the app picks the first one that is configured:
+
+1. **Bot token (preferred).** Set `SLACK_BOT_TOKEN` and the app calls `chat.postMessage` against `SLACK_CHANNEL_ID`, which defaults to `C0C07A1DM09`. This is the path the daily runner should use. It targets a private channel by id, and when Slack refuses a message it says why — `chat.postMessage` answers HTTP 200 with `{"ok": false, "error": "..."}`, which the app checks and surfaces rather than treating as success.
+
+   The app needs a bot user with `chat:write`, invited to the channel with `/invite @your-app`. Without the invite you get `not_in_channel`.
+
+2. **Incoming webhook (fallback).** Set `SLACK_WEBHOOK_URL` instead if creating a Slack app is more trouble than it is worth. The channel is fixed at the webhook, so `SLACK_CHANNEL_ID` is ignored.
+
+With neither set, the app prints the payloads and says so. Every run logs which path it chose, so a missing secret shows up in the first few lines of the job rather than as silence.
+
+**A note on the Slack MCP plugin.** Posting to this channel was first proven interactively through the Slack MCP plugin connected in Cursor. That is a fine way to test by hand, but the daily GitHub Actions run deliberately does not depend on it — MCP needs a connected client session, and a scheduled runner has none. The bot token is the equivalent capability in a form a cron job can use.
 
 ## Commands
 
@@ -43,9 +57,11 @@ The first run for each competitor and source records that source's existing back
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | yes, unless `DRY_RUN=true` | — | Postgres / Supabase connection string |
-| `SLACK_WEBHOOK_URL` | for posting | — | Slack Incoming Webhook. Unset means payloads are printed |
+| `DATABASE_URL` | yes, unless `DRY_RUN=true` | — | Supabase pooler / Postgres connection string |
 | `CURSOR_API_KEY` | for analysis | — | Cursor SDK key. Unset falls back to the labelled heuristic |
+| `SLACK_BOT_TOKEN` | for posting | — | Bot token with `chat:write`. Preferred over the webhook |
+| `SLACK_CHANNEL_ID` | no | `C0C07A1DM09` | Channel the bot posts to. Ignored by the webhook path |
+| `SLACK_WEBHOOK_URL` | no | — | Incoming webhook, used only when there is no bot token |
 | `X_BEARER_TOKEN` | no | — | Unset skips the X source |
 | `AGENTMAIL_API_KEY` | no | — | Unset skips the newsletter source |
 | `AGENTMAIL_INBOX_ID` | no | `chasemccaskill@agentmail.to` | Inbox to read newsletters from |
@@ -70,15 +86,19 @@ Add these under **Settings → Secrets and variables → Actions**:
 
 Secrets:
 
-- `DATABASE_URL`
-- `SLACK_WEBHOOK_URL`
+- `DATABASE_URL` — Supabase pooler connection string
 - `CURSOR_API_KEY`
+- `SLACK_BOT_TOKEN` — preferred delivery path
+- `SLACK_WEBHOOK_URL` (optional, only used when there is no bot token)
 - `X_BEARER_TOKEN` (optional)
 - `AGENTMAIL_API_KEY` (optional)
 
 Variables:
 
+- `SLACK_CHANNEL_ID` (optional, defaults to `C0C07A1DM09`)
 - `AGENTMAIL_INBOX_ID` (optional, defaults to the inbox in `.env.example`)
+
+The runner uses the bot token rather than the Slack MCP plugin, for the reason in [Slack delivery](#slack-delivery) above.
 
 ## How a run works
 
@@ -87,7 +107,7 @@ Variables:
 3. **Keep only what is new.** Dedupe against `items` on `(competitor, source, external_id)`. Sitemaps bump `lastmod` on site-wide re-renders, so blog novelty is decided by URL, not by date.
 4. **Fill in the body.** A sitemap only gives a URL, so new blog items get their article fetched for a real title and body before analysis.
 5. **Analyze.** Each new item goes to `claude-opus-5` through the Cursor SDK along with the PostHog claims indexed for that competitor. The reply is parsed and validated into a fixed shape: severity, summary, exactly one action, an action detail focused on the gap, and citations limited to URLs the model was actually given.
-6. **Post.** One Block Kit message per item, then `analyses.slack_posted_at` is stamped so a retry cannot double-post.
+6. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days — an item is only ever deduped once, so without that a Slack blip would lose the message for good.
 
 Severity is a label, not a gate. Every new item gets a message; `minor`, `notable`, and `major` just set expectations before you read it.
 

@@ -18,8 +18,9 @@ async function main(): Promise<void> {
   const summary = await runCycle(config);
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
+  const retried = summary.retried > 0 ? `, ${summary.retried} retried` : "";
   log.info(
-    `done in ${seconds}s — ${summary.candidates} candidates, ${summary.newItems} new (${summary.seeded} seeded), ${summary.analyzed} analyzed, ${summary.posted} posted`,
+    `done in ${seconds}s — ${summary.candidates} candidates, ${summary.newItems} new (${summary.seeded} seeded), ${summary.analyzed} analyzed${retried}, ${summary.posted} posted`,
   );
   for (const note of summary.notes) log.info(`note: ${note}`);
 }

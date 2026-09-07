@@ -108,8 +108,15 @@ describe("PostgresStore", () => {
       },
     });
 
+    // Until it is stamped, the next run must see it as still owing a message.
+    const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
+    expect(pending.map((row) => row.analysisId)).toContain(analysisId);
+
     const postedAt = new Date("2026-01-16T15:00:00Z");
     await store.markSlackPosted(analysisId, postedAt);
+
+    const afterPosting = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
+    expect(afterPosting.map((row) => row.analysisId)).not.toContain(analysisId);
 
     const rows = await db.query<{
       severity: string;
@@ -121,6 +128,41 @@ describe("PostgresStore", () => {
     expect(rows.rows[0]?.severity).toBe("notable");
     expect(rows.rows[0]?.analysis.action).toBe("update_pages");
     expect(new Date(rows.rows[0]!.slack_posted_at).toISOString()).toBe(postedAt.toISOString());
+  });
+
+  it("rebuilds the full item and analysis for a retry", async () => {
+    const [stored] = await store.insertNewItems([
+      item("retry-target", { source: "blog", raw: { body: "fixture body", description: "d" } }),
+    ]);
+    await store.recordAnalysis({
+      itemId: stored!.id,
+      model: "claude-opus-5",
+      analysis: {
+        severity: "major",
+        summary: "s",
+        action: "new_compare_page",
+        actionDetail: "d",
+        posthogRefs: [{ url: "https://posthog.com/compare/y", claim: "c" }],
+      },
+    });
+
+    const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
+    const target = pending.find((row) => row.item.externalId === "retry-target");
+    expect(target).toBeDefined();
+    expect(target?.model).toBe("claude-opus-5");
+    expect(target?.analysis.action).toBe("new_compare_page");
+    expect(target?.analysis.posthogRefs[0]?.url).toBe("https://posthog.com/compare/y");
+    expect(target?.item).toMatchObject({
+      competitor: "mixpanel",
+      source: "blog",
+      title: "Release retry-target",
+      raw: { body: "fixture body", description: "d" },
+    });
+  });
+
+  it("ignores analyses older than the retry window", async () => {
+    const pending = await store.getUnpostedAnalyses(new Date("2099-01-01T00:00:00Z"), 10);
+    expect(pending).toHaveLength(0);
   });
 
   it("upserts pages and reports when each was fetched", async () => {

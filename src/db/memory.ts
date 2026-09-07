@@ -7,7 +7,7 @@ import type {
   SourceId,
   StoredItem,
 } from "../types.js";
-import { itemKey, type RecordAnalysisInput, type Store } from "./store.js";
+import { itemKey, type PendingPost, type RecordAnalysisInput, type Store } from "./store.js";
 
 /**
  * Non-persistent store used when `DATABASE_URL` is unset. It lets a dry run
@@ -49,6 +49,11 @@ export class MemoryStore implements Store {
 
   async markSlackPosted(_analysisId: string, _postedAt: Date): Promise<void> {
     // Nothing to persist.
+  }
+
+  async getUnpostedAnalyses(): Promise<PendingPost[]> {
+    // Analyses are never persisted here, so there is never a backlog.
+    return [];
   }
 
   async getIndexedPageUrls(): Promise<Map<string, Date>> {
