@@ -45,6 +45,17 @@ export const COMPETITOR_IDS = Object.keys(COMPETITORS) as CompetitorId[];
 /** The private #posthog-competitor-happenings channel. */
 export const DEFAULT_SLACK_CHANNEL_ID = "C0C07A1DM09";
 
+/** Issues are filed against this app's own repo, where the daily job already runs. */
+export const DEFAULT_GITHUB_REPO = "itsmechase15/posthog-competitor-happenings";
+
+/**
+ * Renders a page and returns the render as an image. Used only when a
+ * competitor's page offers no usable picture of its own, so the alert still
+ * opens with a screenshot of the feature rather than nothing.
+ */
+export const DEFAULT_SCREENSHOT_URL_TEMPLATE =
+  "https://image.thum.io/get/width/1200/crop/900/noanimate/{url}";
+
 export interface Config {
   dryRun: boolean;
   databaseUrl: string | undefined;
@@ -54,6 +65,12 @@ export interface Config {
   slackChannelId: string;
   /** Fallback delivery when no bot token is configured. */
   slackWebhookUrl: string | undefined;
+  /** Token used to open the issue each Slack message links to. Set for free inside Actions. */
+  githubToken: string | undefined;
+  /** `owner/repo` the issues are filed against. */
+  githubRepo: string;
+  /** URL template whose `{url}` is replaced with the page to screenshot. */
+  screenshotUrlTemplate: string;
   cursorApiKey: string | undefined;
   cursorModel: string;
   /** "local" runs the agent on this machine; "cloud" uses a no-repo cloud agent. */
@@ -123,6 +140,9 @@ export function loadConfig(): Config {
     slackBotToken: str("SLACK_BOT_TOKEN"),
     slackChannelId: str("SLACK_CHANNEL_ID") ?? DEFAULT_SLACK_CHANNEL_ID,
     slackWebhookUrl: str("SLACK_WEBHOOK_URL"),
+    githubToken: str("GITHUB_TOKEN") ?? str("GH_TOKEN"),
+    githubRepo: str("GITHUB_REPOSITORY") ?? DEFAULT_GITHUB_REPO,
+    screenshotUrlTemplate: str("SCREENSHOT_URL_TEMPLATE") ?? DEFAULT_SCREENSHOT_URL_TEMPLATE,
     cursorApiKey: str("CURSOR_API_KEY"),
     cursorModel: str("CURSOR_MODEL") ?? "claude-opus-5",
     cursorRuntime: runtime,

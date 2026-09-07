@@ -3,12 +3,13 @@ import { diversifyClaims } from "../src/analysis/analyze.js";
 import { heuristicAnalysis } from "../src/analysis/fallback.js";
 import { buildAnalysisPrompt } from "../src/analysis/prompt.js";
 import type { PostHogClaim } from "../src/types.js";
-import { extractJsonObject, parseAnalysis } from "../src/analysis/schema.js";
+import { extractJsonObject, parseAnalysis, parseStoredAlert } from "../src/analysis/schema.js";
 import type { StoredItem } from "../src/types.js";
 
 const valid = {
-  severity: "notable",
+  impact: "medium",
   summary: "Fixture Co shipped scheduled widget sync.",
+  key_points: ["Syncs run on a cron the user picks."],
   action: "update_pages",
   action_detail: "PostHog has no scheduled sync; the compare page still says neither tool does.",
   posthog_refs: [
@@ -18,6 +19,7 @@ const valid = {
       suggested_edit: "Drop the claim; Mixpanel now schedules syncs.",
     },
   ],
+  open_questions: ["Is it available on the free plan?"],
 };
 
 describe("extractJsonObject", () => {
@@ -42,7 +44,10 @@ describe("extractJsonObject", () => {
 describe("parseAnalysis", () => {
   it("parses a well-formed response", () => {
     const analysis = parseAnalysis(JSON.stringify(valid));
+    expect(analysis.impact).toBe("medium");
     expect(analysis.action).toBe("update_pages");
+    expect(analysis.keyPoints).toEqual(["Syncs run on a cron the user picks."]);
+    expect(analysis.openQuestions).toEqual(["Is it available on the free plan?"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe(
       "Drop the claim; Mixpanel now schedules syncs.",
     );
@@ -51,20 +56,44 @@ describe("parseAnalysis", () => {
   it("accepts camelCase keys", () => {
     const analysis = parseAnalysis(
       JSON.stringify({
-        severity: "minor",
+        impact: "low",
         summary: "s",
+        keyPoints: ["k"],
         action: "consider_building",
         actionDetail: "d",
         posthogRefs: [{ url: "u", claim: "c", suggestedEdit: "e" }],
+        openQuestions: ["q"],
       }),
     );
     expect(analysis.actionDetail).toBe("d");
+    expect(analysis.keyPoints).toEqual(["k"]);
+    expect(analysis.openQuestions).toEqual(["q"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
   });
 
-  it("defaults posthog_refs to an empty array", () => {
-    const { posthog_refs, ...withoutRefs } = valid;
-    expect(parseAnalysis(JSON.stringify(withoutRefs)).posthogRefs).toEqual([]);
+  it("reads a legacy severity as its impact level", () => {
+    const legacy = { ...valid, severity: "major" } as Record<string, unknown>;
+    delete legacy.impact;
+    expect(parseAnalysis(JSON.stringify(legacy)).impact).toBe("high");
+    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "notable" })).impact).toBe("medium");
+    expect(parseAnalysis(JSON.stringify({ ...legacy, severity: "minor" })).impact).toBe("low");
+  });
+
+  it("prefers impact when a reply sends both", () => {
+    expect(parseAnalysis(JSON.stringify({ ...valid, severity: "minor" })).impact).toBe("medium");
+  });
+
+  it("rejects a response with neither impact nor severity", () => {
+    const { impact, ...withoutImpact } = valid;
+    expect(() => parseAnalysis(JSON.stringify(withoutImpact))).toThrow(/impact/);
+  });
+
+  it("defaults the optional lists to empty arrays", () => {
+    const { posthog_refs, key_points, open_questions, ...bare } = valid;
+    const analysis = parseAnalysis(JSON.stringify(bare));
+    expect(analysis.posthogRefs).toEqual([]);
+    expect(analysis.keyPoints).toEqual([]);
+    expect(analysis.openQuestions).toEqual([]);
   });
 
   it("rejects an action outside the allowed set", () => {
@@ -74,6 +103,26 @@ describe("parseAnalysis", () => {
   it("rejects a response with no action_detail", () => {
     const { action_detail, ...withoutDetail } = valid;
     expect(() => parseAnalysis(JSON.stringify(withoutDetail))).toThrow(/action_detail/);
+  });
+});
+
+describe("parseStoredAlert", () => {
+  it("reads back the image and issue stored with an analysis", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      image: { url: "https://cdn.invalid/a.png", altText: "alt", origin: "page" },
+      issue: { url: "https://github.com/o/r/issues/3", number: 3 },
+    });
+    expect(stored.image?.url).toBe("https://cdn.invalid/a.png");
+    expect(stored.issue?.number).toBe(3);
+    expect(stored.analysis.impact).toBe("medium");
+  });
+
+  it("reads a phase 1 row that has neither", () => {
+    const stored = parseStoredAlert({ ...valid, impact: undefined, severity: "minor" });
+    expect(stored.image).toBeNull();
+    expect(stored.issue).toBeNull();
+    expect(stored.analysis.impact).toBe("low");
   });
 });
 
@@ -110,7 +159,13 @@ describe("heuristicAnalysis", () => {
   it("restates the source rather than inventing an assessment", () => {
     const analysis = heuristicAnalysis(item, []);
     expect(analysis.summary).toContain("Introducing Widget Sync");
-    expect(analysis.severity).toBe("notable");
+    expect(analysis.impact).toBe("medium");
+  });
+
+  it("keeps the summary to one sentence and puts the rest in key points", () => {
+    const analysis = heuristicAnalysis(item, []);
+    expect(analysis.summary).toBe("Mixpanel: Introducing Widget Sync.");
+    expect(analysis.keyPoints).toEqual(["It copies widgets on a schedule."]);
   });
 
   it("drops a leading changelog label so Slack does not read 'Description:'", () => {
@@ -196,5 +251,13 @@ describe("buildAnalysisPrompt", () => {
     ]) {
       expect(withRefs).toContain(action);
     }
+  });
+
+  it("asks for the fields the new Slack layout needs, in impact terms", () => {
+    for (const field of ["impact", "key_points", "open_questions", "one sentence"]) {
+      expect(withRefs).toContain(field);
+    }
+    expect(withRefs).not.toContain("severity");
+    expect(withRefs).not.toContain("notable");
   });
 });

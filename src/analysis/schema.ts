@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { ACTIONS, SEVERITIES, type Analysis } from "../types.js";
+import {
+  ACTIONS,
+  IMAGE_ORIGINS,
+  IMPACTS,
+  IMPACT_FROM_SEVERITY,
+  LEGACY_SEVERITIES,
+  type Analysis,
+  type FeatureImage,
+  type IssueRef,
+} from "../types.js";
 
 const refSchema = z.object({
   url: z.string().min(1),
@@ -8,14 +17,22 @@ const refSchema = z.object({
   suggestedEdit: z.string().min(1).optional(),
 });
 
+const lines = z.array(z.string().min(1)).max(8);
+
 export const analysisSchema = z.object({
-  severity: z.enum(SEVERITIES),
+  impact: z.enum(IMPACTS).optional(),
+  /** Phase 1 rows and older model replies still say severity. */
+  severity: z.enum(LEGACY_SEVERITIES).optional(),
   summary: z.string().min(1).max(600),
+  key_points: lines.optional(),
+  keyPoints: lines.optional(),
   action: z.enum(ACTIONS),
   action_detail: z.string().min(1).max(900).optional(),
   actionDetail: z.string().min(1).max(900).optional(),
   posthog_refs: z.array(refSchema).max(5).optional(),
   posthogRefs: z.array(refSchema).max(5).optional(),
+  open_questions: lines.optional(),
+  openQuestions: lines.optional(),
 });
 
 /** Models drift between snake_case and camelCase; accept both and normalize. */
@@ -23,10 +40,17 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
   const detail = parsed.action_detail ?? parsed.actionDetail;
   if (!detail) throw new Error("analysis is missing action_detail");
 
+  const impact = parsed.impact ?? (parsed.severity ? IMPACT_FROM_SEVERITY[parsed.severity] : null);
+  if (!impact) throw new Error("analysis is missing impact");
+
   const refs = parsed.posthog_refs ?? parsed.posthogRefs ?? [];
+  const keyPoints = parsed.key_points ?? parsed.keyPoints ?? [];
+  const openQuestions = parsed.open_questions ?? parsed.openQuestions ?? [];
+
   return {
-    severity: parsed.severity,
+    impact,
     summary: parsed.summary.trim(),
+    keyPoints: keyPoints.map((point) => point.trim()).filter(Boolean),
     action: parsed.action,
     actionDetail: detail.trim(),
     posthogRefs: refs.map((ref) => {
@@ -37,7 +61,52 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
         ...(suggestedEdit ? { suggestedEdit: suggestedEdit.trim() } : {}),
       };
     }),
+    openQuestions: openQuestions.map((question) => question.trim()).filter(Boolean),
   };
+}
+
+const imageSchema = z.object({
+  url: z.string().min(1),
+  altText: z.string().default(""),
+  origin: z.enum(IMAGE_ORIGINS).default("page"),
+});
+
+const issueSchema = z.object({
+  url: z.string().min(1),
+  number: z.number().int().nonnegative(),
+});
+
+/**
+ * What actually goes in `analyses.analysis`: the verdict plus the picture and
+ * the issue it was posted with, so a retry re-posts the same alert instead of
+ * re-resolving an image and opening a second issue.
+ */
+export const alertPayloadSchema = analysisSchema.extend({
+  image: imageSchema.optional().nullable(),
+  issue: issueSchema.optional().nullable(),
+});
+
+export interface StoredAlertPayload {
+  analysis: Analysis;
+  image: FeatureImage | null;
+  issue: IssueRef | null;
+}
+
+export function parseStoredAlert(raw: unknown): StoredAlertPayload {
+  const parsed = alertPayloadSchema.parse(raw);
+  return {
+    analysis: normalizeAnalysis(parsed),
+    image: parsed.image ?? null,
+    issue: parsed.issue ?? null,
+  };
+}
+
+export function serializeAlertPayload(
+  analysis: Analysis,
+  image: FeatureImage | null,
+  issue: IssueRef | null,
+): Record<string, unknown> {
+  return { ...analysis, image, issue };
 }
 
 /**

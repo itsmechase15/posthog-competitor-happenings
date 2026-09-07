@@ -1,7 +1,7 @@
 import type { Config } from "../config.js";
 import { createLogger } from "../log.js";
 import type { CandidateItem } from "../types.js";
-import { extractPage } from "../util/html.js";
+import { extractImageUrls, extractPage } from "../util/html.js";
 import { fetchText } from "../util/http.js";
 import { truncate } from "../util/text.js";
 
@@ -41,6 +41,8 @@ export async function enrichArticles(
           ...item.raw,
           description: page.description,
           body: truncate(page.text, MAX_BODY_CHARS),
+          // We already have the HTML here, so the alert's image comes free.
+          image: extractImageUrls(html, item.url)[0] ?? null,
         },
       });
     } catch (error) {

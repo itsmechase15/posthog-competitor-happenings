@@ -9,6 +9,7 @@ export interface FetchTextOptions {
   /** Total attempts, including the first one. */
   attempts?: number;
   accept?: string;
+  method?: "GET" | "HEAD";
 }
 
 export class HttpError extends Error {
@@ -33,6 +34,7 @@ async function request(url: string, options: FetchTextOptions): Promise<Response
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     return await fetch(url, {
+      method: options.method ?? "GET",
       redirect: "follow",
       signal: controller.signal,
       headers: {
@@ -75,6 +77,25 @@ export async function fetchText(url: string, options: FetchTextOptions): Promise
   }
 
   throw lastError instanceof Error ? lastError : new Error(`failed to fetch ${url}`);
+}
+
+/**
+ * What a URL claims to serve, without downloading it. Returns null when the
+ * URL cannot be reached at all — callers treat that as "not usable" rather
+ * than as an error worth failing a run over.
+ */
+export async function fetchContentType(
+  url: string,
+  options: FetchTextOptions,
+): Promise<string | null> {
+  try {
+    const response = await request(url, { ...options, method: "HEAD", attempts: 1 });
+    if (!response.ok) return null;
+    return response.headers.get("content-type");
+  } catch (error) {
+    log.debug(`HEAD ${url} failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 export async function fetchJson<T>(url: string, options: FetchTextOptions): Promise<T> {

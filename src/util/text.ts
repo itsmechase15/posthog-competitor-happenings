@@ -14,6 +14,24 @@ export function truncate(input: string, max: number): string {
 }
 
 /**
+ * Split prose into sentences. Abbreviations and decimals would fool a bare
+ * split on ".", so a boundary also needs whitespace and a capital or digit
+ * after it.
+ */
+export function sentences(input: string): string[] {
+  return collapseWhitespace(input)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9"'“(])/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+/** The first sentence, for the places that are allowed exactly one. */
+export function firstSentence(input: string, max = 240): string {
+  const [first] = sentences(input);
+  return truncate(first ?? collapseWhitespace(input), max);
+}
+
+/**
  * Parse a date from a feed or API payload. Returns null rather than an
  * Invalid Date so callers can treat "no date" and "bad date" the same way.
  */

@@ -2,7 +2,9 @@ import { analyzeItems, createAnalyzer } from "./analysis/analyze.js";
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
+import { buildIssueDraft, createIssueCreator, type IssueCreator } from "./github/issue.js";
 import { createLogger } from "./log.js";
+import { resolveFeatureImage } from "./media/image.js";
 import { refreshPostHogIndex } from "./posthog/index.js";
 import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
 import {
@@ -13,7 +15,7 @@ import {
 } from "./slack/post.js";
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
-import type { CandidateItem, StoredItem } from "./types.js";
+import type { Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
 import { daysAgo, normalizeUrl } from "./util/text.js";
 
 const log = createLogger("pipeline");
@@ -28,6 +30,7 @@ export interface RunSummary {
   analyzed: number;
   /** Analyses from an earlier run that failed to post and were tried again. */
   retried: number;
+  issuesOpened: number;
   posted: number;
   notes: string[];
 }
@@ -46,6 +49,29 @@ export function createPoster(config: Config): SlackPoster {
     return new WebhookPoster(config.slackWebhookUrl, config.httpTimeoutMs);
   }
   return new ConsolePoster("neither SLACK_BOT_TOKEN nor SLACK_WEBHOOK_URL is set");
+}
+
+/**
+ * Turn a verdict into something postable: find the feature image, then open the
+ * issue that carries the long detail Slack no longer shows. A dry run and a
+ * run with no token both come back with no issue, and only the dry run says so
+ * in the message.
+ */
+async function prepareAlert(
+  config: Config,
+  issues: IssueCreator,
+  analyzed: AnalyzedItem,
+): Promise<Alert> {
+  const image = await resolveFeatureImage(config, analyzed.item);
+  const issue = await issues.create(buildIssueDraft(analyzed, image));
+  return {
+    ...analyzed,
+    image,
+    issue,
+    ...(issue === null && config.dryRun
+      ? { issueNote: `GitHub issue not created — ${issues.description}` }
+      : {}),
+  };
 }
 
 /** Items with no date are kept: a missing date is not evidence of staleness. */
@@ -126,7 +152,9 @@ async function selectForAnalysis(
 export async function runSingleItem(config: Config, targetUrl: string): Promise<SlackMessage> {
   const store = createStore(config, { allowMemoryFallback: true });
   const poster = createPoster(config);
+  const issues = createIssueCreator(config);
   log.info(`Slack delivery: ${poster.description}`);
+  log.info(`GitHub issues: ${issues.description}`);
 
   try {
     await refreshPostHogIndex(config, store);
@@ -152,11 +180,14 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     const [analyzed] = await analyzeItems([stored], store, analyzer);
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
-    const message = buildSlackMessage(analyzed);
+    const alert = await prepareAlert(config, issues, analyzed);
+    const message = buildSlackMessage(alert);
     const analysisId = await store.recordAnalysis({
       itemId: stored.id,
-      analysis: analyzed.analysis,
-      model: analyzed.model,
+      analysis: alert.analysis,
+      model: alert.model,
+      image: alert.image,
+      issue: alert.issue,
     });
     await poster.post(message);
     await store.markSlackPosted(analysisId, new Date());
@@ -170,13 +201,16 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
 export async function runCycle(config: Config): Promise<RunSummary> {
   const store = createStore(config);
   const poster = createPoster(config);
+  const issues = createIssueCreator(config);
   log.info(`Slack delivery: ${poster.description}`);
+  log.info(`GitHub issues: ${issues.description}`);
   const summary: RunSummary = {
     candidates: 0,
     newItems: 0,
     seeded: 0,
     analyzed: 0,
     retried: 0,
+    issuesOpened: 0,
     posted: 0,
     notes: [],
   };
@@ -213,25 +247,31 @@ export async function runCycle(config: Config): Promise<RunSummary> {
       summary.retried = pending.length;
     }
 
-    const queue: PendingPost[] = [
-      ...pending,
-      ...(await Promise.all(
-        analyzed.map(async (entry) => ({
-          analysisId: await store.recordAnalysis({
-            itemId: entry.item.id,
-            analysis: entry.analysis,
-            model: entry.model,
-          }),
-          item: entry.item,
-          analysis: entry.analysis,
-          model: entry.model,
-        })),
-      )),
-    ];
+    const fresh: PendingPost[] = [];
+    for (const entry of analyzed) {
+      const alert = await prepareAlert(config, issues, entry);
+      if (alert.issue) summary.issuesOpened += 1;
+      fresh.push({
+        analysisId: await store.recordAnalysis({
+          itemId: entry.item.id,
+          analysis: alert.analysis,
+          model: alert.model,
+          image: alert.image,
+          issue: alert.issue,
+        }),
+        item: alert.item,
+        analysis: alert.analysis,
+        model: alert.model,
+        image: alert.image,
+        issue: alert.issue,
+      });
+    }
 
-    for (const entry of queue) {
+    for (const entry of [...pending, ...fresh]) {
       try {
-        await poster.post(buildSlackMessage(entry));
+        // A retry of a phase 1 analysis has no stored image; find one now.
+        const image = entry.image ?? (await resolveFeatureImage(config, entry.item));
+        await poster.post(buildSlackMessage({ ...entry, image }));
         await store.markSlackPosted(entry.analysisId, new Date());
         summary.posted += 1;
       } catch (error) {

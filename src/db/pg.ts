@@ -1,13 +1,14 @@
 import pg from "pg";
-import { analysisSchema, normalizeAnalysis } from "../analysis/schema.js";
+import { parseStoredAlert, serializeAlertPayload } from "../analysis/schema.js";
 import { createLogger } from "../log.js";
-import type {
-  CandidateItem,
-  CompetitorId,
-  PostHogClaim,
-  PostHogPage,
-  SourceId,
-  StoredItem,
+import {
+  SEVERITY_FROM_IMPACT,
+  type CandidateItem,
+  type CompetitorId,
+  type PostHogClaim,
+  type PostHogPage,
+  type SourceId,
+  type StoredItem,
 } from "../types.js";
 import { itemKey, type PendingPost, type RecordAnalysisInput, type Store } from "./store.js";
 
@@ -110,12 +111,24 @@ export class PostgresStore implements Store {
     return Number.parseInt(result.rows[0]?.count ?? "0", 10);
   }
 
+  /**
+   * The canonical verdict — impact included — lives in the `analysis` jsonb.
+   * The legacy `severity` column keeps getting the mapped old token so the
+   * existing NOT NULL constraint holds and no migration is needed to deploy
+   * this; nothing reads it back.
+   */
   async recordAnalysis(input: RecordAnalysisInput): Promise<string> {
+    const payload = serializeAlertPayload(input.analysis, input.image, input.issue);
     const result = await this.pool.query<{ id: string }>(
       `INSERT INTO analyses (item_id, severity, analysis, model)
        VALUES ($1, $2, $3::jsonb, $4)
        RETURNING id::text`,
-      [input.itemId, input.analysis.severity, JSON.stringify(input.analysis), input.model],
+      [
+        input.itemId,
+        SEVERITY_FROM_IMPACT[input.analysis.impact],
+        JSON.stringify(payload),
+        input.model,
+      ],
     );
     const id = result.rows[0]?.id;
     if (!id) throw new Error(`failed to record analysis for item ${input.itemId}`);
@@ -157,10 +170,13 @@ export class PostgresStore implements Store {
     const pending: PendingPost[] = [];
     for (const row of result.rows) {
       try {
+        const stored = parseStoredAlert(row.analysis);
         pending.push({
           analysisId: row.analysis_id,
           model: row.model,
-          analysis: normalizeAnalysis(analysisSchema.parse(row.analysis)),
+          analysis: stored.analysis,
+          image: stored.image,
+          issue: stored.issue,
           item: {
             id: row.item_id,
             competitor: row.competitor,

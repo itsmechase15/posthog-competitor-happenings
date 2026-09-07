@@ -108,7 +108,7 @@ async function collectX(config: Config, competitor: CompetitorConfig): Promise<C
   );
   const posts = timeline.data ?? [];
   log.info(`${competitor.label} X: ${posts.length} recent posts from @${competitor.xUsername}`);
-  return postsToItems(competitor, posts, competitor.xUsername);
+  return postsToItems(competitor, posts, competitor.xUsername, timeline.includes?.media ?? []);
 }
 
 async function collectNewsletters(config: Config): Promise<CandidateItem[]> {
