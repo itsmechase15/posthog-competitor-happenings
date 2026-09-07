@@ -50,6 +50,9 @@ PostHog page citations, suggested edits, and open questions are not in Slack.
 They live in the issue.
 
 ### GitHub issues
+Moved into the daily flow from Phase 2, because Slack got short and the detail
+had to go somewhere.
+
 One issue per analyzed item, in this repo, opened before the Slack post so the
 message has something to link. Title is competitor + feature; body carries the
 full summary, key points, impact, recommended action with all its detail, the

@@ -140,7 +140,6 @@ Secrets:
 
 - `DATABASE_URL` — Supabase pooler connection string
 - `CURSOR_API_KEY`
-- `GITHUB_TOKEN` is **not** a secret you add: Actions provides it, and the workflow grants it `issues: write`
 - `SLACK_BOT_TOKEN` — preferred delivery path
 - `SLACK_WEBHOOK_URL` (optional, only used when there is no bot token)
 - `X_BEARER_TOKEN` (optional)
@@ -150,6 +149,8 @@ Variables:
 
 - `SLACK_CHANNEL_ID` (optional, defaults to `C0C07A1DM09`)
 - `AGENTMAIL_INBOX_ID` (optional, defaults to the inbox in `.env.example`)
+
+`GITHUB_TOKEN` is not on either list: Actions provides it, and the workflow grants it `issues: write`.
 
 The runner uses the bot token rather than the Slack MCP plugin, for the reason in [Slack delivery](#slack-delivery) above.
 
