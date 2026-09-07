@@ -42,9 +42,17 @@ export const COMPETITORS: Record<CompetitorId, CompetitorConfig> = {
 
 export const COMPETITOR_IDS = Object.keys(COMPETITORS) as CompetitorId[];
 
+/** The private #posthog-competitor-happenings channel. */
+export const DEFAULT_SLACK_CHANNEL_ID = "C0C07A1DM09";
+
 export interface Config {
   dryRun: boolean;
   databaseUrl: string | undefined;
+  /** Bot token for `chat.postMessage`. Preferred over the webhook when both are set. */
+  slackBotToken: string | undefined;
+  /** Channel the bot posts to. Defaults to #posthog-competitor-happenings. */
+  slackChannelId: string;
+  /** Fallback delivery when no bot token is configured. */
   slackWebhookUrl: string | undefined;
   cursorApiKey: string | undefined;
   cursorModel: string;
@@ -112,6 +120,8 @@ export function loadConfig(): Config {
     dryRun,
     forceAnalyze,
     databaseUrl: str("DATABASE_URL"),
+    slackBotToken: str("SLACK_BOT_TOKEN"),
+    slackChannelId: str("SLACK_CHANNEL_ID") ?? DEFAULT_SLACK_CHANNEL_ID,
     slackWebhookUrl: str("SLACK_WEBHOOK_URL"),
     cursorApiKey: str("CURSOR_API_KEY"),
     cursorModel: str("CURSOR_MODEL") ?? "claude-opus-5",

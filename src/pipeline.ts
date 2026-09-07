@@ -1,11 +1,16 @@
 import { analyzeItems, createAnalyzer } from "./analysis/analyze.js";
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
-import { itemKey, type Store } from "./db/store.js";
+import { itemKey, type PendingPost, type Store } from "./db/store.js";
 import { createLogger } from "./log.js";
 import { refreshPostHogIndex } from "./posthog/index.js";
 import { buildSlackMessage } from "./slack/message.js";
-import { ConsolePoster, WebhookPoster, type SlackPoster } from "./slack/post.js";
+import {
+  BotTokenPoster,
+  ConsolePoster,
+  WebhookPoster,
+  type SlackPoster,
+} from "./slack/post.js";
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
 import type { CandidateItem, StoredItem } from "./types.js";
@@ -13,19 +18,34 @@ import { daysAgo } from "./util/text.js";
 
 const log = createLogger("pipeline");
 
+/** How far back to look for analyses that never reached Slack. */
+const RETRY_WINDOW_DAYS = 3;
+
 export interface RunSummary {
   candidates: number;
   newItems: number;
   seeded: number;
   analyzed: number;
+  /** Analyses from an earlier run that failed to post and were tried again. */
+  retried: number;
   posted: number;
   notes: string[];
 }
 
-function createPoster(config: Config): SlackPoster {
+/**
+ * A bot token wins over a webhook: it can target the private channel by id and
+ * reports why Slack refused a message. The webhook stays as a fallback for a
+ * workspace where creating an app is more trouble than it is worth.
+ */
+export function createPoster(config: Config): SlackPoster {
   if (config.dryRun) return new ConsolePoster("dry run");
-  if (!config.slackWebhookUrl) return new ConsolePoster("SLACK_WEBHOOK_URL unset");
-  return new WebhookPoster(config.slackWebhookUrl, config.httpTimeoutMs);
+  if (config.slackBotToken) {
+    return new BotTokenPoster(config.slackBotToken, config.slackChannelId, config.httpTimeoutMs);
+  }
+  if (config.slackWebhookUrl) {
+    return new WebhookPoster(config.slackWebhookUrl, config.httpTimeoutMs);
+  }
+  return new ConsolePoster("neither SLACK_BOT_TOKEN nor SLACK_WEBHOOK_URL is set");
 }
 
 /** Items with no date are kept: a missing date is not evidence of staleness. */
@@ -101,11 +121,13 @@ async function selectForAnalysis(
 export async function runCycle(config: Config): Promise<RunSummary> {
   const store = createStore(config);
   const poster = createPoster(config);
+  log.info(`Slack delivery: ${poster.description}`);
   const summary: RunSummary = {
     candidates: 0,
     newItems: 0,
     seeded: 0,
     analyzed: 0,
+    retried: 0,
     posted: 0,
     notes: [],
   };
@@ -133,17 +155,38 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     const analyzed = await analyzeItems(selection.toAnalyze, store, analyzer);
     summary.analyzed = analyzed.length;
 
-    for (const entry of analyzed) {
-      const analysisId = await store.recordAnalysis({
-        itemId: entry.item.id,
-        analysis: entry.analysis,
-        model: entry.model,
-      });
+    const pending = await store.getUnpostedAnalyses(
+      daysAgo(RETRY_WINDOW_DAYS),
+      config.maxItemsPerRun,
+    );
+    if (pending.length > 0) {
+      log.info(`retrying ${pending.length} analyses that never reached Slack`);
+      summary.retried = pending.length;
+    }
+
+    const queue: PendingPost[] = [
+      ...pending,
+      ...(await Promise.all(
+        analyzed.map(async (entry) => ({
+          analysisId: await store.recordAnalysis({
+            itemId: entry.item.id,
+            analysis: entry.analysis,
+            model: entry.model,
+          }),
+          item: entry.item,
+          analysis: entry.analysis,
+          model: entry.model,
+        })),
+      )),
+    ];
+
+    for (const entry of queue) {
       try {
         await poster.post(buildSlackMessage(entry));
-        await store.markSlackPosted(analysisId, new Date());
+        await store.markSlackPosted(entry.analysisId, new Date());
         summary.posted += 1;
       } catch (error) {
+        // Left unstamped on purpose: the next run picks it up again.
         log.error(
           `failed to post ${entry.item.url} to Slack`,
           error instanceof Error ? error.message : error,

@@ -53,8 +53,11 @@ jobs:
         run: node dist/index.js
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          # Bot token is the preferred delivery path; the webhook is a fallback.
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
           AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID }}
