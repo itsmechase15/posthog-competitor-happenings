@@ -11,6 +11,10 @@ export interface SlackMessage {
 
 export const ISSUE_LINK_LABEL = "Access GitHub issue for more information";
 
+/** The one sentence lives under this heading; the bullets under the next one. */
+export const KNOW_HEADING = "What you need to KNOW";
+export const DETAIL_HEADING = "More detail";
+
 /** Short enough that nothing in the message wraps into a wall of text. */
 const MAX_LEAD_CHARS = 240;
 const MAX_POINT_CHARS = 160;
@@ -31,8 +35,8 @@ function section(text: string): unknown {
 }
 
 /**
- * The one sentence at the top. It has to say which competitor did what, so the
- * competitor's name is added only when the sentence does not already have it.
+ * The one sentence under "What you need to KNOW". It has to say which competitor
+ * did what, so the competitor's name is added only when the sentence lacks it.
  */
 export function leadSentence(alert: Alert): string {
   const label = COMPETITORS[alert.item.competitor].label;
@@ -41,10 +45,10 @@ export function leadSentence(alert: Alert): string {
 }
 
 /**
- * The substance under "What you need to KNOW". Analyses written before the
- * rename have no key points, so the rest of their summary stands in.
+ * The bullets that elaborate on the one sentence, never repeat it. Analyses
+ * written before key points existed fall back to the rest of their summary.
  */
-export function knowPoints(alert: Alert): string[] {
+export function detailPoints(alert: Alert): string[] {
   const { keyPoints, summary } = alert.analysis;
   const source = keyPoints.length > 0 ? keyPoints : sentences(summary).slice(1);
   return source
@@ -87,26 +91,28 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   const { item, analysis, model, image, issue, issueNote } = alert;
   const competitor = COMPETITORS[item.competitor];
   const lead = leadSentence(alert);
-  const points = knowPoints(alert);
+  const points = detailPoints(alert);
 
   const blocks: unknown[] = [
     // Always first, always present: the picture is what makes the alert
     // readable at a glance in a busy channel. alt_text is plain text, so it is
     // the one string here that must not be mrkdwn-escaped.
     { type: "image", image_url: image.url, alt_text: truncate(image.altText || lead, 300) },
-    section(`*${escape(lead)}*`),
+    // The heading carries the whole sentence, so there is no unlabelled line
+    // above it competing to be read first.
+    section(`*${KNOW_HEADING}*\n${escape(lead)}`),
+    section(`*Impact*  ${IMPACT_EMOJI[analysis.impact]} ${IMPACT_LABEL[analysis.impact]}`),
   ];
 
   if (points.length > 0) {
     blocks.push(
       section(
-        `*What you need to KNOW*\n${points.map((point) => `• ${escape(point)}`).join("\n")}`,
+        `*${DETAIL_HEADING}*\n${points.map((point) => `• ${escape(point)}`).join("\n")}`,
       ),
     );
   }
 
   blocks.push(
-    section(`*Impact*  ${IMPACT_EMOJI[analysis.impact]} ${IMPACT_LABEL[analysis.impact]}`),
     section(
       `*Recommended action*\n${ACTION_LABEL[analysis.action]} — ${escape(
         firstSentence(analysis.actionDetail, MAX_ACTION_CHARS),

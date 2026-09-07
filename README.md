@@ -8,14 +8,15 @@ See [PLAN.md](./PLAN.md) for scope, phasing, and the handoff plan.
 
 ## What a message looks like
 
-Every alert has the same six parts, in this order:
+Every alert has the same parts, in this order:
 
 1. **A feature image**, always first. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page. An alert is never posted without one.
-2. **One sentence** on what changed.
-3. **What you need to KNOW** — two to four short bullets of substance.
-4. **Impact** — `low`, `medium`, or `high`. A label, not a gate: everything new gets a message.
+2. **What you need to KNOW** — the heading carries the one sentence on what changed. There is no unlabelled line above it competing to be read first.
+3. **Impact** — `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
+4. **More detail** — two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
 5. **Recommended action** — one of four actions plus exactly one sentence.
 6. **Access GitHub issue for more information** — the issue opened for this item.
+7. **A small footer** — competitor, source, the model that analyzed it, and a link to the source.
 
 PostHog page citations, suggested edits, and open questions are deliberately not in Slack. They are in the issue, which is where someone actually does the work. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a real rendered example.
 
@@ -87,7 +88,7 @@ The item still has to exist in a live feed — this mode selects from what the f
 
 Each analyzed item gets an issue in this repo before the Slack message goes out, so the message has something to link. The issue carries what Slack no longer does: the full summary and key points, the impact, the recommended action with all of its detail, the PostHog pages to update as url + claim today + suggested edit, open questions, source links, and the feature image.
 
-It is labelled `competitor-happenings`, the competitor, `source:<source>`, `impact:<level>`, and `action:<action>`. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+It is labelled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, and `action:<action>`. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
 
 Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` — no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: the message goes out without the link.
 
@@ -164,7 +165,7 @@ The runner uses the bot token rather than the Slack MCP plugin, for the reason i
 6. **Illustrate and file.** Find the feature image, then open the GitHub issue that carries the long detail. Both are stored alongside the verdict, so a retry re-posts the same picture and links the same issue instead of opening a second one.
 7. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days — an item is only ever deduped once, so without that a Slack blip would lose the message for good.
 
-Impact is a label, not a gate. Every new item gets a message; `low`, `medium`, and `high` just set expectations before you read it.
+Impact is a label, not a gate. Every new item gets a message; `minor`, `notable`, and `major` just set expectations before you read it.
 
 ## Data model
 
@@ -175,8 +176,8 @@ Four tables, defined in [`migrations/001_init.sql`](./migrations/001_init.sql):
 - `pages` — the PostHog.com pages we have read, and which competitors they mention
 - `claims` — the individual competitor-mentioning paragraphs we can cite
 
-The rename from severity to impact needed no migration. The canonical verdict, impact included, lives in the `analysis` jsonb; the legacy `analyses.severity` column keeps getting the mapped old token (`low → minor`, `medium → notable`, `high → major`) so its `NOT NULL` still holds, and nothing reads it back. Rows written before the rename are read as impact on the way out.
+The rename from severity to impact needed no migration. The canonical verdict, impact included, lives in the `analysis` jsonb; the legacy `analyses.severity` column keeps getting the impact token so its `NOT NULL` still holds, and nothing reads it back. Rows written before the rename, and any written on the short-lived `low | medium | high` scale, are mapped back onto `minor | notable | major` on the way out.
 
 ## Tests
 
-`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, the GitHub issue draft, claim extraction, dedupe behaviour, and the Slack message shape — image first, the KNOW bullets, impact wording, the one-sentence action, and the issue link. The fixtures under `test/fixtures/` are synthetic and marked as such — they exercise the shapes real feeds use, and are not copies of real competitor announcements.
+`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, the GitHub issue draft, claim extraction, dedupe behaviour, and the Slack message shape — image first, the one-sentence KNOW, the impact scale, the separate detail bullets, the one-sentence action, and the issue link. The fixtures under `test/fixtures/` are synthetic and marked as such — they exercise the shapes real feeds use, and are not copies of real competitor announcements.

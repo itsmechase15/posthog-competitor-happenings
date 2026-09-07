@@ -21,7 +21,7 @@ const analyzed: AnalyzedItem = {
     raw: {},
   },
   analysis: {
-    impact: "medium",
+    impact: "notable",
     summary: "Amplitude experiments can now be scheduled to stop on their own.",
     keyPoints: ["Set a start time, an end time, or both."],
     action: "update_pages",
@@ -60,16 +60,16 @@ describe("buildIssueDraft", () => {
       "competitor-happenings",
       "amplitude",
       "source:changelog",
-      "impact:medium",
+      "impact:notable",
       "action:update-pages",
     ]);
   });
 
   it("carries the detail Slack no longer shows", () => {
     for (const fragment of [
-      "## Summary",
-      "## What you need to know",
-      "## Impact\nMedium",
+      "## What you need to know\nAmplitude experiments can now be scheduled to stop on their own.",
+      "## Impact\nNotable",
+      "## More detail\n- Set a start time, an end time, or both.",
       "**Update pages** — PostHog has no end time. The compare page says neither tool does.",
       "https://posthog.com/compare/best-amplitude-alternatives",
       "**Suggested edit:** Note that Amplitude now schedules stops.",
@@ -114,7 +114,7 @@ describe("GitHubIssueCreator", () => {
     const [url, init] = spy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.github.com/repos/o/r/issues");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer ghs-test");
-    expect(JSON.parse(init.body as string).labels).toContain("impact:medium");
+    expect(JSON.parse(init.body as string).labels).toContain("impact:notable");
   });
 
   it("retries without labels when the repo rejects one", async () => {
