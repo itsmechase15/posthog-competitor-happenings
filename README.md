@@ -2,9 +2,22 @@
 
 Daily Slack alerts when Mixpanel or Amplitude ships something, with what PostHog should do about it.
 
-One run, every morning around 7am PT: read the competitors' changelogs, blogs, X accounts and newsletters, keep only what is genuinely new, ask a model what PostHog should do about each one, and post a short Slack message per item. Nothing gets posted twice, and nothing gets posted as raw JSON.
+One run, every morning around 7am PT: read the competitors' changelogs, blogs, X accounts and newsletters, keep only what is genuinely new, ask a model what PostHog should do about each one, open a GitHub issue with the detail, and post a short Slack message that links it. Nothing gets posted twice, and nothing gets posted as raw JSON.
 
 See [PLAN.md](./PLAN.md) for scope, phasing, and the handoff plan.
+
+## What a message looks like
+
+Every alert has the same six parts, in this order:
+
+1. **A feature image**, always first. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page. An alert is never posted without one.
+2. **One sentence** on what changed.
+3. **What you need to KNOW** — two to four short bullets of substance.
+4. **Impact** — `low`, `medium`, or `high`. A label, not a gate: everything new gets a message.
+5. **Recommended action** — one of four actions plus exactly one sentence.
+6. **Access GitHub issue for more information** — the issue opened for this item.
+
+PostHog page citations, suggested edits, and open questions are deliberately not in Slack. They are in the issue, which is where someone actually does the work. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a real rendered example.
 
 ## Try it without any secrets
 
@@ -18,7 +31,9 @@ That hits the live changelogs and sitemaps, indexes a few PostHog.com pages, and
 Two things degrade gracefully in that mode, and both say so in the log:
 
 - With no `DATABASE_URL`, the run uses an in-memory store. Every item looks new, which is why `FORCE_ANALYZE=true` is needed to get past the first-run guard described below.
-- With no `CURSOR_API_KEY`, analysis falls back to restating the source instead of assessing it. Those messages are labelled "Not model-analyzed" so nobody mistakes them for a recommendation.
+- With no `CURSOR_API_KEY`, analysis falls back to restating the source instead of assessing it. Those messages are labelled "not model-analyzed" so nobody mistakes them for a recommendation.
+
+A dry run never opens an issue, so the message says why the issue link is missing instead of pretending there is one. That note only ever appears in a dry run.
 
 ## Setup
 
@@ -40,6 +55,8 @@ Messages land in the private `#posthog-competitor-happenings` channel, id `C0C07
 2. **Incoming webhook (fallback).** Set `SLACK_WEBHOOK_URL` instead if creating a Slack app is more trouble than it is worth. The channel is fixed at the webhook, so `SLACK_CHANNEL_ID` is ignored.
 
 With neither set, the app prints the payloads and says so. Every run logs which path it chose, so a missing secret shows up in the first few lines of the job rather than as silence.
+
+The image is attached as a Block Kit `image` block pointing at a public URL, so no extra Slack scope is needed — `chat:write` is still the whole requirement.
 
 **A note on the Slack MCP plugin.** Posting to this channel was first proven interactively through the Slack MCP plugin connected in Cursor. That is a fine way to test by hand, but the daily GitHub Actions run deliberately does not depend on it — MCP needs a connected client session, and a scheduled runner has none. The bot token is the equivalent capability in a form a cron job can use.
 
@@ -66,12 +83,34 @@ npm run run -- \
 
 The item still has to exist in a live feed — this mode selects from what the fetchers actually returned, so it cannot manufacture an announcement. It writes both the rendered message and the exact `chat.postMessage` payload. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a checked-in example produced this way.
 
+## GitHub issues
+
+Each analyzed item gets an issue in this repo before the Slack message goes out, so the message has something to link. The issue carries what Slack no longer does: the full summary and key points, the impact, the recommended action with all of its detail, the PostHog pages to update as url + claim today + suggested edit, open questions, source links, and the feature image.
+
+It is labelled `competitor-happenings`, the competitor, `source:<source>`, `impact:<level>`, and `action:<action>`. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+
+Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` — no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: the message goes out without the link.
+
+## Feature images
+
+An alert always opens with a picture, tried in this order:
+
+1. Whatever the source attached — an RSS `enclosure` or `media:content`, an image embedded in the entry body, or a launch tweet's photo (or a video's preview frame).
+2. The feature page's own `og:image` / `twitter:image`, then in-content screenshots. Logos, icons, sprites, tracking pixels, tiny images, and SVGs are filtered out, and a site-wide brand card like `amplitude-default-seo.png` is pushed behind a real screenshot rather than used as the feature image.
+3. A screenshot of the feature page, rendered by the service in `SCREENSHOT_URL_TEMPLATE`. This is how the "screenshot the page" step happens without shipping a browser into the daily job, and Slack needs a public URL anyway.
+4. A generated card naming the competitor and the feature. Never pretty, but the message always has a valid image block.
+
+Every candidate is checked with a `HEAD` request first, so a 404 or an HTML error page never reaches Slack as an image.
+
 ## Environment
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes, unless `DRY_RUN=true` | — | Supabase pooler / Postgres connection string |
 | `CURSOR_API_KEY` | for analysis | — | Cursor SDK key. Unset falls back to the labelled heuristic |
+| `GITHUB_TOKEN` | for issues | — | Set automatically in Actions. Unset skips issue creation |
+| `GITHUB_REPOSITORY` | no | `itsmechase15/posthog-competitor-happenings` | `owner/repo` the issues are filed against |
+| `SCREENSHOT_URL_TEMPLATE` | no | thum.io renderer | URL template whose `{url}` becomes the page to screenshot |
 | `SLACK_BOT_TOKEN` | for posting | — | Bot token with `chat:write`. Preferred over the webhook |
 | `SLACK_CHANNEL_ID` | no | `C0C07A1DM09` | Channel the bot posts to. Ignored by the webhook path |
 | `SLACK_WEBHOOK_URL` | no | — | Incoming webhook, used only when there is no bot token |
@@ -101,6 +140,7 @@ Secrets:
 
 - `DATABASE_URL` — Supabase pooler connection string
 - `CURSOR_API_KEY`
+- `GITHUB_TOKEN` is **not** a secret you add: Actions provides it, and the workflow grants it `issues: write`
 - `SLACK_BOT_TOKEN` — preferred delivery path
 - `SLACK_WEBHOOK_URL` (optional, only used when there is no bot token)
 - `X_BEARER_TOKEN` (optional)
@@ -119,20 +159,23 @@ The runner uses the bot token rather than the Slack MCP plugin, for the reason i
 2. **Collect candidates.** Changelog RSS for both competitors, blog posts discovered by diffing each sitemap, the last few posts from each X account, and newsletters from the AgentMail inbox. A source that is unconfigured or throwing is logged and skipped — one broken feed never takes down the run.
 3. **Keep only what is new.** Dedupe against `items` on `(competitor, source, external_id)`. Sitemaps bump `lastmod` on site-wide re-renders, so blog novelty is decided by URL, not by date.
 4. **Fill in the body.** A sitemap only gives a URL, so new blog items get their article fetched for a real title and body before analysis.
-5. **Analyze.** Each new item goes to `claude-opus-5` through the Cursor SDK along with the PostHog claims indexed for that competitor. The reply is parsed and validated into a fixed shape: severity, summary, exactly one action, an action detail focused on the gap, and citations limited to URLs the model was actually given.
-6. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days — an item is only ever deduped once, so without that a Slack blip would lose the message for good.
+5. **Analyze.** Each new item goes to `claude-opus-5` through the Cursor SDK along with the PostHog claims indexed for that competitor. The reply is parsed and validated into a fixed shape: impact, a one-sentence summary, the key points, exactly one action, an action detail focused on the gap, citations limited to URLs the model was actually given, and any open questions.
+6. **Illustrate and file.** Find the feature image, then open the GitHub issue that carries the long detail. Both are stored alongside the verdict, so a retry re-posts the same picture and links the same issue instead of opening a second one.
+7. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days — an item is only ever deduped once, so without that a Slack blip would lose the message for good.
 
-Severity is a label, not a gate. Every new item gets a message; `minor`, `notable`, and `major` just set expectations before you read it.
+Impact is a label, not a gate. Every new item gets a message; `low`, `medium`, and `high` just set expectations before you read it.
 
 ## Data model
 
 Four tables, defined in [`migrations/001_init.sql`](./migrations/001_init.sql):
 
 - `items` — one row per competitor signal, unique on `(competitor, source, external_id)`
-- `analyses` — one row per analyzed item, with the structured verdict as `jsonb`
+- `analyses` — one row per analyzed item, with the structured verdict as `jsonb`, plus the feature image and the issue it was posted with
 - `pages` — the PostHog.com pages we have read, and which competitors they mention
 - `claims` — the individual competitor-mentioning paragraphs we can cite
 
+The rename from severity to impact needed no migration. The canonical verdict, impact included, lives in the `analysis` jsonb; the legacy `analyses.severity` column keeps getting the mapped old token (`low → minor`, `medium → notable`, `high → major`) so its `NOT NULL` still holds, and nothing reads it back. Rows written before the rename are read as impact on the way out.
+
 ## Tests
 
-`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed and camelCase model output), claim extraction, dedupe behaviour, and Slack formatting. The fixtures under `test/fixtures/` are synthetic and marked as such — they exercise the shapes real feeds use, and are not copies of real competitor announcements.
+`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, the GitHub issue draft, claim extraction, dedupe behaviour, and the Slack message shape — image first, the KNOW bullets, impact wording, the one-sentence action, and the issue link. The fixtures under `test/fixtures/` are synthetic and marked as such — they exercise the shapes real feeds use, and are not copies of real competitor announcements.

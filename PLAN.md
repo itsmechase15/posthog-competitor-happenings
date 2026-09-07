@@ -17,7 +17,6 @@ Help PostHog marketing stay current on Mixpanel + Amplitude product moves. Succe
 
 ### Out of v1 daily flow
 - Webinars/events, status/SDK feeds, LinkedIn, web UI, weekly digest, auto page edits
-- GitHub issues with screenshots (Phase 2)
 - PRs for page edits (Phase 3)
 
 ### Index PostHog.com
@@ -25,16 +24,41 @@ Index PostHog.com pages that mention Mixpanel or Amplitude. Cite URL + claim + s
 
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
-- Severity `minor | notable | major` = **label only** (not a post gate — every new signal can Slack)
+- Impact `low | medium | high` = **label only** (not a post gate — every new signal can Slack)
 - Exactly one recommended action:
   - update pages (existing compare/content)
   - new compare page
   - consider building (PostHog has nothing like this)
   - consider enhancing (related feature; gap)
 - Action copy focuses on the gap / why PostHog has nothing like it — not generic "why care"
+- "Severity" is gone from everything user-facing. Reads still accept the old
+  `minor | notable | major` and map them to `low | medium | high`, and the
+  legacy `analyses.severity` column keeps getting the mapped token so this
+  needed no migration
 
 ### Slack
-Short summary per new signal. Chase personal Slack first; PostHog channel later.
+One short, pretty message per new signal, in this order and nothing else:
+
+1. Feature image — changelog/blog image, tweet image, or a screenshot of the feature page. Never posted without one
+2. One sentence on what changed
+3. **What you need to KNOW** — a few short bullets
+4. **Impact** — low / medium / high
+5. **Recommended action** — the action plus one sentence
+6. **Access GitHub issue for more information** — link to the issue for this item
+
+PostHog page citations, suggested edits, and open questions are not in Slack.
+They live in the issue.
+
+### GitHub issues
+One issue per analyzed item, in this repo, opened before the Slack post so the
+message has something to link. Title is competitor + feature; body carries the
+full summary, key points, impact, recommended action with all its detail, the
+PostHog pages to update (url, claim, suggested edit), open questions, source
+links, and the feature image. Labelled by competitor, source, impact, and
+action. Uses the `GITHUB_TOKEN` Actions provides; with no token the run skips
+issue creation and keeps posting.
+
+Chase personal Slack first; PostHog channel later.
 
 ### Storage
 Supabase Postgres (`DATABASE_URL`). Project ref `hapeyljmsclryifyhqdr`.
@@ -47,6 +71,7 @@ TypeScript on GitHub. Cron via GitHub Actions (~7am PT).
 - `DATABASE_URL`
 - `SLACK_WEBHOOK_URL`
 - `CURSOR_API_KEY` (for Cursor SDK analysis)
+- `GITHUB_TOKEN` (free inside Actions; needs `issues: write`)
 - Optional: AgentMail API, `X_BEARER_TOKEN` if Actions cannot use other X access
 
 ## Handoff to Joe (PostHog Marketing Lead)

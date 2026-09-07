@@ -166,6 +166,28 @@ describe("resolveFeatureImage", () => {
     expect(image.url).toBe("https://cdn.invalid/good.png");
   });
 
+  it("screenshots the page rather than using a site-wide brand card", async () => {
+    const shot = `https://shots.invalid/${item.url}`;
+    stubHttp({
+      html: `<head><meta property="og:image" content="https://cdn.invalid/amplitude-default-seo.png" /></head>`,
+      types: {
+        [shot]: "image/jpeg",
+        "https://cdn.invalid/amplitude-default-seo.png": "image/png",
+      },
+    });
+    const image = await resolveFeatureImage(config, item);
+    expect(image).toMatchObject({ url: shot, origin: "screenshot" });
+  });
+
+  it("takes the brand card over a generated one when the screenshot fails", async () => {
+    stubHttp({
+      html: `<head><meta property="og:image" content="https://cdn.invalid/og-default.png" /></head>`,
+      types: { "https://cdn.invalid/og-default.png": "image/png" },
+    });
+    const image = await resolveFeatureImage(config, item);
+    expect(image).toMatchObject({ url: "https://cdn.invalid/og-default.png", origin: "page" });
+  });
+
   it("screenshots the feature page when it offers no picture", async () => {
     const shot = `https://shots.invalid/${item.url}`;
     stubHttp({ html: "<main><p>no pictures here</p></main>", types: { [shot]: "image/jpeg" } });

@@ -10,6 +10,17 @@ const log = createLogger("image");
 /** How many candidates from one page we are willing to probe before giving up. */
 const MAX_CANDIDATES = 4;
 
+/**
+ * Some sites hand every page the same og:image. Amplitude's releases all
+ * declare `amplitude-default-seo.png`, which is a brand card, not the feature.
+ * A screenshot of the actual page beats that, so these sort last.
+ */
+const GENERIC_PREVIEW = /(default[-_.]?(seo|og|share|social)|(og|seo|share|social)[-_.]?default)/i;
+
+export function isGenericPreview(url: string): boolean {
+  return GENERIC_PREVIEW.test(url);
+}
+
 /** Alt text is for screen readers and for Slack's own fallback line. */
 function altTextFor(item: Pick<CandidateItem, "competitor" | "title">): string {
   return truncate(`${COMPETITORS[item.competitor].label}: ${item.title}`, 140);
@@ -68,11 +79,10 @@ async function candidatesFromPage(config: Config, url: string): Promise<string[]
 }
 
 /**
- * Find the picture that goes at the top of an alert. Sources in the order Chase
- * asked for: whatever the feed or tweet attached, then the page's own og:image
- * or an in-content screenshot, then a rendered screenshot of the page, and
- * finally a generated card. The last step cannot fail, because an alert without
- * an image does not get posted.
+ * Find the picture that goes at the top of an alert: whatever the feed or tweet
+ * attached, then the page's own og:image or an in-content screenshot, then a
+ * rendered screenshot of the page, and finally a generated card. The last step
+ * cannot fail, because an alert without an image does not get posted.
  */
 export async function resolveFeatureImage(config: Config, item: StoredItem): Promise<FeatureImage> {
   const altText = altTextFor(item);
@@ -82,7 +92,11 @@ export async function resolveFeatureImage(config: Config, item: StoredItem): Pro
     return { url: fromSource, altText, origin: item.source === "x" ? "x" : "feed" };
   }
 
-  for (const candidate of await candidatesFromPage(config, item.url)) {
+  const candidates = await candidatesFromPage(config, item.url);
+  const specific = candidates.filter((url) => !isGenericPreview(url));
+  const generic = candidates.filter(isGenericPreview);
+
+  for (const candidate of specific) {
     if (await servesAnImage(config, candidate)) {
       return { url: candidate, altText, origin: "page" };
     }
@@ -91,6 +105,13 @@ export async function resolveFeatureImage(config: Config, item: StoredItem): Pro
   const shot = screenshotUrl(config.screenshotUrlTemplate, item.url);
   if (await servesAnImage(config, shot)) {
     return { url: shot, altText, origin: "screenshot" };
+  }
+
+  // A brand card is still better than a card we generated ourselves.
+  for (const candidate of generic) {
+    if (await servesAnImage(config, candidate)) {
+      return { url: candidate, altText, origin: "page" };
+    }
   }
 
   log.warn(`no usable image for ${item.url} — falling back to a generated card`);

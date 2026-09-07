@@ -17,6 +17,11 @@ concurrency:
   group: competitor-happenings
   cancel-in-progress: false
 
+# Each alert links a GitHub issue holding the detail Slack no longer carries.
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -54,6 +59,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          # Provided by Actions; opens the issue each Slack message links to.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Bot token is the preferred delivery path; the webhook is a fallback.
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
