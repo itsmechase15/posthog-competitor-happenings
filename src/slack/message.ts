@@ -91,8 +91,9 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
 
   const blocks: unknown[] = [
     // Always first, always present: the picture is what makes the alert
-    // readable at a glance in a busy channel.
-    { type: "image", image_url: image.url, alt_text: escape(image.altText || lead) },
+    // readable at a glance in a busy channel. alt_text is plain text, so it is
+    // the one string here that must not be mrkdwn-escaped.
+    { type: "image", image_url: image.url, alt_text: truncate(image.altText || lead, 300) },
     section(`*${escape(lead)}*`),
   ];
 
