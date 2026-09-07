@@ -40,6 +40,37 @@ describe("MemoryStore", () => {
     expect(await store.countItems("amplitude", "changelog")).toBe(0);
   });
 
+  it("ranks a page about the competitor above one that only name-drops it", async () => {
+    const store = new MemoryStore();
+    const claim = (url: string, paragraph: string) => ({
+      url,
+      competitor: "amplitude" as const,
+      paragraph,
+      heading: null,
+    });
+
+    // A long paragraph on an unrelated comparison page must not outrank the
+    // Amplitude pages just for being long.
+    await store.replaceClaimsForUrl("https://posthog.com/compare/best-fullstory-alternatives", [
+      claim(
+        "https://posthog.com/compare/best-fullstory-alternatives",
+        "a very long paragraph that merely mentions Amplitude in passing and goes on for a while",
+      ),
+    ]);
+    await store.replaceClaimsForUrl("https://posthog.com/blog/posthog-vs-amplitude", [
+      claim("https://posthog.com/blog/posthog-vs-amplitude", "short but on topic"),
+    ]);
+    await store.replaceClaimsForUrl("https://posthog.com/compare/best-amplitude-alternatives", [
+      claim("https://posthog.com/compare/best-amplitude-alternatives", "also short"),
+    ]);
+
+    expect((await store.getClaims("amplitude", 5)).map((c) => c.url)).toEqual([
+      "https://posthog.com/compare/best-amplitude-alternatives",
+      "https://posthog.com/blog/posthog-vs-amplitude",
+      "https://posthog.com/compare/best-fullstory-alternatives",
+    ]);
+  });
+
   it("ranks comparison-page claims ahead of docs", async () => {
     const store = new MemoryStore();
     await store.replaceClaimsForUrl("https://posthog.com/docs/migrate/mixpanel", [

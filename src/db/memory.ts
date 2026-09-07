@@ -73,10 +73,12 @@ export class MemoryStore implements Store {
 
   async getClaims(competitor: CompetitorId, limit: number): Promise<PostHogClaim[]> {
     const rank = (url: string): number => {
-      if (url.includes("/compare/")) return 0;
-      if (url.includes("posthog-vs-")) return 1;
-      if (url.includes("/docs/")) return 3;
-      return 2;
+      const named = url.includes(competitor);
+      if (named && url.includes("/compare/")) return 0;
+      if (named) return 1;
+      if (url.includes("/compare/")) return 2;
+      if (url.includes("/docs/")) return 4;
+      return 3;
     };
     return this.claims
       .filter((claim) => claim.competitor === competitor)

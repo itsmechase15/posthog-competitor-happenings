@@ -204,6 +204,30 @@ describe("PostgresStore", () => {
     expect(claims[0]).toMatchObject({ paragraph: "two", heading: "Pricing" });
   });
 
+  it("ranks a page about the competitor above one that only name-drops it", async () => {
+    const pages: Array<[string, string]> = [
+      [
+        "https://posthog.com/compare/best-fullstory-alternatives",
+        "a very long paragraph that merely mentions Amplitude in passing and keeps going",
+      ],
+      ["https://posthog.com/blog/posthog-vs-amplitude", "short but on topic"],
+      ["https://posthog.com/compare/best-amplitude-alternatives", "also short"],
+    ];
+
+    for (const [url, paragraph] of pages) {
+      await store.upsertPage({ url, title: url, text: "t", mentions: ["amplitude"], fetchedAt: new Date() });
+      await store.replaceClaimsForUrl(url, [
+        { url, competitor: "amplitude", paragraph, heading: null },
+      ]);
+    }
+
+    expect((await store.getClaims("amplitude", 5)).map((claim) => claim.url)).toEqual([
+      "https://posthog.com/compare/best-amplitude-alternatives",
+      "https://posthog.com/blog/posthog-vs-amplitude",
+      "https://posthog.com/compare/best-fullstory-alternatives",
+    ]);
+  });
+
   it("ranks comparison pages ahead of docs pages", async () => {
     const docsUrl = "https://posthog.com/docs/migrate/mixpanel";
     await store.upsertPage({

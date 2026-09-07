@@ -225,6 +225,11 @@ export class PostgresStore implements Store {
     }
   }
 
+  /**
+   * Ranked so a page written about this competitor outranks one that merely
+   * name-drops it: an Amplitude alert should cite the Amplitude comparison
+   * page, not whichever unrelated page happens to have the longest paragraph.
+   */
   async getClaims(competitor: CompetitorId, limit: number): Promise<PostHogClaim[]> {
     const result = await this.pool.query<{
       url: string;
@@ -237,10 +242,11 @@ export class PostgresStore implements Store {
        WHERE competitor = $1
        ORDER BY
          CASE
-           WHEN url LIKE '%/compare/%' THEN 0
-           WHEN url LIKE '%posthog-vs-%' THEN 1
-           WHEN url LIKE '%/docs/%' THEN 3
-           ELSE 2
+           WHEN url LIKE '%' || $1 || '%' AND url LIKE '%/compare/%' THEN 0
+           WHEN url LIKE '%' || $1 || '%' THEN 1
+           WHEN url LIKE '%/compare/%' THEN 2
+           WHEN url LIKE '%/docs/%' THEN 4
+           ELSE 3
          END,
          length(paragraph) DESC
        LIMIT $2`,
