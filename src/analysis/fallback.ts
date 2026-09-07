@@ -28,13 +28,20 @@ function bodyOf(item: StoredItem): string {
 function leadOf(item: StoredItem): string {
   const description = (item.raw as Record<string, unknown>).description;
   if (typeof description === "string" && description.trim().length > 0) {
-    return truncate(description.trim(), 280);
+    return truncate(stripLeadingLabel(description.trim()), 280);
   }
   return firstSentences(bodyOf(item), 280);
 }
 
+/** Changelogs often open with a bold "Description:" label that reads as noise in Slack. */
+const LEADING_LABEL = /^\s*(description|summary|overview|what's new|tl;dr)\s*[:\u2013\u2014-]\s*/i;
+
+function stripLeadingLabel(text: string): string {
+  return text.replace(LEADING_LABEL, "");
+}
+
 function firstSentences(text: string, max: number): string {
-  const trimmed = text.trim();
+  const trimmed = stripLeadingLabel(text.trim());
   if (!trimmed) return "";
   const sentences = trimmed.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
   return truncate(sentences || trimmed, max);

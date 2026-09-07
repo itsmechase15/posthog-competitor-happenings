@@ -113,6 +113,16 @@ describe("heuristicAnalysis", () => {
     expect(analysis.severity).toBe("notable");
   });
 
+  it("drops a leading changelog label so Slack does not read 'Description:'", () => {
+    const analysis = heuristicAnalysis(
+      { ...item, raw: { body: "Description: You can now schedule when an experiment stops." } },
+      [],
+    );
+    expect(analysis.summary).toBe(
+      "Mixpanel: You can now schedule when an experiment stops.",
+    );
+  });
+
   it("prefers the page's own description over its first paragraph", () => {
     const analysis = heuristicAnalysis(
       { ...item, raw: { ...item.raw, description: "A one-line summary of the post." } },
