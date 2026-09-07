@@ -12,6 +12,32 @@ import { itemKey, type RecordAnalysisInput, type Store } from "./store.js";
 
 const log = createLogger("db");
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
+
+/**
+ * Hosted Postgres (Supabase included) requires TLS but often presents a chain
+ * the default Node trust store does not recognise, so verification is relaxed
+ * unless `DATABASE_SSL_STRICT` asks for it. Local databases get no TLS at all,
+ * because they typically do not offer it.
+ */
+export function sslConfigFor(
+  connectionString: string,
+  strict = process.env.DATABASE_SSL_STRICT === "true",
+): pg.PoolConfig["ssl"] {
+  let host = "";
+  let sslmode: string | null = null;
+  try {
+    const url = new URL(connectionString);
+    host = url.hostname;
+    sslmode = url.searchParams.get("sslmode");
+  } catch {
+    // Not a URL (e.g. a key/value DSN); fall through to the TLS default.
+  }
+
+  if (sslmode === "disable" || LOCAL_HOSTS.has(host)) return false;
+  return strict ? true : { rejectUnauthorized: false };
+}
+
 export class PostgresStore implements Store {
   private readonly pool: pg.Pool;
 
@@ -19,9 +45,7 @@ export class PostgresStore implements Store {
     this.pool = new pg.Pool({
       connectionString,
       max: 4,
-      // Supabase and most hosted Postgres require TLS but present a chain the
-      // default Node trust store doesn't recognise.
-      ssl: connectionString.includes("localhost") ? undefined : { rejectUnauthorized: false },
+      ssl: sslConfigFor(connectionString),
     });
   }
 

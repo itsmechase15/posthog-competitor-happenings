@@ -1,0 +1,186 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { PGlite } from "@electric-sql/pglite";
+import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { PostgresStore, sslConfigFor } from "../src/db/pg.js";
+import type { CandidateItem } from "../src/types.js";
+
+/**
+ * Runs the real SQL against an embedded Postgres over the wire protocol, so
+ * the queries and the committed migration are checked together rather than
+ * only being exercised against a hand-written fake.
+ */
+const PORT = 55_432;
+const migration = readFileSync(
+  fileURLToPath(new URL("../migrations/001_init.sql", import.meta.url)),
+  "utf8",
+);
+
+let db: PGlite;
+let server: PGLiteSocketServer;
+let store: PostgresStore;
+
+beforeAll(async () => {
+  db = await PGlite.create();
+  await db.exec(migration);
+  server = new PGLiteSocketServer({ db, port: PORT, host: "127.0.0.1" });
+  await server.start();
+  store = new PostgresStore(`postgres://postgres@127.0.0.1:${PORT}/postgres`);
+}, 60_000);
+
+afterAll(async () => {
+  await store?.close();
+  await server?.stop();
+  await db?.close();
+});
+
+function item(externalId: string, overrides: Partial<CandidateItem> = {}): CandidateItem {
+  return {
+    competitor: "mixpanel",
+    source: "changelog",
+    externalId,
+    title: `Release ${externalId}`,
+    url: `https://fixture.invalid/${externalId}`,
+    publishedAt: new Date("2026-01-15T00:00:00Z"),
+    raw: { body: "fixture body" },
+    ...overrides,
+  };
+}
+
+describe("sslConfigFor", () => {
+  it("turns TLS off for local databases, however the host is spelled", () => {
+    for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+      expect(sslConfigFor(`postgres://postgres@${host}:5432/postgres`)).toBe(false);
+    }
+  });
+
+  it("turns TLS off when the connection string disables it", () => {
+    expect(sslConfigFor("postgres://user@db.example.com/postgres?sslmode=disable")).toBe(false);
+  });
+
+  it("relaxes verification for hosted databases by default", () => {
+    expect(sslConfigFor("postgres://user@db.supabase.co:5432/postgres")).toEqual({
+      rejectUnauthorized: false,
+    });
+  });
+
+  it("verifies the chain when asked to", () => {
+    expect(sslConfigFor("postgres://user@db.supabase.co:5432/postgres", true)).toBe(true);
+  });
+});
+
+describe("PostgresStore", () => {
+  it("inserts new items and ignores duplicates", async () => {
+    expect(await store.insertNewItems([item("a"), item("b")])).toHaveLength(2);
+    expect(await store.insertNewItems([item("b"), item("c")])).toHaveLength(1);
+  });
+
+  it("scopes the unique constraint to competitor and source", async () => {
+    const inserted = await store.insertNewItems([
+      item("a", { competitor: "amplitude" }),
+      item("a", { source: "blog" }),
+    ]);
+    expect(inserted).toHaveLength(2);
+  });
+
+  it("reports which keys it already has", async () => {
+    const known = await store.findKnownKeys([item("a"), item("does-not-exist")]);
+    expect([...known]).toEqual(["mixpanel|changelog|a"]);
+  });
+
+  it("counts items per competitor and source", async () => {
+    expect(await store.countItems("mixpanel", "changelog")).toBe(3);
+    expect(await store.countItems("mixpanel", "newsletter")).toBe(0);
+  });
+
+  it("records an analysis and stamps the Slack post", async () => {
+    const [stored] = await store.insertNewItems([item("analysis-target")]);
+    const analysisId = await store.recordAnalysis({
+      itemId: stored!.id,
+      model: "claude-opus-5",
+      analysis: {
+        severity: "notable",
+        summary: "s",
+        action: "update_pages",
+        actionDetail: "d",
+        posthogRefs: [{ url: "https://posthog.com/compare/x", claim: "c", suggestedEdit: "e" }],
+      },
+    });
+
+    const postedAt = new Date("2026-01-16T15:00:00Z");
+    await store.markSlackPosted(analysisId, postedAt);
+
+    const rows = await db.query<{
+      severity: string;
+      slack_posted_at: string | Date;
+      analysis: { action: string };
+    }>("select severity, slack_posted_at, analysis from analyses where id::text = $1", [
+      analysisId,
+    ]);
+    expect(rows.rows[0]?.severity).toBe("notable");
+    expect(rows.rows[0]?.analysis.action).toBe("update_pages");
+    expect(new Date(rows.rows[0]!.slack_posted_at).toISOString()).toBe(postedAt.toISOString());
+  });
+
+  it("upserts pages and reports when each was fetched", async () => {
+    const url = "https://posthog.com/compare/best-mixpanel-alternatives";
+    await store.upsertPage({
+      url,
+      title: "Old title",
+      text: "old",
+      mentions: ["mixpanel"],
+      fetchedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await store.upsertPage({
+      url,
+      title: "New title",
+      text: "new",
+      mentions: ["mixpanel", "amplitude"],
+      fetchedAt: new Date("2026-01-15T00:00:00Z"),
+    });
+
+    const indexed = await store.getIndexedPageUrls();
+    expect(indexed.get(url)?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+
+    const rows = await db.query<{ title: string; mentions: string[] }>(
+      "select title, mentions from pages where url = $1",
+      [url],
+    );
+    expect(rows.rows[0]?.title).toBe("New title");
+    expect(rows.rows[0]?.mentions).toEqual(["mixpanel", "amplitude"]);
+  });
+
+  it("replaces a page's claims instead of appending", async () => {
+    const url = "https://posthog.com/compare/best-mixpanel-alternatives";
+    const claim = { url, competitor: "mixpanel" as const, paragraph: "one", heading: "Pricing" };
+    await store.replaceClaimsForUrl(url, [claim]);
+    await store.replaceClaimsForUrl(url, [{ ...claim, paragraph: "two" }]);
+
+    const claims = await store.getClaims("mixpanel", 10);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ paragraph: "two", heading: "Pricing" });
+  });
+
+  it("ranks comparison pages ahead of docs pages", async () => {
+    const docsUrl = "https://posthog.com/docs/migrate/mixpanel";
+    await store.upsertPage({
+      url: docsUrl,
+      title: "Migrate",
+      text: "t",
+      mentions: ["mixpanel"],
+      fetchedAt: new Date(),
+    });
+    await store.replaceClaimsForUrl(docsUrl, [
+      {
+        url: docsUrl,
+        competitor: "mixpanel",
+        paragraph: "a much longer docs paragraph that would otherwise sort first",
+        heading: null,
+      },
+    ]);
+
+    const claims = await store.getClaims("mixpanel", 10);
+    expect(claims[0]?.url).toContain("/compare/");
+  });
+});
