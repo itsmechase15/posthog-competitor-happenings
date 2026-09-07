@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
   const retried = summary.retried > 0 ? `, ${summary.retried} retried` : "";
   log.info(
-    `done in ${seconds}s — ${summary.candidates} candidates, ${summary.newItems} new (${summary.seeded} seeded), ${summary.analyzed} analyzed${retried}, ${summary.posted} posted`,
+    `done in ${seconds}s — ${summary.candidates} candidates, ${summary.newItems} new (${summary.seeded} seeded), ${summary.analyzed} analyzed${retried}, ${summary.issuesOpened} issues opened, ${summary.posted} posted`,
   );
   for (const note of summary.notes) log.info(`note: ${note}`);
 }

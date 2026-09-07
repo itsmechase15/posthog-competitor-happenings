@@ -2,6 +2,8 @@ import type {
   Analysis,
   CandidateItem,
   CompetitorId,
+  FeatureImage,
+  IssueRef,
   PostHogClaim,
   PostHogPage,
   SourceId,
@@ -12,6 +14,10 @@ export interface RecordAnalysisInput {
   itemId: string;
   analysis: Analysis;
   model: string;
+  /** Stored with the analysis so a retry re-posts the same picture. */
+  image: FeatureImage | null;
+  /** Stored so a retry links the existing issue instead of opening a second one. */
+  issue: IssueRef | null;
 }
 
 export interface PendingPost {
@@ -19,6 +25,9 @@ export interface PendingPost {
   item: StoredItem;
   analysis: Analysis;
   model: string;
+  /** Null for analyses written before alerts carried an image. */
+  image: FeatureImage | null;
+  issue: IssueRef | null;
 }
 
 /**

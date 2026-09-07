@@ -1,6 +1,6 @@
 import { COMPETITORS } from "../config.js";
-import type { Analysis, PostHogClaim, Severity, StoredItem } from "../types.js";
-import { truncate } from "../util/text.js";
+import type { Analysis, Impact, PostHogClaim, StoredItem } from "../types.js";
+import { firstSentence, sentences, truncate } from "../util/text.js";
 
 export const FALLBACK_MODEL = "fallback-heuristic";
 
@@ -43,12 +43,24 @@ function stripLeadingLabel(text: string): string {
 function firstSentences(text: string, max: number): string {
   const trimmed = stripLeadingLabel(text.trim());
   if (!trimmed) return "";
-  const sentences = trimmed.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
-  return truncate(sentences || trimmed, max);
+  return truncate(sentences(trimmed).slice(0, 2).join(" ") || trimmed, max);
 }
 
-function severityOf(haystack: string): Severity {
-  return NOTABLE_SIGNALS.some((signal) => haystack.includes(signal)) ? "notable" : "minor";
+function impactOf(haystack: string): Impact {
+  return NOTABLE_SIGNALS.some((signal) => haystack.includes(signal)) ? "medium" : "low";
+}
+
+/**
+ * Slack wants one sentence up top and short lines below it, so the source's
+ * own lead is split rather than repeated in both places.
+ */
+function pointsFrom(lead: string, item: StoredItem): string[] {
+  const rest = sentences(lead).slice(1);
+  const source = rest.length > 0 ? rest : sentences(stripLeadingLabel(bodyOf(item))).slice(1, 4);
+  return source
+    .map((sentence) => truncate(sentence.trim(), 160))
+    .filter((sentence) => sentence.length > 0)
+    .slice(0, 3);
 }
 
 /**
@@ -75,13 +87,17 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
     ? `No model analysis ran, so this is unassessed. Closest indexed PostHog page is ${refs[0].url} — check whether it still describes ${competitor.label} accurately after this change.`
     : `No model analysis ran, so this is unassessed. No indexed PostHog.com page mentions ${competitor.label} in a way that covers this, which is itself the gap worth checking.`;
 
+  const summary = lead
+    ? `${competitor.label}: ${firstSentence(lead, 240)}`
+    : `${competitor.label} published "${item.title}".`;
+
   return {
-    severity: severityOf(haystack),
-    summary: lead
-      ? `${competitor.label}: ${lead}`
-      : `${competitor.label} published "${item.title}".`,
+    impact: impactOf(haystack),
+    summary,
+    keyPoints: pointsFrom(lead, item),
     action: refs.length > 0 ? "update_pages" : "consider_enhancing",
     actionDetail: detail,
     posthogRefs: refs,
+    openQuestions: [],
   };
 }

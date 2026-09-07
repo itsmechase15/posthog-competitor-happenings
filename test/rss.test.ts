@@ -40,6 +40,14 @@ describe("parseFeed", () => {
   it("strips tracking params from links", () => {
     expect(entries[1]?.link).toBe("https://fixture.invalid/releases/plain-title");
   });
+
+  it("picks up an embedded screenshot, skipping the logo next to it", () => {
+    expect(entries[0]?.image).toBe("https://fixture.invalid/img/widget-sync.png");
+  });
+
+  it("prefers an attached enclosure over the body", () => {
+    expect(entries[1]?.image).toBe("https://fixture.invalid/img/attached.jpg");
+  });
 });
 
 describe("changelogExternalId", () => {
@@ -60,6 +68,7 @@ describe("changelogExternalId", () => {
       guid: null,
       publishedAt: new Date("2026-01-01T00:00:00Z"),
       body: "",
+      image: null,
     });
     expect(id).toMatch(/^[0-9a-f]{40}$/);
   });
@@ -73,5 +82,10 @@ describe("feedEntriesToItems", () => {
       source: "changelog",
       externalId: "fixture-guid-001",
     });
+  });
+
+  it("carries the entry's image through for the alert", () => {
+    const items = feedEntriesToItems(COMPETITORS.mixpanel, parseFeed(xml));
+    expect(items[0]?.raw.image).toBe("https://fixture.invalid/img/widget-sync.png");
   });
 });

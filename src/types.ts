@@ -2,8 +2,24 @@ export type CompetitorId = "mixpanel" | "amplitude";
 
 export type SourceId = "changelog" | "blog" | "x" | "newsletter";
 
-export const SEVERITIES = ["minor", "notable", "major"] as const;
-export type Severity = (typeof SEVERITIES)[number];
+export const IMPACTS = ["low", "medium", "high"] as const;
+export type Impact = (typeof IMPACTS)[number];
+
+/** Phase 1 wrote these; rows and model replies still using them are read as impact. */
+export const LEGACY_SEVERITIES = ["minor", "notable", "major"] as const;
+export type LegacySeverity = (typeof LEGACY_SEVERITIES)[number];
+
+export const IMPACT_FROM_SEVERITY: Record<LegacySeverity, Impact> = {
+  minor: "low",
+  notable: "medium",
+  major: "high",
+};
+
+export const SEVERITY_FROM_IMPACT: Record<Impact, LegacySeverity> = {
+  low: "minor",
+  medium: "notable",
+  high: "major",
+};
 
 export const ACTIONS = [
   "update_pages",
@@ -38,17 +54,47 @@ export interface PostHogRef {
 }
 
 export interface Analysis {
-  severity: Severity;
+  impact: Impact;
+  /** One sentence. It is the first line Slack shows, so it carries the whole change. */
   summary: string;
+  /** The substance, as short lines under "What you need to KNOW". */
+  keyPoints: string[];
   action: Action;
+  /** Full reasoning. Slack shows its first sentence; the GitHub issue gets all of it. */
   actionDetail: string;
   posthogRefs: PostHogRef[];
+  /** What we could not tell from the source, for whoever picks the issue up. */
+  openQuestions: string[];
 }
 
 export interface AnalyzedItem {
   item: StoredItem;
   analysis: Analysis;
   model: string;
+}
+
+/** Where a feature image came from, in the order we try them. */
+export const IMAGE_ORIGINS = ["feed", "page", "x", "screenshot", "generated"] as const;
+export type ImageOrigin = (typeof IMAGE_ORIGINS)[number];
+
+/** The picture at the top of every alert. Slack renders it from a public URL. */
+export interface FeatureImage {
+  url: string;
+  altText: string;
+  origin: ImageOrigin;
+}
+
+export interface IssueRef {
+  url: string;
+  number: number;
+}
+
+/** An analyzed item with everything Slack needs: a picture and an issue to link. */
+export interface Alert extends AnalyzedItem {
+  image: FeatureImage;
+  issue: IssueRef | null;
+  /** Why there is no issue link. Dry runs only — a real run either links or stays quiet. */
+  issueNote?: string;
 }
 
 /** A PostHog.com page we have indexed. */
