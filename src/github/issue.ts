@@ -73,9 +73,9 @@ export function buildIssueBody(alert: AnalyzedItem, image: FeatureImage | null):
   const sections = [
     `**${competitor.label}** · ${item.source} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
-    `## Summary\n${analysis.summary}`,
-    `## What you need to know\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
+    `## What you need to know\n${analysis.summary}`,
     `## Impact\n${IMPACT_LABEL[analysis.impact]}`,
+    `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     `## Recommended action\n**${ACTION_LABEL[analysis.action]}** — ${analysis.actionDetail}`,
     `## PostHog pages to update\n${pagesSection(alert)}`,
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,

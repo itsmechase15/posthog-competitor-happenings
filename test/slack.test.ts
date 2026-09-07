@@ -15,7 +15,7 @@ const base: Alert = {
     raw: {},
   },
   analysis: {
-    impact: "medium",
+    impact: "notable",
     summary: "Amplitude experiments can now be scheduled to stop on their own.",
     keyPoints: [
       "Set a start time, an end time, or both, per experiment or flag.",
@@ -55,11 +55,16 @@ describe("buildSlackMessage", () => {
     });
   });
 
-  it("makes the first text line one sentence about the change, not a metadata line", () => {
+  it("puts the one-sentence summary under the KNOW heading, not on an unlabelled line", () => {
     const first = blocks[1]?.text?.text as string;
-    expect(first).toBe("*Amplitude experiments can now be scheduled to stop on their own.*");
-    expect(first).not.toContain("Notable");
+    expect(first).toBe(
+      "*What you need to KNOW*\nAmplitude experiments can now be scheduled to stop on their own.",
+    );
     expect(first).not.toContain("· changelog");
+  });
+
+  it("puts impact directly under the KNOW sentence", () => {
+    expect(blocks[2]?.text?.text).toBe("*Impact*  :large_orange_circle: Notable");
   });
 
   it("uses that same sentence as the notification text", () => {
@@ -74,9 +79,11 @@ describe("buildSlackMessage", () => {
     expect(message.text).toBe("Amplitude: Experiments can now stop on a schedule.");
   });
 
-  it("puts the substance under a KNOW heading, as bullets", () => {
-    expect(rendered).toContain("*What you need to KNOW*");
-    expect(rendered).toContain("• Set a start time, an end time, or both");
+  it("keeps the elaborating bullets under their own heading, below impact", () => {
+    const detail = blocks[3]?.text?.text as string;
+    expect(detail).toContain("*More detail*");
+    expect(detail).toContain("• Set a start time, an end time, or both");
+    expect(detail).not.toContain(base.analysis.summary);
   });
 
   it("falls back to the rest of the summary when there are no key points", () => {
@@ -91,34 +98,35 @@ describe("buildSlackMessage", () => {
     expect(JSON.stringify(message)).toContain("• It covers flags too.");
   });
 
-  it("drops the KNOW block when there is nothing to put in it", () => {
+  it("drops the detail block when there is nothing to put in it, and keeps KNOW", () => {
     const message = buildSlackMessage({
       ...base,
       analysis: { ...base.analysis, summary: "One sentence only.", keyPoints: [] },
     });
-    expect(JSON.stringify(message)).not.toContain("What you need to KNOW");
+    expect(JSON.stringify(message)).not.toContain("More detail");
+    expect(JSON.stringify(message)).toContain("What you need to KNOW");
   });
 
   it("labels impact and never says severity", () => {
     expect(rendered).toContain("*Impact*");
-    expect(rendered).toContain("Medium");
+    expect(rendered).toContain("Notable");
     expect(rendered.toLowerCase()).not.toContain("severity");
-    for (const legacy of ["Minor", "Notable", "Major"]) {
-      expect(rendered).not.toContain(legacy);
+    for (const dropped of ["Low", "Medium", "High"]) {
+      expect(rendered).not.toContain(dropped);
     }
   });
 
   it("shows each impact level with its own dot", () => {
-    const dots = (["low", "medium", "high"] as const).map((impact) => {
+    const dots = (["minor", "notable", "major"] as const).map((impact) => {
       const message = buildSlackMessage({ ...base, analysis: { ...base.analysis, impact } });
       return (message.blocks as Array<Record<string, any>>).find((block) =>
         (block.text?.text as string | undefined)?.startsWith("*Impact*"),
       )?.text?.text as string;
     });
     expect(dots).toEqual([
-      "*Impact*  :large_blue_circle: Low",
-      "*Impact*  :large_yellow_circle: Medium",
-      "*Impact*  :red_circle: High",
+      "*Impact*  :large_blue_circle: Minor",
+      "*Impact*  :large_orange_circle: Notable",
+      "*Impact*  :red_circle: Major",
     ]);
   });
 
@@ -147,6 +155,25 @@ describe("buildSlackMessage", () => {
 
   it("stays short: one image, a handful of sections, one footer", () => {
     expect(blocks.length).toBeLessThanOrEqual(7);
+  });
+
+  it("orders the blocks image, KNOW, impact, detail, action, issue, footer", () => {
+    const headings = blocks.map((block) =>
+      block.type === "image"
+        ? "image"
+        : block.type === "context"
+          ? "footer"
+          : ((block.text?.text as string).split("\n")[0] ?? ""),
+    );
+    expect(headings).toEqual([
+      "image",
+      "*What you need to KNOW*",
+      "*Impact*  :large_orange_circle: Notable",
+      "*More detail*",
+      "*Recommended action*",
+      `*<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>*`,
+      "footer",
+    ]);
   });
 
   it("says nothing about the missing issue outside a dry run", () => {
@@ -184,7 +211,8 @@ describe("buildSlackMessage", () => {
       true,
     );
     expect(text).toContain("*What you need to KNOW*");
-    expect(text).toContain("*Impact*  :large_yellow_circle: Medium");
+    expect(text).toContain("*Impact*  :large_orange_circle: Notable");
+    expect(text).toContain("*More detail*");
     expect(text).toContain(ISSUE_LINK_LABEL);
   });
 

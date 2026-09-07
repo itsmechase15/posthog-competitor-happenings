@@ -6,16 +6,16 @@ import type { Action, Impact, SourceId } from "./types.js";
  * rename.
  */
 export const IMPACT_LABEL: Record<Impact, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
+  minor: "Minor",
+  notable: "Notable",
+  major: "Major",
 };
 
 /** A glanceable dot in Slack, so impact reads before the word does. */
 export const IMPACT_EMOJI: Record<Impact, string> = {
-  low: ":large_blue_circle:",
-  medium: ":large_yellow_circle:",
-  high: ":red_circle:",
+  minor: ":large_blue_circle:",
+  notable: ":large_orange_circle:",
+  major: ":red_circle:",
 };
 
 export const ACTION_LABEL: Record<Action, string> = {

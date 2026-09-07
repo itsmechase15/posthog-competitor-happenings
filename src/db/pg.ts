@@ -2,7 +2,6 @@ import pg from "pg";
 import { parseStoredAlert, serializeAlertPayload } from "../analysis/schema.js";
 import { createLogger } from "../log.js";
 import {
-  SEVERITY_FROM_IMPACT,
   type CandidateItem,
   type CompetitorId,
   type PostHogClaim,
@@ -113,9 +112,8 @@ export class PostgresStore implements Store {
 
   /**
    * The canonical verdict — impact included — lives in the `analysis` jsonb.
-   * The legacy `severity` column keeps getting the mapped old token so the
-   * existing NOT NULL constraint holds and no migration is needed to deploy
-   * this; nothing reads it back.
+   * The legacy `severity` column keeps getting the impact token so its existing
+   * NOT NULL constraint holds and no migration is needed; nothing reads it back.
    */
   async recordAnalysis(input: RecordAnalysisInput): Promise<string> {
     const payload = serializeAlertPayload(input.analysis, input.image, input.issue);
@@ -125,7 +123,7 @@ export class PostgresStore implements Store {
        RETURNING id::text`,
       [
         input.itemId,
-        SEVERITY_FROM_IMPACT[input.analysis.impact],
+        input.analysis.impact,
         JSON.stringify(payload),
         input.model,
       ],
