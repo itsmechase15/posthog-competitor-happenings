@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC FIXTURE: a sitemap index, used to test child-sitemap discovery. -->
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://fixture.invalid/blog/sitemap.xml?sitemap=post-sitemap.xml</loc>
+    <lastmod>2026-01-15T17:30:43+00:00</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>https://fixture.invalid/blog/sitemap.xml?sitemap=tag-sitemap.xml</loc>
+  </sitemap>
+</sitemapindex>

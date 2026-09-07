@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC FIXTURE: a blog urlset covering the cases the blog fetcher must
+  handle — a real post, the blog index, a tag page, a paginated listing, a post
+  with no lastmod, and a stale post.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://fixture.invalid/blog/</loc>
+    <lastmod>2026-01-20T00:00:00Z</lastmod>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/blog/fresh-post</loc>
+    <xhtml:link rel="alternate" hreflang="en-US" href="https://fixture.invalid/blog/fresh-post" />
+    <lastmod>2026-01-19T12:00:00Z</lastmod>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/blog/tag/analytics</loc>
+    <lastmod>2026-01-19T12:00:00Z</lastmod>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/blog/page/3</loc>
+    <lastmod>2026-01-19T12:00:00Z</lastmod>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/blog/undated-post</loc>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/blog/stale-post</loc>
+    <lastmod>2025-06-01T12:00:00Z</lastmod>
+  </url>
+  <url>
+    <loc>https://fixture.invalid/pricing</loc>
+    <lastmod>2026-01-19T12:00:00Z</lastmod>
+  </url>
+</urlset>

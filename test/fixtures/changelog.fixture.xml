@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SYNTHETIC FIXTURE. Not a real competitor feed and not a copy of one.
+  It exists to exercise the RSS parser against the shapes real changelogs use:
+  CDATA titles, content:encoded bodies, non-permalink guids, and an entry with
+  no guid at all.
+-->
+<rss xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0">
+  <channel>
+    <title><![CDATA[Fixture Changelog]]></title>
+    <link>https://fixture.invalid/changelogs</link>
+    <item>
+      <title><![CDATA[2026-01-15]]></title>
+      <link>https://fixture.invalid/changelogs#2026-01-15</link>
+      <guid isPermaLink="false">fixture-guid-001</guid>
+      <pubDate>Thu, 15 Jan 2026 16:43:49 GMT</pubDate>
+      <content:encoded><![CDATA[<h2>Widget Sync</h2>
+<p>Widget Sync copies <code>widgets</code> between workspaces on a schedule.</p>
+<script>ignored()</script>]]></content:encoded>
+    </item>
+    <item>
+      <title>Plain title without CDATA</title>
+      <link>https://fixture.invalid/releases/plain-title?utm_source=rss</link>
+      <pubDate>Mon, 12 Jan 2026 09:00:00 GMT</pubDate>
+      <description>A short description used as the body when content:encoded is absent.</description>
+    </item>
+  </channel>
+</rss>
