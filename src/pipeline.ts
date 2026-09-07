@@ -1,0 +1,250 @@
+import { analyzeItems, createAnalyzer } from "./analysis/analyze.js";
+import type { Config } from "./config.js";
+import { createStore } from "./db/index.js";
+import { itemKey, type PendingPost, type Store } from "./db/store.js";
+import { createLogger } from "./log.js";
+import { refreshPostHogIndex } from "./posthog/index.js";
+import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
+import {
+  BotTokenPoster,
+  ConsolePoster,
+  WebhookPoster,
+  type SlackPoster,
+} from "./slack/post.js";
+import { enrichArticles } from "./sources/enrich.js";
+import { collectCandidates, groupBySourceKey } from "./sources/index.js";
+import type { CandidateItem, StoredItem } from "./types.js";
+import { daysAgo, normalizeUrl } from "./util/text.js";
+
+const log = createLogger("pipeline");
+
+/** How far back to look for analyses that never reached Slack. */
+const RETRY_WINDOW_DAYS = 3;
+
+export interface RunSummary {
+  candidates: number;
+  newItems: number;
+  seeded: number;
+  analyzed: number;
+  /** Analyses from an earlier run that failed to post and were tried again. */
+  retried: number;
+  posted: number;
+  notes: string[];
+}
+
+/**
+ * A bot token wins over a webhook: it can target the private channel by id and
+ * reports why Slack refused a message. The webhook stays as a fallback for a
+ * workspace where creating an app is more trouble than it is worth.
+ */
+export function createPoster(config: Config): SlackPoster {
+  if (config.dryRun) return new ConsolePoster("dry run");
+  if (config.slackBotToken) {
+    return new BotTokenPoster(config.slackBotToken, config.slackChannelId, config.httpTimeoutMs);
+  }
+  if (config.slackWebhookUrl) {
+    return new WebhookPoster(config.slackWebhookUrl, config.httpTimeoutMs);
+  }
+  return new ConsolePoster("neither SLACK_BOT_TOKEN nor SLACK_WEBHOOK_URL is set");
+}
+
+/** Items with no date are kept: a missing date is not evidence of staleness. */
+function withinLookback(item: CandidateItem, since: Date): boolean {
+  return item.publishedAt === null || item.publishedAt >= since;
+}
+
+/**
+ * Decide which new items to analyze. The first time we see a competitor+source
+ * pair its whole backlog looks new, so that batch is recorded and skipped
+ * instead of being fired at Slack all at once.
+ */
+async function selectForAnalysis(
+  config: Config,
+  store: Store,
+  candidates: CandidateItem[],
+): Promise<{ toAnalyze: StoredItem[]; seeded: number; newItems: number }> {
+  const since = daysAgo(config.lookbackDays);
+  const known = await store.findKnownKeys(candidates);
+  const seenThisRun = new Set<string>();
+
+  const unseen = candidates.filter((item) => {
+    const key = itemKey(item);
+    if (known.has(key) || seenThisRun.has(key)) return false;
+    seenThisRun.add(key);
+    return true;
+  });
+
+  const toAnalyze: StoredItem[] = [];
+  let seeded = 0;
+  let newItems = 0;
+
+  for (const group of groupBySourceKey(unseen).values()) {
+    const existing = await store.countItems(group.competitor, group.source);
+    const isSeedRun = existing === 0 && !config.forceAnalyze;
+
+    const accepted = isSeedRun
+      ? group.items
+      : group.items
+          .filter((item) => withinLookback(item, since))
+          .sort(
+            (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0),
+          )
+          .slice(0, config.maxItemsPerSource);
+
+    // Seed runs never reach analysis, so there is nothing to enrich for.
+    const prepared = isSeedRun ? accepted : await enrichArticles(config, accepted);
+    const stored = await store.insertNewItems(prepared);
+    newItems += stored.length;
+
+    if (isSeedRun) {
+      seeded += stored.length;
+      log.info(
+        `${group.competitor}/${group.source}: first run, recorded ${stored.length} existing items without alerting`,
+      );
+      continue;
+    }
+
+    toAnalyze.push(...stored);
+  }
+
+  toAnalyze.sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
+  if (toAnalyze.length > config.maxItemsPerRun) {
+    log.warn(
+      `capping this run at ${config.maxItemsPerRun} of ${toAnalyze.length} new items (MAX_ITEMS_PER_RUN)`,
+    );
+  }
+
+  return { toAnalyze: toAnalyze.slice(0, config.maxItemsPerRun), seeded, newItems };
+}
+
+/**
+ * Run one named item through the whole pipeline, ignoring dedupe and the
+ * first-run seed guard. Built for verifying a specific announcement end to end
+ * — the item still has to exist in a live feed, so this cannot manufacture one.
+ */
+export async function runSingleItem(config: Config, targetUrl: string): Promise<SlackMessage> {
+  const store = createStore(config, { allowMemoryFallback: true });
+  const poster = createPoster(config);
+  log.info(`Slack delivery: ${poster.description}`);
+
+  try {
+    await refreshPostHogIndex(config, store);
+
+    const { candidates } = await collectCandidates(config);
+    const wanted = normalizeUrl(targetUrl);
+    const match = candidates.find(
+      (candidate) =>
+        normalizeUrl(candidate.url) === wanted || normalizeUrl(candidate.externalId) === wanted,
+    );
+    if (!match) {
+      throw new Error(
+        `no live feed item matches ${targetUrl} — found ${candidates.length} candidates, none with that URL`,
+      );
+    }
+    log.info(`matched ${match.competitor}/${match.source} "${match.title}"`);
+
+    const [prepared] = await enrichArticles(config, [match]);
+    const [stored] = await store.insertNewItems([prepared ?? match]);
+    if (!stored) throw new Error(`failed to store ${targetUrl}`);
+
+    const analyzer = createAnalyzer(config);
+    const [analyzed] = await analyzeItems([stored], store, analyzer);
+    if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
+
+    const message = buildSlackMessage(analyzed);
+    const analysisId = await store.recordAnalysis({
+      itemId: stored.id,
+      analysis: analyzed.analysis,
+      model: analyzed.model,
+    });
+    await poster.post(message);
+    await store.markSlackPosted(analysisId, new Date());
+
+    return message;
+  } finally {
+    await store.close();
+  }
+}
+
+export async function runCycle(config: Config): Promise<RunSummary> {
+  const store = createStore(config);
+  const poster = createPoster(config);
+  log.info(`Slack delivery: ${poster.description}`);
+  const summary: RunSummary = {
+    candidates: 0,
+    newItems: 0,
+    seeded: 0,
+    analyzed: 0,
+    retried: 0,
+    posted: 0,
+    notes: [],
+  };
+
+  try {
+    try {
+      await refreshPostHogIndex(config, store);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error(`PostHog index refresh failed: ${message}`);
+      summary.notes.push(`posthog-index: failed (${message})`);
+    }
+
+    const collection = await collectCandidates(config);
+    summary.candidates = collection.candidates.length;
+    summary.notes.push(...collection.notes);
+    log.info(`collected ${collection.candidates.length} candidates`);
+
+    const selection = await selectForAnalysis(config, store, collection.candidates);
+    summary.newItems = selection.newItems;
+    summary.seeded = selection.seeded;
+    log.info(`${selection.toAnalyze.length} new items to analyze`);
+
+    const analyzer = createAnalyzer(config);
+    const analyzed = await analyzeItems(selection.toAnalyze, store, analyzer);
+    summary.analyzed = analyzed.length;
+
+    const pending = await store.getUnpostedAnalyses(
+      daysAgo(RETRY_WINDOW_DAYS),
+      config.maxItemsPerRun,
+    );
+    if (pending.length > 0) {
+      log.info(`retrying ${pending.length} analyses that never reached Slack`);
+      summary.retried = pending.length;
+    }
+
+    const queue: PendingPost[] = [
+      ...pending,
+      ...(await Promise.all(
+        analyzed.map(async (entry) => ({
+          analysisId: await store.recordAnalysis({
+            itemId: entry.item.id,
+            analysis: entry.analysis,
+            model: entry.model,
+          }),
+          item: entry.item,
+          analysis: entry.analysis,
+          model: entry.model,
+        })),
+      )),
+    ];
+
+    for (const entry of queue) {
+      try {
+        await poster.post(buildSlackMessage(entry));
+        await store.markSlackPosted(entry.analysisId, new Date());
+        summary.posted += 1;
+      } catch (error) {
+        // Left unstamped on purpose: the next run picks it up again.
+        log.error(
+          `failed to post ${entry.item.url} to Slack`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    return summary;
+  } finally {
+    await store.close();
+  }
+}

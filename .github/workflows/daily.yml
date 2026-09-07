@@ -1,0 +1,64 @@
+name: Daily competitor happenings
+
+on:
+  schedule:
+    # GitHub cron is UTC only, so both DST offsets are scheduled and the job
+    # bails out on whichever one is not 07:00 in Los Angeles today.
+    - cron: "0 14 * * *" # 07:00 PDT
+    - cron: "0 15 * * *" # 07:00 PST
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the Slack payloads instead of posting them"
+        type: boolean
+        default: false
+
+concurrency:
+  group: competitor-happenings
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check it is 07:00 in America/Los_Angeles
+        id: window
+        run: |
+          hour="$(TZ=America/Los_Angeles date +%H)"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$hour" != "07" ]; then
+            echo "Local hour is $hour — the other cron entry covers today."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.proceed == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.window.outputs.proceed == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.window.outputs.proceed == 'true'
+
+      - run: npm run build
+        if: steps.window.outputs.proceed == 'true'
+
+      - name: Run one cycle
+        if: steps.window.outputs.proceed == 'true'
+        run: node dist/index.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          # Bot token is the preferred delivery path; the webhook is a fallback.
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
