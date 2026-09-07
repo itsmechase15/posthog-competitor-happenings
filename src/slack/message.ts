@@ -37,6 +37,32 @@ function link(url: string, label: string): string {
   return `<${url}|${escape(truncate(label, 140))}>`;
 }
 
+/**
+ * The message as Slack renders it, for logs and artifacts. Section text is
+ * already mrkdwn, so this only has to join the blocks back together.
+ */
+export function renderMessageText(message: SlackMessage): string {
+  const parts: string[] = [];
+
+  for (const block of message.blocks as Array<{
+    type?: string;
+    text?: { text?: string };
+    elements?: Array<{ text?: string }>;
+  }>) {
+    if (block.type === "section" && block.text?.text) {
+      parts.push(block.text.text);
+    } else if (block.type === "context") {
+      const text = (block.elements ?? [])
+        .map((element) => element.text ?? "")
+        .filter(Boolean)
+        .join(" ");
+      if (text) parts.push(`_${text}_`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
 export function buildSlackMessage(analyzed: AnalyzedItem): SlackMessage {
   const { item, analysis, model } = analyzed;
   const competitor = COMPETITORS[item.competitor];

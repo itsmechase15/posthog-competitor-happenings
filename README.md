@@ -48,10 +48,23 @@ With neither set, the app prints the payloads and says so. Every run logs which 
 | Command | What it does |
 | --- | --- |
 | `npm run run` | One full cycle via `tsx`, no build step |
+| `npm run run -- --url <url>` | Push one named item through the whole pipeline, ignoring dedupe and the seed guard. Add `--out <path>` to save the message |
 | `npm run build` | Compile to `dist/` |
 | `npm start` | One full cycle from `dist/` |
 | `npm run typecheck` | Type-check `src/` and `test/` |
 | `npm test` | Unit tests for the parsers, analysis contract, and Slack formatting |
+
+## Verifying one specific item
+
+To see exactly what a given announcement produces, without waiting for a cron run or fighting the dedupe table:
+
+```bash
+npm run run -- \
+  --url https://amplitude.com/releases/schedule-experiment-stop \
+  --out artifacts/slack-test-message.md
+```
+
+The item still has to exist in a live feed — this mode selects from what the fetchers actually returned, so it cannot manufacture an announcement. It writes both the rendered message and the exact `chat.postMessage` payload. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a checked-in example produced this way.
 
 ## Environment
 

@@ -3,6 +3,7 @@ import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
 import type { Analysis, AnalyzedItem, PostHogClaim, StoredItem } from "../types.js";
+import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
 import { buildAnalysisPrompt } from "./prompt.js";
 import { parseAnalysis } from "./schema.js";
@@ -32,11 +33,6 @@ export function diversifyClaims(claims: PostHogClaim[], limit: number): PostHogC
   }
 
   return picked;
-}
-
-export interface Analyzer {
-  readonly model: string;
-  analyze(item: StoredItem, claims: PostHogClaim[]): Promise<Analysis>;
 }
 
 class CursorAnalyzer implements Analyzer {
@@ -102,6 +98,8 @@ export function createAnalyzer(config: Config): Analyzer {
  * Analyze each new item against the PostHog claims we have indexed for its
  * competitor. A failed analysis drops that item and leaves the rest alone.
  */
+export type { Analyzer };
+
 export async function analyzeItems(
   items: StoredItem[],
   store: Store,

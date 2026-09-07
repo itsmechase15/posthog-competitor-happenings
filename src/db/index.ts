@@ -6,9 +6,18 @@ import { itemKey, type Store } from "./store.js";
 
 const log = createLogger("db");
 
-export function createStore(config: Config): Store {
+export interface CreateStoreOptions {
+  /**
+   * Permit the in-memory store when `DATABASE_URL` is unset. On by default for
+   * dry runs and single-item verification; off for the daily run, where a
+   * missing database would silently re-alert everything tomorrow.
+   */
+  allowMemoryFallback?: boolean;
+}
+
+export function createStore(config: Config, options: CreateStoreOptions = {}): Store {
   if (!config.databaseUrl) {
-    if (!config.dryRun) {
+    if (!config.dryRun && !options.allowMemoryFallback) {
       throw new Error("DATABASE_URL is required unless DRY_RUN=true");
     }
     log.warn("DATABASE_URL is unset — using an in-memory store, nothing will persist");

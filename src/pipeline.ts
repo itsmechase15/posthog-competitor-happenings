@@ -4,7 +4,7 @@ import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
 import { createLogger } from "./log.js";
 import { refreshPostHogIndex } from "./posthog/index.js";
-import { buildSlackMessage } from "./slack/message.js";
+import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
 import {
   BotTokenPoster,
   ConsolePoster,
@@ -14,7 +14,7 @@ import {
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
 import type { CandidateItem, StoredItem } from "./types.js";
-import { daysAgo } from "./util/text.js";
+import { daysAgo, normalizeUrl } from "./util/text.js";
 
 const log = createLogger("pipeline");
 
@@ -116,6 +116,55 @@ async function selectForAnalysis(
   }
 
   return { toAnalyze: toAnalyze.slice(0, config.maxItemsPerRun), seeded, newItems };
+}
+
+/**
+ * Run one named item through the whole pipeline, ignoring dedupe and the
+ * first-run seed guard. Built for verifying a specific announcement end to end
+ * — the item still has to exist in a live feed, so this cannot manufacture one.
+ */
+export async function runSingleItem(config: Config, targetUrl: string): Promise<SlackMessage> {
+  const store = createStore(config, { allowMemoryFallback: true });
+  const poster = createPoster(config);
+  log.info(`Slack delivery: ${poster.description}`);
+
+  try {
+    await refreshPostHogIndex(config, store);
+
+    const { candidates } = await collectCandidates(config);
+    const wanted = normalizeUrl(targetUrl);
+    const match = candidates.find(
+      (candidate) =>
+        normalizeUrl(candidate.url) === wanted || normalizeUrl(candidate.externalId) === wanted,
+    );
+    if (!match) {
+      throw new Error(
+        `no live feed item matches ${targetUrl} — found ${candidates.length} candidates, none with that URL`,
+      );
+    }
+    log.info(`matched ${match.competitor}/${match.source} "${match.title}"`);
+
+    const [prepared] = await enrichArticles(config, [match]);
+    const [stored] = await store.insertNewItems([prepared ?? match]);
+    if (!stored) throw new Error(`failed to store ${targetUrl}`);
+
+    const analyzer = createAnalyzer(config);
+    const [analyzed] = await analyzeItems([stored], store, analyzer);
+    if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
+
+    const message = buildSlackMessage(analyzed);
+    const analysisId = await store.recordAnalysis({
+      itemId: stored.id,
+      analysis: analyzed.analysis,
+      model: analyzed.model,
+    });
+    await poster.post(message);
+    await store.markSlackPosted(analysisId, new Date());
+
+    return message;
+  } finally {
+    await store.close();
+  }
 }
 
 export async function runCycle(config: Config): Promise<RunSummary> {

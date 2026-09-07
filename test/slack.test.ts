@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FALLBACK_MODEL } from "../src/analysis/fallback.js";
-import { buildSlackMessage } from "../src/slack/message.js";
+import { buildSlackMessage, renderMessageText } from "../src/slack/message.js";
 import type { AnalyzedItem } from "../src/types.js";
 
 const base: AnalyzedItem = {
@@ -63,6 +63,14 @@ describe("buildSlackMessage", () => {
   it("says so when the summary was not model-analyzed", () => {
     const heuristic = buildSlackMessage({ ...base, model: FALLBACK_MODEL });
     expect(JSON.stringify(heuristic)).toContain("Not model-analyzed");
+  });
+
+  it("renders to readable text for logs and artifacts", () => {
+    const text = renderMessageText(message);
+    expect(text).toContain("*Amplitude · Notable · changelog*");
+    expect(text).toContain("*Consider enhancing* —");
+    expect(text).toContain("*PostHog pages to check*");
+    expect(text.trimEnd().endsWith("_Analyzed with claude-opus-5_")).toBe(true);
   });
 
   it("escapes Slack mrkdwn control characters", () => {
