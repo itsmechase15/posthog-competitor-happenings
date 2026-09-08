@@ -291,6 +291,18 @@ describe("parseStoredAlert", () => {
   it("reads a row stored on the low/medium/high scale", () => {
     expect(parseStoredAlert({ ...valid, impact: "high" }).analysis.impact).toBe("major");
   });
+
+  it("reads back an alert the relevance guard left with no action", () => {
+    const stored = parseStoredAlert({ ...valid, actions: [], issues: [] });
+    expect(stored.analysis.actions).toEqual([]);
+    expect(stored.issues).toEqual([]);
+  });
+
+  it("still refuses a model reply that names no action", () => {
+    expect(() => parseAnalysis(JSON.stringify({ ...valid, actions: [] }))).toThrow(
+      /missing an action/,
+    );
+  });
 });
 
 const item: StoredItem = {
@@ -562,6 +574,26 @@ describe("buildAnalysisPrompt", () => {
 
     it("covers marketing, product marketing, and compare pages", () => {
       expect(withRefs).toContain("marketing, product marketing, or compare page");
+    });
+
+    it("ties the page edit to the launch in the signal, not the page it sits on", () => {
+      expect(withRefs).toContain(
+        "Every update_pages action has to be about the competitor product update in this signal",
+      );
+      expect(withRefs).toContain("not a licence to fix the rest of the page it touches");
+      expect(withRefs).toContain("basic A/B testing in November 2025");
+      expect(withRefs).toContain("same page, different topic");
+    });
+
+    it("says a small launch can need no page edit at all", () => {
+      expect(withRefs).toContain("Small launches often need no page edit at all");
+      expect(withRefs).toContain("Silence about a small lifecycle control is fine");
+    });
+
+    it("stops a notable impact from buying a page edit", () => {
+      expect(withRefs).toContain(
+        "A notable or major impact is not a reason for update_pages",
+      );
     });
   });
 
