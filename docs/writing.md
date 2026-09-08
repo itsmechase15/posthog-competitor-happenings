@@ -39,8 +39,36 @@ changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes) and
 lifecycle](https://posthog.com/docs/experiments/managing-lifecycle), so the
 honest line is "PostHog schedules flag changes, but an experiment still has to
 be stopped by hand", not "PostHog cannot schedule anything". When the docs in
-context do not settle it, the action drops to `update_pages` or a lower impact
-and the doubt goes in `open_questions` instead of becoming an invented gap.
+context do not settle it, the action keeps a lower impact and the doubt goes in
+`open_questions` instead of becoming an invented gap.
+
+## Only ask for a page edit when the page is wrong
+
+`update_pages` sends someone to edit PostHog's marketing, product marketing, or
+compare pages, so it needs a reason a reader can act on. One of these has to
+hold, and the action says which:
+
+1. The page is now wrong or misleading. It says the competitor cannot do
+   something they now do, or claims a parity or an advantage this launch
+   breaks.
+2. PostHog has an adjacent capability the docs confirm, and the page
+   understates it or reads as if PostHog does not have it.
+3. The competitor's own compare page claims PostHog does not do something
+   PostHog does do, and PostHog's page does not answer that claim.
+
+"Customers might ask about this", a feature matrix with no row for it, and "the
+page could be stronger" are not page errors, and they are the ones that used to
+fill the action up. When nothing in context is wrong, understated, or
+contradicted, `update_pages` is left out and the other actions carry the alert.
+It is also not the fallback for a gap the docs could not settle: an unverified
+gap is an open question, not a page edit.
+
+Reason 3 needs their copy in front of the model, so
+[`src/competitor/compare.ts`](../src/competitor/compare.ts) reads the
+`comparePages` in [`src/config.ts`](../src/config.ts) once per competitor per
+run – today https://amplitude.com/compare/posthog and
+https://mixpanel.com/compare/posthog – and quotes what they say about PostHog.
+That is their sales copy, so it never settles what PostHog ships. The docs do.
 
 ## Where this is enforced
 
@@ -51,6 +79,9 @@ and the doubt goes in `open_questions` instead of becoming an invented gap.
   the docs a recommendation is checked against.
   [`src/posthog/docs.ts`](../src/posthog/docs.ts) puts the relevant docs in the
   prompt.
+- [`src/competitor/compare.ts`](../src/competitor/compare.ts) reads the
+  competitors' own comparison pages, so a claim that PostHog does not do
+  something can be answered rather than guessed at.
 - [`verifyAgainstDocs`](../src/analysis/verify.ts) reconciles the reply with
   those docs: a `consider_building` the docs contradict becomes
   `consider_enhancing` against the product that already exists, and a gap claim

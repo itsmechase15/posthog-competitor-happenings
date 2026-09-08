@@ -2,7 +2,7 @@
 
 Daily Slack alerts when Mixpanel or Amplitude ships something, with what PostHog should do about it.
 
-One run, every morning around 7am PT: read the competitors' changelogs, blogs, X accounts and newsletters, keep only what is genuinely new, ask a model what PostHog should do about each one, open a GitHub issue with the detail, and post a short Slack message that links it. Nothing gets posted twice, and nothing gets posted as raw JSON.
+One run, every morning around 7am PT: read the competitors' changelogs, blogs, X accounts and newsletters, keep only what is genuinely new, ask a model what PostHog should do about each one, open a GitHub issue per recommended action, and post a short Slack message that links each of them. Nothing gets posted twice, and nothing gets posted as raw JSON.
 
 See [PLAN.md](./PLAN.md) for scope, phasing, and the handoff plan.
 
@@ -14,9 +14,10 @@ Every alert has the same parts, in this order:
 2. **What you need to KNOW** – the heading carries the one sentence on what changed. There is no unlabeled line above it competing to be read first.
 3. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
 4. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
-5. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line and exactly one short sentence below. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
-6. **Access GitHub issue for more information** – the issue opened for this item.
-7. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
+5. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line, exactly one short sentence below, and a link to that action's own GitHub issue. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
+6. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
+
+There is no single issue link for the whole alert. Three actions means three issues and three links, one under each action, because the work lands on different desks: marketing owns the page actions, product owns building and enhancing.
 
 PostHog page citations, suggested edits, and open questions are deliberately not in Slack. They are in the issue, which is where someone actually does the work. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a real rendered example.
 
@@ -36,7 +37,7 @@ Two things degrade gracefully in that mode, and both say so in the log:
 - With no `DATABASE_URL`, the run uses an in-memory store. Every item looks new, which is why `FORCE_ANALYZE=true` is needed to get past the first-run guard described below.
 - With no `CURSOR_API_KEY`, analysis falls back to restating the source instead of assessing it. Those messages are labeled "not model-analyzed" so nobody mistakes them for a recommendation.
 
-A dry run never opens an issue, so the message says why the issue link is missing instead of pretending there is one. That note only ever appears in a dry run.
+A dry run never opens an issue, so the message says why the issue links are missing instead of pretending there are some. That note only ever appears in a dry run.
 
 ## Setup
 
@@ -91,11 +92,13 @@ The item still has to exist in a live feed – this mode selects from what the f
 
 ## GitHub issues
 
-Each analyzed item gets an issue in this repo before the Slack message goes out, so the message has something to link. The issue carries what Slack no longer does: the full summary and key points, the impact, the recommended action with all of its detail, the PostHog pages to update as url + claim today + suggested edit, open questions, source links, and the feature image.
+Each recommended action gets its own issue in this repo, opened before the Slack message goes out so every action has something to link. An alert that says "enhance Experiments, enhance feature flags, and fix the compare page" is three issues, because that is three pieces of work for two teams: marketing owns `update_pages` and `new_compare_page`, product owns `consider_building` and `consider_enhancing`.
 
-It is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, and `action:<action>`. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+Each issue is scoped to its own action and titled `Competitor: feature – Action`. It carries what Slack no longer does: that action in full, the summary and key points, the impact, open questions, source links, and the feature image. Marketing's issues get the PostHog pages to update as url + claim today + suggested edit; product's get the same pages as context, without the edits. Both name the sibling actions so nobody has to guess whether the rest is being handled.
 
-Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: the message goes out without the link.
+An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, and `product:<feature>` when the action names a PostHog product. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+
+Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: that action's block goes out without a link, and the other actions keep theirs.
 
 ## Feature images
 
@@ -172,8 +175,8 @@ The runner uses the bot token rather than the Slack MCP plugin, for the reason i
 2. **Collect candidates.** Changelog RSS for both competitors, blog posts discovered by diffing each sitemap, the last few posts from each X account, and newsletters from the AgentMail inbox. A source that is unconfigured or throwing is logged and skipped – one broken feed never takes down the run.
 3. **Keep only what is new.** Dedupe against `items` on `(competitor, source, external_id)`. Sitemaps bump `lastmod` on site-wide re-renders, so blog novelty is decided by URL, not by date.
 4. **Fill in the body.** A sitemap only gives a URL, so new blog items get their article fetched for a real title and body before analysis.
-5. **Analyze against the docs.** Each new item goes to `claude-opus-5` through the Cursor SDK with two kinds of PostHog context: the claims indexed for that competitor, which find stale marketing copy, and the canonical docs for the products the signal touches, which are the only evidence for what PostHog actually ships. An action may only say PostHog cannot do something when a docs excerpt in front of the model shows that gap, and `verifyAgainstDocs` re-checks the reply: a `consider_building` the docs contradict becomes `consider_enhancing` against the product that already exists, and a gap claim with no docs page behind it gets one or an open question saying it was never verified. The reply is parsed and validated into a fixed shape: impact, a one-sentence summary, the key points, one to three actions, an action detail focused on the gap, citations limited to URLs the model was actually given, and any open questions.
-6. **Illustrate and file.** Find the feature image, then open the GitHub issue that carries the long detail. Both are stored alongside the verdict, so a retry re-posts the same picture and links the same issue instead of opening a second one.
+5. **Analyze against the docs.** Each new item goes to `claude-opus-5` through the Cursor SDK with three kinds of context: the claims indexed for that competitor, which find stale marketing copy; the canonical docs for the products the signal touches, which are the only evidence for what PostHog actually ships; and the competitor's own comparison page about PostHog, read fresh once per competitor per run, which is where a claim that PostHog cannot do something turns up. An action may only say PostHog cannot do something when a docs excerpt in front of the model shows that gap, and `verifyAgainstDocs` re-checks the reply: a `consider_building` the docs contradict becomes `consider_enhancing` against the product that already exists, and a gap claim with no docs page behind it gets one or an open question saying it was never verified. The reply is parsed and validated into a fixed shape: impact, a one-sentence summary, the key points, one to three actions, an action detail focused on the gap, citations limited to URLs the model was actually given, and any open questions.
+6. **Illustrate and file.** Find the feature image, then open one GitHub issue per recommended action, each carrying the long detail for its own job. Both are stored alongside the verdict, so a retry re-posts the same picture and links the same issues instead of opening a second set.
 7. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days – an item is only ever deduped once, so without that a Slack blip would lose the message for good.
 
 Impact is a label, not a gate. Every new item gets a message; `minor`, `notable`, and `major` just set expectations before you read it.
@@ -183,7 +186,7 @@ Impact is a label, not a gate. Every new item gets a message; `minor`, `notable`
 Four tables, defined in [`migrations/001_init.sql`](./migrations/001_init.sql):
 
 - `items` – one row per competitor signal, unique on `(competitor, source, external_id)`
-- `analyses` – one row per analyzed item, with the structured verdict as `jsonb`, plus the feature image and the issue it was posted with
+- `analyses` – one row per analyzed item, with the structured verdict as `jsonb`, plus the feature image and one issue per action, in action order. A row written before the split carries a single `issue`, which is read back as the first action's
 - `pages` – the PostHog.com pages we have read, and which competitors they mention
 - `claims` – the individual competitor-mentioning paragraphs we can cite
 
@@ -191,4 +194,4 @@ The rename from severity to impact needed no migration. The canonical verdict, i
 
 ## Tests
 
-`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, the GitHub issue draft, claim extraction, dedupe behavior, and the Slack message shape – image first, the one-sentence KNOW, the impact scale, the separate detail bullets, one stacked block per recommended action with its punctuation, and the issue link. The fixtures under `test/fixtures/` are synthetic and marked as such – they exercise the shapes real feeds use, and are not copies of real competitor announcements.
+`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, one issue draft per action with its labels and owner, claim extraction from both PostHog's pages and the competitors' compare pages, dedupe behavior, and the Slack message shape – image first, the one-sentence KNOW, the impact scale, the separate detail bullets, and one stacked block per recommended action with its punctuation and its own issue link. The fixtures under `test/fixtures/` are synthetic and marked as such – they exercise the shapes real feeds use, and are not copies of real competitor announcements.
