@@ -38,8 +38,9 @@ Rules:
   - update_pages: an existing PostHog page now says something stale or beatable.
   - new_compare_page: this deserves a comparison page PostHog does not have.
   - consider_building: PostHog has nothing like this.
-  - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack renders it as "Consider enhancing Experiments – ...", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
-- "detail" explains the gap: what the competitor now does, what PostHog does or does not do, and the specific next step. Never generic "why this matters" copy. Its first sentence is shown on its own, so make that sentence stand up alone.
+  - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
+- "detail" explains the gap: what the competitor now does, what PostHog does or does not do, and the specific next step. Never generic "why this matters" copy.
+- Open "detail" with one short sentence, under 150 characters, that stands up alone: Slack shows that sentence and nothing else, on a single line under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - "posthog_refs" cites indexed PostHog URLs from the context below. Only cite URLs given to you. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things the source does not answer that change what PostHog should do. Skip anything you can answer from the source.
 - Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and keep impact minor.

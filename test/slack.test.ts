@@ -145,30 +145,72 @@ describe("buildSlackMessage", () => {
     ]);
   });
 
-  const actionBlock = (message: SlackMessage): string =>
-    ((message.blocks as Array<Record<string, any>>).find((block) =>
-      (block.text?.text as string | undefined)?.startsWith(`*${ACTION_HEADING}*`),
-    )?.text?.text ?? "") as string;
+  /** The heading section, then one section per action, in the order Slack shows them. */
+  const actionBlocks = (message: SlackMessage): string[] => {
+    const texts = (message.blocks as Array<Record<string, any>>)
+      .filter((block) => block.type === "section")
+      .map((block) => block.text?.text as string);
+    const heading = texts.findIndex((text) => text?.startsWith(`*${ACTION_HEADING}*`));
+    if (heading === -1) return [];
+    const after = texts.slice(heading + 1);
+    const end = after.findIndex((text) => !text?.startsWith("*") || text.startsWith("*<"));
+    return [texts[heading] as string, ...(end === -1 ? after : after.slice(0, end))];
+  };
 
-  it("bullets every recommended action, one sentence of detail each", () => {
-    expect(actionBlock(message)).toBe(
+  it("stacks each action as its own block: bold title, then one sentence under it", () => {
+    expect(actionBlocks(message)).toEqual([
+      "*Recommended action(s)*",
+      "*Consider enhancing Experiments*\nPostHog experiments start manually and stop manually; there is no end time.",
+      "*Update pages*\nThe Amplitude compare page says neither tool schedules experiment stops.",
+    ]);
+  });
+
+  it("keeps the action detail to one sentence, so no block turns into a paragraph", () => {
+    const [, first] = actionBlocks(message);
+    expect(first).not.toContain("small change to the experiment form");
+    expect((first as string).split("\n")).toHaveLength(2);
+  });
+
+  it("trims a long sentence so the detail line stays short", () => {
+    const long = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [
+          {
+            type: "update_pages",
+            detail: `The Amplitude compare page ${"still says neither tool schedules experiment stops, ".repeat(6)}and that is now wrong.`,
+          },
+        ],
+      },
+    });
+    const detail = (actionBlocks(long)[1] as string).split("\n")[1] as string;
+    expect(detail.length).toBeLessThanOrEqual(150);
+    expect(detail.endsWith("\u2026")).toBe(true);
+  });
+
+  it("renders the actions with a blank line between them, not as dense bullets", () => {
+    const text = renderMessageText(message);
+    expect(text).toContain(
       [
         "*Recommended action(s)*",
-        "\u2022 Consider enhancing Experiments \u2013 PostHog experiments start manually and stop manually; there is no end time.",
-        "\u2022 Update pages \u2013 The Amplitude compare page says neither tool schedules experiment stops.",
+        "",
+        "*Consider enhancing Experiments*",
+        "PostHog experiments start manually and stop manually; there is no end time.",
+        "",
+        "*Update pages*",
+        "The Amplitude compare page says neither tool schedules experiment stops.",
       ].join("\n"),
     );
-    expect(actionBlock(message)).not.toContain("small change to the experiment form");
+    expect(text).not.toContain("\u2022 Update pages");
   });
 
-  it("joins the action and its detail with a spaced en dash, never an em dash", () => {
-    expect(actionBlock(message)).toContain(" \u2013 ");
+  it("never punctuates an action with an em dash", () => {
     expect(rendered).not.toContain("\u2014");
-    expect(actionBlock(message)).not.toContain(" - ");
   });
 
-  it("names the feature to enhance, so the line is not just 'Consider enhancing'", () => {
-    expect(actionBlock(message)).toContain("Consider enhancing Experiments \u2013");
+  it("names the feature to enhance, so the title is not just 'Consider enhancing'", () => {
+    expect(actionBlocks(message)[1]?.split("\n")[0]).toBe("*Consider enhancing Experiments*");
   });
 
   it("falls back to the bare label when a stored action names no feature", () => {
@@ -179,7 +221,7 @@ describe("buildSlackMessage", () => {
         actions: [{ type: "consider_enhancing", detail: "PostHog has an adjacent gap." }],
       },
     });
-    expect(actionBlock(bare)).toContain("\u2022 Consider enhancing \u2013 PostHog has an adjacent gap.");
+    expect(actionBlocks(bare)[1]).toBe("*Consider enhancing*\nPostHog has an adjacent gap.");
   });
 
   it("rewrites an em dash a model slipped into its own copy", () => {
@@ -208,10 +250,11 @@ describe("buildSlackMessage", () => {
   });
 
   it("stays short: one image, a handful of sections, one footer", () => {
-    expect(blocks.length).toBeLessThanOrEqual(7);
+    // Six fixed blocks plus one per action, and an alert carries at most three.
+    expect(blocks.length).toBeLessThanOrEqual(9);
   });
 
-  it("orders the blocks image, KNOW, impact, detail, action, issue, footer", () => {
+  it("orders the blocks image, KNOW, impact, detail, actions, issue, footer", () => {
     const headings = blocks.map((block) =>
       block.type === "image"
         ? "image"
@@ -225,6 +268,8 @@ describe("buildSlackMessage", () => {
       "*Impact*  :large_orange_circle: Notable",
       "*More detail*",
       `*${ACTION_HEADING}*`,
+      "*Consider enhancing Experiments*",
+      "*Update pages*",
       `*<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>*`,
       "footer",
     ]);

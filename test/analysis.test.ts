@@ -342,6 +342,11 @@ describe("buildAnalysisPrompt", () => {
     expect(withRefs).toContain("Consider enhancing Experiments");
   });
 
+  it("asks for an action detail that opens with one short sentence", () => {
+    expect(withRefs).toContain("one short sentence, under 150 characters");
+    expect(withRefs).toContain("Slack shows that sentence and nothing else");
+  });
+
   it("states the PostHog writing rules, with both handbook pages", () => {
     expect(withRefs).toContain("https://posthog.com/handbook/wizard-and-docs/docs-style-guide");
     expect(withRefs).toContain("https://posthog.com/handbook/brand/tone");

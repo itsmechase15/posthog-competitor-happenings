@@ -27,7 +27,8 @@ export const ACTION_HEADING = "Recommended action(s)";
 const MAX_LEAD_CHARS = 240;
 const MAX_POINT_CHARS = 160;
 const MAX_POINTS = 4;
-const MAX_ACTION_CHARS = 220;
+/** One line under the action title on a phone, which is roughly this many characters. */
+const MAX_ACTION_CHARS = 150;
 const MAX_ACTIONS = 3;
 
 /**
@@ -71,13 +72,13 @@ export function detailPoints(alert: Alert): string[] {
 }
 
 /**
- * One action, as Slack shows it: what to do, then one sentence on why. The
- * label carries the PostHog feature for "Consider enhancing", so the line
- * still names something concrete when read on its own.
+ * One action, as Slack shows it: a bold title on its own line, then one short
+ * sentence under it. The title carries the PostHog feature for "Consider
+ * enhancing", so it still names something concrete when read on its own.
  */
-export function actionLine(action: RecommendedAction): string {
+export function actionSectionText(action: RecommendedAction): string {
   const detail = escape(firstSentence(action.detail, MAX_ACTION_CHARS));
-  return `${escape(actionLabel(action))}${SPACED_EN_DASH}${detail}`;
+  return `*${escape(actionLabel(action))}*\n${detail}`;
 }
 
 /**
@@ -139,13 +140,15 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
     );
   }
 
+  // One section per action, under a heading of its own. Slack puts real space
+  // between sections, so each action reads as its own thing on a phone instead
+  // of as another bullet in a dense list.
   const actions = analysis.actions.slice(0, MAX_ACTIONS);
   if (actions.length > 0) {
-    blocks.push(
-      section(
-        `*${ACTION_HEADING}*\n${actions.map((action) => `• ${actionLine(action)}`).join("\n")}`,
-      ),
-    );
+    blocks.push(section(`*${ACTION_HEADING}*`));
+    for (const action of actions) {
+      blocks.push(section(actionSectionText(action)));
+    }
   }
 
   if (issue) {
