@@ -8,7 +8,12 @@ import {
   DisabledIssueCreator,
   GitHubIssueCreator,
 } from "../src/github/issue.js";
-import type { AnalyzedItem, FeatureImage, RecommendedAction } from "../src/types.js";
+import type {
+  AnalyzedItem,
+  FeatureImage,
+  PostHogRef,
+  RecommendedAction,
+} from "../src/types.js";
 
 const analyzed: AnalyzedItem = {
   item: {
@@ -41,6 +46,14 @@ const analyzed: AnalyzedItem = {
         url: "https://posthog.com/compare/best-amplitude-alternatives",
         claim: "Both tools require manual experiment management.",
         suggestedEdit: "Note that Amplitude now schedules stops.",
+      },
+      {
+        url: "https://posthog.com/docs/experiments/managing-lifecycle",
+        claim: "Experiments are started, paused, and stopped by hand.",
+      },
+      {
+        url: "https://posthog.com/docs/session-replay",
+        claim: "Recordings are captured by the web SDK.",
       },
     ],
     openQuestions: ["Does this cover flags outside experiments?"],
@@ -104,21 +117,11 @@ describe("buildIssueDrafts", () => {
     expect(product).toContain("## Recommended action\n**Consider enhancing Experiments** \u2013");
   });
 
-  it("points each issue at the sibling work without restating it", () => {
-    const [pages, product] = drafts.map((entry) => entry.draft.body) as [string, string];
-    expect(pages).toContain(
-      "## Also recommended for this launch\n- **Consider enhancing Experiments** (product), tracked in its own issue",
-    );
-    expect(product).toContain("- **Update pages** (marketing), tracked in its own issue");
-  });
-
-  it("leaves the sibling section out when the alert has one action", () => {
-    const single = buildIssueDrafts(
-      { ...analyzed, analysis: { ...analyzed.analysis, actions: [pageAction] } },
-      image,
-    );
-    expect(single).toHaveLength(1);
-    expect(single[0]?.draft.body).not.toContain("Also recommended");
+  it("leaves the sibling actions to their own issues", () => {
+    for (const { draft } of drafts) {
+      expect(draft.body).not.toContain("Also recommended");
+      expect(draft.body).not.toContain("tracked in its own issue");
+    }
   });
 });
 
@@ -161,12 +164,42 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("gives marketing the suggested edits and product the same pages as context", () => {
+  it("gives marketing every cited page and the edits suggested for them", () => {
     expect(draft.body).toContain("## PostHog pages to update");
+    expect(draft.body).toContain("https://posthog.com/compare/best-amplitude-alternatives");
+    expect(draft.body).toContain("**Suggested edit:** Note that Amplitude now schedules stops.");
+    expect(draft.body).toContain("https://posthog.com/docs/session-replay");
+  });
+
+  it("gives product only the docs that back its own action", () => {
     const product = buildIssueDraft(analyzed, image, productAction).body;
     expect(product).toContain("## PostHog pages for context");
-    expect(product).toContain("**Claim today:** Both tools require manual experiment management.");
+    expect(product).toContain("https://posthog.com/docs/experiments/managing-lifecycle");
+    expect(product).toContain(
+      "**Claim today:** Experiments are started, paused, and stopped by hand.",
+    );
+    // The compare page and its edit are the marketing issue's job, and session
+    // replay is some other action's product.
+    expect(product).not.toContain("https://posthog.com/compare/best-amplitude-alternatives");
     expect(product).not.toContain("Suggested edit");
+    expect(product).not.toContain("https://posthog.com/docs/session-replay");
+  });
+
+  it("says when no docs page backs a product action, rather than borrowing marketing's", () => {
+    const body = buildIssueBody(
+      {
+        ...analyzed,
+        analysis: {
+          ...analyzed.analysis,
+          posthogRefs: [analyzed.analysis.posthogRefs[0] as PostHogRef],
+        },
+      },
+      image,
+      productAction,
+    );
+    expect(body).toContain("## PostHog pages for context");
+    expect(body).toContain("No PostHog docs page in context speaks to this action");
+    expect(body).not.toContain("best-amplitude-alternatives");
   });
 
   it("says who owns the work in the header", () => {
