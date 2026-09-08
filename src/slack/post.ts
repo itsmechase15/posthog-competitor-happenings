@@ -87,6 +87,17 @@ export async function checkBotToken(
 }
 
 /**
+ * `chat.postMessage` does not hand back a permalink, but the archive URL is
+ * derivable: the last segment is the message timestamp with the dot dropped.
+ * The host is left workspace-agnostic on purpose — Slack redirects it to
+ * whichever workspace the reader is signed in to, so this needs no extra call
+ * to learn the team domain.
+ */
+export function messagePermalink(channel: string, ts: string): string {
+  return `https://slack.com/archives/${channel}/p${ts.replace(".", "")}`;
+}
+
+/**
  * Posts via `chat.postMessage` with a bot token. Preferred over the webhook:
  * it targets a channel by id, works for private channels the bot is in, and
  * returns a real error instead of a bare HTTP status.
@@ -137,7 +148,14 @@ export class BotTokenPoster implements SlackPoster {
           : "";
         throw new Error(`chat.postMessage failed: ${body.error ?? "unknown error"}${scopes}`);
       }
-      log.debug(`posted to ${body.channel ?? this.channelId} at ${body.ts ?? "?"}`);
+      // At info, not debug: a CI run's log is the only record that the message
+      // was delivered, and a run that posts nothing looks identical without it.
+      const channel = body.channel ?? this.channelId;
+      log.info(
+        body.ts
+          ? `posted to ${channel} at ${body.ts} — ${messagePermalink(channel, body.ts)}`
+          : `posted to ${channel}`,
+      );
     } finally {
       clearTimeout(timer);
     }

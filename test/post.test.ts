@@ -4,6 +4,7 @@ import { createPoster } from "../src/pipeline.js";
 import {
   BotTokenPoster,
   checkBotToken,
+  messagePermalink,
   SLACK_AUTH_TEST_URL,
   SLACK_POST_MESSAGE_URL,
   WebhookPoster,
@@ -75,6 +76,35 @@ describe("BotTokenPoster", () => {
   it("names the channel it targets", () => {
     expect(new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).description).toContain(
       "C0C07A1DM09",
+    );
+  });
+
+  it("logs the permalink so a CI run records that the message landed", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockFetch(jsonResponse({ ok: true, ts: "1757343375.123456", channel: "C0C07A1DM09" }));
+    await new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).post(message);
+
+    const lines = logSpy.mock.calls.map((call) => String(call[0]));
+    expect(lines.join("\n")).toContain(
+      "https://slack.com/archives/C0C07A1DM09/p1757343375123456",
+    );
+    logSpy.mockRestore();
+  });
+
+  it("still reports delivery when Slack omits the timestamp", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockFetch(jsonResponse({ ok: true }));
+    await new BotTokenPoster("xoxb-test", "C1", 5_000).post(message);
+
+    expect(logSpy.mock.calls.map((call) => String(call[0])).join("\n")).toContain("posted to C1");
+    logSpy.mockRestore();
+  });
+});
+
+describe("messagePermalink", () => {
+  it("drops the dot from the timestamp", () => {
+    expect(messagePermalink("C1", "1757343375.123456")).toBe(
+      "https://slack.com/archives/C1/p1757343375123456",
     );
   });
 });
