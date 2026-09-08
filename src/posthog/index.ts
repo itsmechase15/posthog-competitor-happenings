@@ -2,7 +2,7 @@ import { COMPETITORS, COMPETITOR_IDS, type Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
 import type { CompetitorId, PostHogClaim, PostHogPage } from "../types.js";
-import { extractPage } from "../util/html.js";
+import { extractPage, proseText } from "../util/html.js";
 import { fetchText } from "../util/http.js";
 import { normalizeUrl, truncate } from "../util/text.js";
 import { parseSitemap } from "../sources/sitemap.js";
@@ -164,7 +164,9 @@ export async function refreshPostHogIndex(config: Config, store: Store): Promise
       const page: PostHogPage = {
         url,
         title: extracted.title || url,
-        text: truncate(extracted.text, MAX_STORED_TEXT),
+        // Prose, not the page's contents list: this text is quoted back to a
+        // model when it has to decide what PostHog already does.
+        text: truncate(proseText(extracted.blocks) || extracted.text, MAX_STORED_TEXT),
         mentions,
         fetchedAt: new Date(),
       };

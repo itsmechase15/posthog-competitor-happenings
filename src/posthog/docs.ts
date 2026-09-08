@@ -2,7 +2,7 @@ import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
 import type { PostHogDoc, PostHogPage, StoredItem } from "../types.js";
-import { extractPage } from "../util/html.js";
+import { extractPage, proseText } from "../util/html.js";
 import { fetchText } from "../util/http.js";
 import { sentences, titleFromUrl, truncate } from "../util/text.js";
 import { docUrlsForText, matchProducts } from "./products.js";
@@ -165,7 +165,7 @@ async function fetchDoc(
     const page: PostHogPage = {
       url,
       title: extracted.title || titleFromUrl(url),
-      text: extracted.text,
+      text: proseText(extracted.blocks) || extracted.text,
       mentions: [],
       fetchedAt: new Date(),
     };

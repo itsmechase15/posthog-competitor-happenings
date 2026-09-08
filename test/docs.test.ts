@@ -99,6 +99,7 @@ describe("gatherDocsContext", () => {
     const store = new MemoryStore();
     const spy = stubHtml(
       `<html><head><title>Scheduled flag changes</title></head><body><main>
+        <ul><li>How to schedule a change</li><li>Edit a scheduled change</li></ul>
         <p>You can schedule a feature flag change to happen on a future date, including turning a flag off.</p>
       </main></body></html>`,
     );
@@ -108,7 +109,9 @@ describe("gatherDocsContext", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(docs[0]?.url).toBe("https://posthog.com/docs/feature-flags/scheduled-flag-changes");
     expect(docs[0]?.title).toBe("Scheduled flag changes");
-    expect(docs[0]?.excerpt).toContain("schedule a feature flag change");
+    // The lead is the page's first real sentence, not its contents list.
+    expect(docs[0]?.excerpt).toMatch(/^You can schedule a feature flag change/);
+    expect(docs[0]?.excerpt).not.toContain("Edit a scheduled change");
     expect(await store.getPages([docs[0]?.url ?? ""])).toHaveLength(1);
   });
 
