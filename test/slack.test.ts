@@ -253,23 +253,42 @@ describe("buildSlackMessage", () => {
   });
 
   it("leaves a feature we have no product page for as plain text", () => {
-    const unknown = buildSlackMessage({
+    const unlinked = buildSlackMessage({
       ...base,
       analysis: {
         ...base.analysis,
         actions: [
           {
             type: "consider_enhancing",
-            feature: "Session replay",
-            detail: "PostHog replay has no mobile heatmaps.",
+            feature: "Revenue analytics",
+            detail: "PostHog reads Stripe, but not on a schedule you pick.",
           },
         ],
       },
     });
-    expect(actionBlocks(unknown)[1]).toBe(
-      "*Consider enhancing Session replay*\nPostHog replay has no mobile heatmaps.",
+    expect(actionBlocks(unlinked)[1]).toBe(
+      "*Consider enhancing Revenue analytics*\nPostHog reads Stripe, but not on a schedule you pick.",
     );
-    expect(JSON.stringify(unknown)).not.toContain("posthog.com/session-replay");
+    expect(JSON.stringify(unlinked)).not.toContain("posthog.com/revenue-analytics");
+  });
+
+  it("links every product whose page we have checked, not only the first two", () => {
+    for (const [feature, url] of [
+      ["Session replay", "https://posthog.com/session-replay"],
+      ["Surveys", "https://posthog.com/surveys"],
+      ["Error tracking", "https://posthog.com/error-tracking"],
+    ] as const) {
+      const message = buildSlackMessage({
+        ...base,
+        analysis: {
+          ...base.analysis,
+          actions: [{ type: "consider_enhancing", feature, detail: "A gap." }],
+        },
+      });
+      expect(actionBlocks(message)[1]?.split("\n")[0]).toBe(
+        `*Consider enhancing <${url}|${feature}>*`,
+      );
+    }
   });
 
   it("links nothing on the three actions that name no feature", () => {

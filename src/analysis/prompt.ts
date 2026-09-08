@@ -1,9 +1,10 @@
 import { COMPETITORS } from "../config.js";
-import type { PostHogClaim, StoredItem } from "../types.js";
+import type { PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 
 const MAX_BODY_CHARS = 4_000;
 const MAX_CLAIM_CHARS = 400;
+const MAX_DOC_CHARS = 900;
 
 function itemBody(item: StoredItem): string {
   const raw = item.raw as Record<string, unknown>;
@@ -21,6 +22,17 @@ function renderClaims(claims: PostHogClaim[]): string {
     .map((claim, index) => {
       const heading = claim.heading ? ` ${EN_DASH} section "${claim.heading}"` : "";
       return `${index + 1}. ${claim.url}${heading}\n   "${truncate(claim.paragraph, MAX_CLAIM_CHARS)}"`;
+    })
+    .join("\n");
+}
+
+function renderDocs(docs: PostHogDoc[]): string {
+  if (docs.length === 0) {
+    return "(no product docs are in context for this signal, so you cannot verify a gap: prefer update_pages, keep impact lower, and put what you could not check in open_questions)";
+  }
+  return docs
+    .map((doc, index) => {
+      return `${index + 1}. ${doc.title}\n   ${doc.url}\n   "${truncate(doc.excerpt, MAX_DOC_CHARS)}"`;
     })
     .join("\n");
 }
@@ -44,6 +56,14 @@ Rules:
 - "posthog_refs" cites indexed PostHog URLs from the context below. Only cite URLs given to you. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things the source does not answer that change what PostHog should do. Skip anything you can answer from the source.
 - Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and keep impact minor.
+
+Check the docs before you recommend anything. Every action below is a claim about what PostHog ships, and getting that wrong is the one mistake that makes this bot useless:
+- Before you write a consider_enhancing, consider_building, or update_pages action, read the "PostHog product docs" section. Those pages are the product. The comparison pages are marketing copy written on some past date, so a compare blurb, or its silence, is not evidence about what PostHog does today.
+- Never write that PostHog cannot do something unless a docs excerpt in front of you shows that gap. "PostHog has no X" with no docs page behind it is the wrong answer even when it turns out to be true.
+- When the docs show an adjacent capability, say so in "detail" and recommend only the part that is genuinely missing. Worked example: Feature flags can schedule a change for a future date (https://posthog.com/docs/feature-flags/scheduled-flag-changes), while Experiments start, pause, and stop by hand (https://posthog.com/docs/experiments/managing-lifecycle). So "PostHog cannot schedule anything" is wrong, and "PostHog schedules flag changes but an experiment still has to be stopped by hand" is the real gap.
+- consider_building is only for a capability with no PostHog product behind it at all. If any docs page in context covers the area, the action is consider_enhancing and "feature" names that product.
+- When the docs in context do not settle whether PostHog does this, do not guess. Use update_pages, keep impact lower, and put the unanswered question in "open_questions".
+- Cite the docs URL you relied on in "posthog_refs" whenever an action says what PostHog does or does not do. Prefer a docs URL over a compare URL for that.
 
 PostHog writing style, which every string you write has to follow:
 https://posthog.com/handbook/wizard-and-docs/docs-style-guide and https://posthog.com/handbook/brand/tone
@@ -71,7 +91,11 @@ export const RESPONSE_SHAPE = `{
   "open_questions": ["string"]
 }`;
 
-export function buildAnalysisPrompt(item: StoredItem, claims: PostHogClaim[]): string {
+export function buildAnalysisPrompt(
+  item: StoredItem,
+  claims: PostHogClaim[],
+  docs: PostHogDoc[] = [],
+): string {
   const competitor = COMPETITORS[item.competitor];
   const body = itemBody(item);
 
@@ -87,7 +111,12 @@ Published: ${item.publishedAt?.toISOString() ?? "unknown"}
 Content:
 ${body || "(no body text available, so reason from the title and URL, and keep impact minor)"}
 
+## PostHog product docs, which are what PostHog ships today
+Check every action against these before you claim PostHog does or does not do something.
+${renderDocs(docs)}
+
 ## Indexed PostHog.com pages that mention ${competitor.label}
+Marketing copy, useful for finding a stale page to fix. Not evidence of what the product does.
 ${renderClaims(claims)}
 
 ## Response

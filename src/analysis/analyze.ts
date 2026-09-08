@@ -2,11 +2,13 @@ import { Agent } from "@cursor/sdk";
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
-import type { Analysis, AnalyzedItem, PostHogClaim, StoredItem } from "../types.js";
+import { gatherDocsContext } from "../posthog/docs.js";
+import type { Analysis, AnalyzedItem, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
 import { buildAnalysisPrompt } from "./prompt.js";
 import { parseAnalysis } from "./schema.js";
+import { verifyAgainstDocs } from "./verify.js";
 
 const log = createLogger("analysis");
 
@@ -42,8 +44,8 @@ class CursorAnalyzer implements Analyzer {
     private readonly runtime: "local" | "cloud",
   ) {}
 
-  async analyze(item: StoredItem, claims: PostHogClaim[]): Promise<Analysis> {
-    const prompt = buildAnalysisPrompt(item, claims);
+  async analyze(item: StoredItem, claims: PostHogClaim[], docs: PostHogDoc[]): Promise<Analysis> {
+    const prompt = buildAnalysisPrompt(item, claims, docs);
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= ANALYSIS_ATTEMPTS; attempt += 1) {
@@ -79,8 +81,8 @@ class CursorAnalyzer implements Analyzer {
 class HeuristicAnalyzer implements Analyzer {
   readonly model = FALLBACK_MODEL;
 
-  async analyze(item: StoredItem, claims: PostHogClaim[]): Promise<Analysis> {
-    return heuristicAnalysis(item, claims);
+  async analyze(item: StoredItem, claims: PostHogClaim[], docs: PostHogDoc[]): Promise<Analysis> {
+    return heuristicAnalysis(item, claims, docs);
   }
 }
 
@@ -103,8 +105,12 @@ export function createAnalyzer(config: Config): Analyzer {
 }
 
 /**
- * Analyze each new item against the PostHog claims we have indexed for its
- * competitor. A failed analysis drops that item and leaves the rest alone.
+ * Analyze each new item against two kinds of PostHog context: the indexed
+ * claims for its competitor, which find stale marketing copy, and the product
+ * docs for what it touches, which are the only evidence for what PostHog does
+ * or does not do. Every verdict is then reconciled with those docs, so an
+ * action cannot claim a gap the docs contradict. A failed analysis drops that
+ * item and leaves the rest alone.
  */
 export type { Analyzer };
 
@@ -112,6 +118,7 @@ export async function analyzeItems(
   items: StoredItem[],
   store: Store,
   analyzer: Analyzer,
+  config: Config,
 ): Promise<AnalyzedItem[]> {
   const claimsByCompetitor = new Map<string, PostHogClaim[]>();
   const analyzed: AnalyzedItem[] = [];
@@ -124,11 +131,24 @@ export async function analyzeItems(
       claimsByCompetitor.set(item.competitor, claims);
     }
 
+    // Per item, not per competitor: which docs matter depends on what shipped.
+    const docs = await gatherDocsContext(config, store, item).catch((error: unknown) => {
+      log.warn(
+        `docs context failed for ${item.url}`,
+        error instanceof Error ? error.message : error,
+      );
+      return [] as PostHogDoc[];
+    });
+
     try {
-      const analysis = await analyzer.analyze(item, claims);
+      const verified = verifyAgainstDocs(await analyzer.analyze(item, claims, docs), docs);
+      for (const note of verified.notes) log.warn(`corrected ${item.url}: ${note}`);
+      const analysis = verified.analysis;
       analyzed.push({ item, analysis, model: analyzer.model });
       const actions = analysis.actions.map((action) => action.type).join(", ");
-      log.info(`analyzed ${item.competitor}/${item.source} "${item.title}" → ${actions}`);
+      log.info(
+        `analyzed ${item.competitor}/${item.source} "${item.title}" against ${docs.length} docs pages → ${actions}`,
+      );
     } catch (error) {
       log.error(
         `giving up on ${item.url}`,

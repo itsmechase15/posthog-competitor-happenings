@@ -71,6 +71,12 @@ export interface Store {
   /** URLs already indexed, mapped to when they were last fetched. */
   getIndexedPageUrls(): Promise<Map<string, Date>>;
 
+  /**
+   * Indexed pages for these exact URLs, in whatever order they come back.
+   * Analysis uses it to read the canonical product docs without re-fetching.
+   */
+  getPages(urls: string[]): Promise<PostHogPage[]>;
+
   upsertPage(page: PostHogPage): Promise<void>;
 
   replaceClaimsForUrl(url: string, claims: PostHogClaim[]): Promise<void>;

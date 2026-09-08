@@ -61,6 +61,25 @@ export function extractPage(html: string): ExtractedPage {
   return { title, description, text, blocks };
 }
 
+/**
+ * A block that reads as a sentence rather than a link in an in-page contents
+ * list. Docs pages open with a stack of section links, and glued together by
+ * whitespace collapsing they read as one long fragment that says nothing.
+ */
+function isProse(paragraph: string): boolean {
+  return /[.!?]["')\]]?$/.test(paragraph) && paragraph.split(" ").length >= 6;
+}
+
+/**
+ * The page's prose, with its contents list dropped. Stored for the pages that
+ * are quoted back to a model, where a run of section titles is noise standing
+ * where the page's first real sentence should be.
+ */
+export function proseText(blocks: ExtractedPage["blocks"]): string {
+  const prose = blocks.map((block) => block.paragraph).filter(isProse);
+  return collapseWhitespace(prose.join(" "));
+}
+
 /** Social-preview tags first: a page's og:image is the picture it chose for itself. */
 const META_IMAGE_SELECTORS = [
   "meta[property='og:image:secure_url']",

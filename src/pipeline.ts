@@ -190,10 +190,10 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     if (!inserted) log.info(`${targetUrl} is already stored — re-posting it`);
     const stored: StoredItem = { ...prepared, id };
 
-    let [analyzed] = await analyzeItems([stored], store, createAnalyzer(config));
+    let [analyzed] = await analyzeItems([stored], store, createAnalyzer(config), config);
     if (!analyzed) {
       log.warn(`analysis failed for ${targetUrl} — falling back to a heuristic summary`);
-      [analyzed] = await analyzeItems([stored], store, createFallbackAnalyzer());
+      [analyzed] = await analyzeItems([stored], store, createFallbackAnalyzer(), config);
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
@@ -252,7 +252,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     log.info(`${selection.toAnalyze.length} new items to analyze`);
 
     const analyzer = createAnalyzer(config);
-    const analyzed = await analyzeItems(selection.toAnalyze, store, analyzer);
+    const analyzed = await analyzeItems(selection.toAnalyze, store, analyzer, config);
     summary.analyzed = analyzed.length;
 
     const pending = await store.getUnpostedAnalyses(

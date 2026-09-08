@@ -22,6 +22,27 @@ Help PostHog marketing stay current on Mixpanel + Amplitude product moves. Succe
 ### Index PostHog.com
 Index PostHog.com pages that mention Mixpanel or Amplitude. Cite URL + claim + suggested edit when relevant.
 
+Alongside those, keep a bounded list of canonical product docs indexed: one
+overview page per product in [`src/posthog/products.ts`](./src/posthog/products.ts)
+plus the lifecycle, scheduling, and rollout pages competitors keep shipping
+against. Not a crawl of posthog.com – the docs for the products a signal names,
+capped per run.
+
+### Verify before recommending
+Every recommendation is a claim about what PostHog ships, so it is checked
+against the product docs first. Before any consider enhancing / consider
+building / update pages action, the canonical docs for the products the signal
+touches go into the analysis context, and an action may only say PostHog cannot
+do something when a docs excerpt shows that gap – a compare-page blurb, or its
+silence, is not evidence. Where the docs show an adjacent capability the action
+says so and recommends only the real gap: Amplitude scheduling an experiment
+stop meets [scheduled flag changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes)
+and [manual experiment lifecycle](https://posthog.com/docs/experiments/managing-lifecycle),
+so the honest gap is "flags schedule, experiments still stop by hand". When the
+docs do not settle it, the action drops to update pages or a lower impact and
+the doubt goes in open questions. `verifyAgainstDocs` enforces this after the
+model replies, so a contradicted "PostHog has nothing like this" cannot ship.
+
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
 - Impact `minor | notable | major` = **label only** (not a post gate – every new signal can Slack)
