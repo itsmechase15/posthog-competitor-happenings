@@ -36,8 +36,12 @@ export const ACTION_HEADING = "Recommended action(s)";
 const MAX_LEAD_CHARS = 240;
 const MAX_POINT_CHARS = 160;
 const MAX_POINTS = 4;
-/** One line under the action title on a phone, which is roughly this many characters. */
-const MAX_ACTION_CHARS = 150;
+/**
+ * The one sentence under an action title, which leads with the work to do and
+ * so runs longer than a bare description of the gap. Two short lines on a
+ * phone, not a paragraph, and the prompt asks for the same budget.
+ */
+export const MAX_ACTION_CHARS = 220;
 const MAX_ACTIONS = 3;
 
 /**

@@ -1,4 +1,7 @@
 import { COMPETITORS } from "../config.js";
+// The sentence budget the prompt asks for is the one Slack renders to, so it
+// is stated once, where the message is built.
+import { MAX_ACTION_CHARS } from "../slack/message.js";
 import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 
@@ -65,7 +68,7 @@ Rules:
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
 - The other three action types take no "feature". Leave the key out rather than sending it empty.
 - "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy.
-- Open "detail" with one short sentence, under 150 characters, that stands up alone: Slack shows that sentence and nothing else, on a single line under the action title. Put the rest in later sentences, which the GitHub issue carries.
+- Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
   - consider_enhancing and consider_building: name the change first, then the gap behind it if it still fits. Good: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand." The bad one is true and it is evidence, but it names no change, so it belongs in a later sentence.
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
