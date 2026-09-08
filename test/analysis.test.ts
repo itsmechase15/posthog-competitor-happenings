@@ -123,6 +123,71 @@ describe("parseAnalysis", () => {
     expect(analysis.openQuestions).toEqual([]);
   });
 
+  it("reads an empty feature as no feature, instead of losing the whole analysis", () => {
+    // What a real reply did: the right answer for update_pages is no feature,
+    // and the model wrote "feature": "" rather than leaving the key out.
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          { type: "update_pages", detail: "The compare page is stale.", feature: "" },
+          { type: "consider_enhancing", detail: "A real gap.", feature: "Experiments" },
+        ],
+      }),
+    );
+    expect(analysis.actions).toEqual([
+      { type: "update_pages", detail: "The compare page is stale." },
+      { type: "consider_enhancing", detail: "A real gap.", feature: "Experiments" },
+    ]);
+  });
+
+  it("drops an action whose detail came back empty, and keeps the rest", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          { type: "update_pages", detail: "   " },
+          { type: "consider_building", detail: "A real gap." },
+        ],
+      }),
+    );
+    expect(analysis.actions).toEqual([{ type: "consider_building", detail: "A real gap." }]);
+  });
+
+  it("drops blank key points and open questions rather than failing on them", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({ ...valid, key_points: ["A point.", "", "  "], open_questions: [""] }),
+    );
+    expect(analysis.keyPoints).toEqual(["A point."]);
+    expect(analysis.openQuestions).toEqual([]);
+  });
+
+  it("drops a citation with no page or no claim, and keeps the usable ones", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        posthog_refs: [
+          { url: "", claim: "Nowhere to read this." },
+          { url: "https://posthog.com/docs/experiments", claim: "" },
+          { url: "https://posthog.com/docs/experiments", claim: "Experiments stop by hand." },
+        ],
+      }),
+    );
+    expect(analysis.posthogRefs).toEqual([
+      { url: "https://posthog.com/docs/experiments", claim: "Experiments stop by hand." },
+    ]);
+  });
+
+  it("reads an empty suggested edit as none", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        posthog_refs: [{ url: "u", claim: "c", suggested_edit: "" }],
+      }),
+    );
+    expect(analysis.posthogRefs[0]?.suggestedEdit).toBeUndefined();
+  });
+
   it("rejects an action outside the allowed set", () => {
     expect(() =>
       parseAnalysis(JSON.stringify({ ...valid, actions: [{ type: "do_nothing", detail: "d" }] })),
@@ -239,6 +304,23 @@ describe("heuristicAnalysis", () => {
     }
   });
 
+  it("points at the docs for what PostHog ships, without assessing the gap itself", () => {
+    const analysis = heuristicAnalysis(item, [], [
+      {
+        url: "https://posthog.com/docs/experiments/managing-lifecycle",
+        title: "Managing the experiment lifecycle",
+        excerpt: "You stop an experiment by hand. There is no end date field.",
+      },
+    ]);
+    expect(analysis.posthogRefs.map((ref) => ref.url)).toEqual([
+      "https://posthog.com/docs/experiments/managing-lifecycle",
+    ]);
+    expect(analysis.actions[0]?.detail).toContain(
+      "read it before treating anything here as a gap",
+    );
+    expect(analysis.actions.map((action) => action.type)).not.toContain("consider_building");
+  });
+
   it("restates the source rather than inventing an assessment", () => {
     const analysis = heuristicAnalysis(item, []);
     expect(analysis.summary).toContain("Introducing Widget Sync");
@@ -306,14 +388,13 @@ describe("diversifyClaims", () => {
 });
 
 describe("buildAnalysisPrompt", () => {
-  const withRefs = buildAnalysisPrompt(item, [
-    {
-      url: "https://posthog.com/compare/best-mixpanel-alternatives",
-      competitor: "mixpanel",
-      paragraph: "PostHog and Mixpanel both offer product analytics.",
-      heading: "Overview",
-    },
-  ]);
+  const claim = {
+    url: "https://posthog.com/compare/best-mixpanel-alternatives",
+    competitor: "mixpanel" as const,
+    paragraph: "PostHog and Mixpanel both offer product analytics.",
+    heading: "Overview",
+  };
+  const withRefs = buildAnalysisPrompt(item, [claim]);
 
   it("gives the model only the claims it may cite", () => {
     expect(withRefs).toContain("https://posthog.com/compare/best-mixpanel-alternatives");
@@ -364,5 +445,62 @@ describe("buildAnalysisPrompt", () => {
   it("asks for the minor/notable/major scale, not low/medium/high", () => {
     expect(withRefs).toContain('"minor" | "notable" | "major"');
     expect(withRefs).not.toContain('"low" | "medium" | "high"');
+  });
+
+  describe("checking the docs before recommending", () => {
+    const docs = [
+      {
+        url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+        title: "Scheduled flag changes",
+        excerpt: "You can set a date for a feature flag to change or turn off.",
+      },
+      {
+        url: "https://posthog.com/docs/experiments/managing-lifecycle",
+        title: "Managing the experiment lifecycle",
+        excerpt: "You stop an experiment by hand. There is no end date field.",
+      },
+    ];
+    const withDocs = buildAnalysisPrompt(item, [claim], docs);
+
+    it("puts the docs pages in front of the model, with their text", () => {
+      expect(withDocs).toContain("https://posthog.com/docs/feature-flags/scheduled-flag-changes");
+      expect(withDocs).toContain("Scheduled flag changes");
+      expect(withDocs).toContain("There is no end date field");
+    });
+
+    it("requires a docs page behind any claim that PostHog cannot do something", () => {
+      expect(withDocs).toContain("Never write that PostHog cannot do something");
+      expect(withDocs).toContain("Check the docs before you recommend anything");
+    });
+
+    it("says a compare page is not evidence about the product", () => {
+      expect(withDocs).toContain("marketing copy");
+      expect(withDocs).toContain("Not evidence of what the product does");
+    });
+
+    it("works the scheduling example, so adjacent capability is not read as a gap", () => {
+      expect(withDocs).toContain("https://posthog.com/docs/experiments/managing-lifecycle");
+      expect(withDocs).toContain("PostHog cannot schedule anything\" is wrong");
+    });
+
+    it("reserves consider_building for an area no docs page covers", () => {
+      expect(withDocs).toContain(
+        "consider_building is only for a capability with no PostHog product behind it",
+      );
+    });
+
+    it("asks for update_pages and an open question when the docs settle nothing", () => {
+      expect(withDocs).toContain("do not guess");
+      expect(withDocs).toContain("open_questions");
+    });
+
+    it("asks for the docs URL in posthog_refs", () => {
+      expect(withDocs).toContain('Cite the docs URL you relied on in "posthog_refs"');
+    });
+
+    it("says plainly when no docs are in context, rather than leaving a gap open", () => {
+      expect(withRefs).toContain("no product docs are in context for this signal");
+      expect(withRefs).toContain("prefer update_pages");
+    });
   });
 });

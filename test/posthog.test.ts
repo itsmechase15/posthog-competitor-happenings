@@ -5,7 +5,8 @@ import {
   extractClaims,
   isIndexCandidate,
 } from "../src/posthog/index.js";
-import { extractPage } from "../src/util/html.js";
+import { CANONICAL_DOC_URLS } from "../src/posthog/products.js";
+import { extractPage, proseText } from "../src/util/html.js";
 
 describe("isIndexCandidate", () => {
   it("accepts marketing and docs pages on posthog.com", () => {
@@ -24,6 +25,23 @@ describe("isIndexCandidate", () => {
 });
 
 describe("candidatePriority", () => {
+  it("puts the canonical product docs first, because gap claims are checked against them", () => {
+    const ranked = [
+      "https://posthog.com/compare/best-mixpanel-alternatives",
+      "https://posthog.com/docs/experiments/managing-lifecycle",
+      "https://posthog.com/blog/some-unrelated-post",
+    ].sort((a, b) => candidatePriority(a) - candidatePriority(b));
+
+    expect(ranked[0]).toBe("https://posthog.com/docs/experiments/managing-lifecycle");
+  });
+
+  it("indexes every canonical docs page it is asked to keep fresh", () => {
+    for (const url of CANONICAL_DOC_URLS) {
+      expect(isIndexCandidate(url)).toBe(true);
+      expect(candidatePriority(url)).toBe(0);
+    }
+  });
+
   it("puts named comparison pages ahead of everything else", () => {
     const ranked = [
       "https://posthog.com/blog/some-unrelated-post",
@@ -91,5 +109,37 @@ describe("extractPage + extractClaims", () => {
   it("skips short list items that are really navigation", () => {
     const claims = extractClaims("https://posthog.com/blog/posthog-vs-mixpanel", page.blocks);
     expect(claims.some((claim) => claim.paragraph === "Short")).toBe(false);
+  });
+});
+
+describe("proseText", () => {
+  /**
+   * Docs pages open with a stack of section links. Collapsed into one line
+   * they read as a fragment saying nothing, standing where the page's first
+   * real sentence should be.
+   */
+  const docsPage = extractPage(`<!doctype html><html><head><title>Scheduled flag changes</title></head>
+    <body><main>
+      <ul>
+        <li>How to schedule a change</li>
+        <li>Edit a scheduled change</li>
+        <li>Copy scheduled changes across projects</li>
+      </ul>
+      <p>Scheduling feature flag changes lets you change flag properties at a future point in time.</p>
+      <ul><li>You can also schedule a rollout percentage change, or turn the flag off.</li></ul>
+    </main></body></html>`);
+
+  it("opens with the page's first real sentence", () => {
+    expect(proseText(docsPage.blocks)).toMatch(/^Scheduling feature flag changes lets you/);
+  });
+
+  it("drops the contents list and keeps a bullet that is a sentence", () => {
+    const prose = proseText(docsPage.blocks);
+    expect(prose).not.toContain("Edit a scheduled change");
+    expect(prose).toContain("turn the flag off.");
+  });
+
+  it("comes back empty for a page with no prose at all, so callers can fall back", () => {
+    expect(proseText([{ heading: null, paragraph: "Pricing Docs Community" }])).toBe("");
   });
 });

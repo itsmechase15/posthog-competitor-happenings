@@ -92,6 +92,10 @@ describe("buildIssueDraft", () => {
     }
   });
 
+  it("keeps the action title plain, because Slack mrkdwn links are not markdown", () => {
+    expect(draft.body).not.toContain("<https://posthog.com/experiments|");
+  });
+
   it("embeds the feature image", () => {
     expect(draft.body).toContain('<img src="https://cdn.invalid/hero.png"');
     expect(draft.body).toContain("Feature image (page): https://cdn.invalid/hero.png");

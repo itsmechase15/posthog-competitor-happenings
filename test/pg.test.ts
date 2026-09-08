@@ -301,6 +301,28 @@ describe("PostgresStore", () => {
     expect(rows.rows[0]?.mentions).toEqual(["mixpanel", "amplitude"]);
   });
 
+  it("reads back the pages analysis asks for by URL, and skips the rest", async () => {
+    const docsUrl = "https://posthog.com/docs/experiments/managing-lifecycle";
+    await store.upsertPage({
+      url: docsUrl,
+      title: "Managing the experiment lifecycle",
+      text: "You stop an experiment by hand.",
+      mentions: [],
+      fetchedAt: new Date("2026-01-20T00:00:00Z"),
+    });
+
+    const pages = await store.getPages([docsUrl, "https://posthog.com/docs/never-indexed"]);
+
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toMatchObject({
+      url: docsUrl,
+      title: "Managing the experiment lifecycle",
+      text: "You stop an experiment by hand.",
+      mentions: [],
+    });
+    expect(await store.getPages([])).toEqual([]);
+  });
+
   it("replaces a page's claims instead of appending", async () => {
     const url = "https://posthog.com/compare/best-mixpanel-alternatives";
     const claim = { url, competitor: "mixpanel" as const, paragraph: "one", heading: "Pricing" };
