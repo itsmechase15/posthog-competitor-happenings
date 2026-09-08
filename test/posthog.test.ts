@@ -5,6 +5,7 @@ import {
   extractClaims,
   isIndexCandidate,
 } from "../src/posthog/index.js";
+import { CANONICAL_DOC_URLS } from "../src/posthog/products.js";
 import { extractPage } from "../src/util/html.js";
 
 describe("isIndexCandidate", () => {
@@ -24,6 +25,23 @@ describe("isIndexCandidate", () => {
 });
 
 describe("candidatePriority", () => {
+  it("puts the canonical product docs first, because gap claims are checked against them", () => {
+    const ranked = [
+      "https://posthog.com/compare/best-mixpanel-alternatives",
+      "https://posthog.com/docs/experiments/managing-lifecycle",
+      "https://posthog.com/blog/some-unrelated-post",
+    ].sort((a, b) => candidatePriority(a) - candidatePriority(b));
+
+    expect(ranked[0]).toBe("https://posthog.com/docs/experiments/managing-lifecycle");
+  });
+
+  it("indexes every canonical docs page it is asked to keep fresh", () => {
+    for (const url of CANONICAL_DOC_URLS) {
+      expect(isIndexCandidate(url)).toBe(true);
+      expect(candidatePriority(url)).toBe(0);
+    }
+  });
+
   it("puts named comparison pages ahead of everything else", () => {
     const ranked = [
       "https://posthog.com/blog/some-unrelated-post",

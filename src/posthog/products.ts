@@ -162,11 +162,63 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
 ];
 
 /**
+ * A capability that cuts across products, and the pages that show where
+ * PostHog already has it.
+ *
+ * Products alone are not enough. A signal about scheduling an experiment stop
+ * reads as an Experiments signal, but the page that decides whether "PostHog
+ * cannot schedule anything" is true belongs to Feature flags. Without these,
+ * the docs in context only ever confirm the gap and never qualify it.
+ */
+export interface PostHogCapability {
+  name: string;
+  keywords: string[];
+  docs: string[];
+}
+
+export const POSTHOG_CAPABILITIES: PostHogCapability[] = [
+  {
+    name: "Scheduling",
+    keywords: [
+      "schedule",
+      "scheduled",
+      "scheduling",
+      "end date",
+      "end time",
+      "start date",
+      "automatically stop",
+      "auto-stop",
+      "stop automatically",
+      "on a cron",
+      "recurring",
+      "time-based",
+    ],
+    docs: [
+      "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+      "https://posthog.com/docs/experiments/managing-lifecycle",
+    ],
+  },
+  {
+    name: "Alerting",
+    keywords: ["alert", "alerting", "notify", "notification", "threshold", "anomaly"],
+    docs: ["https://posthog.com/docs/alerts"],
+  },
+  {
+    name: "Automation",
+    keywords: ["automation", "workflow", "trigger", "no-code rule", "if this then"],
+    docs: ["https://posthog.com/docs/cdp", "https://posthog.com/docs/alerts"],
+  },
+];
+
+/**
  * Every canonical docs URL, deduplicated. This is the whole set the indexer is
  * asked to keep fresh: a bounded list, not a crawl of posthog.com.
  */
 export const CANONICAL_DOC_URLS: string[] = [
-  ...new Set(POSTHOG_PRODUCTS.flatMap((product) => product.docs)),
+  ...new Set([
+    ...POSTHOG_PRODUCTS.flatMap((product) => product.docs),
+    ...POSTHOG_CAPABILITIES.flatMap((capability) => capability.docs),
+  ]),
 ];
 
 export function findProductByName(name: string): PostHogProduct | undefined {
@@ -203,7 +255,10 @@ export function matchProducts(text: string, limit = POSTHOG_PRODUCTS.length): Po
       // match counts for more than a late one.
       if (hits > 0) score += hits * (product.keywords.indexOf(keyword) === 0 ? 3 : 1);
     }
-    if (lower.includes(product.name.toLowerCase())) score += 3;
+    // Only when the name is not already one of the keywords, so a product
+    // whose name is its own first keyword is not counted twice.
+    const name = product.name.toLowerCase();
+    if (!product.keywords.includes(name) && lower.includes(name)) score += 3;
     return { product, score };
   }).filter((entry) => entry.score > 0);
 
@@ -222,31 +277,47 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+/** The cross-product capabilities a piece of text is about. */
+export function matchCapabilities(text: string): PostHogCapability[] {
+  const lower = ` ${text.toLowerCase()} `;
+  return POSTHOG_CAPABILITIES.filter((capability) =>
+    capability.keywords.some((keyword) => lower.includes(keyword)),
+  );
+}
+
 /**
  * The docs URLs to put in front of the model for one signal, bounded so a
- * signal that touches everything cannot fill the prompt. Products are taken in
- * relevance order and each contributes its overview page before any of them
- * contributes a second page, so a broad signal still gets breadth.
+ * signal that touches everything cannot fill the prompt.
+ *
+ * Capability pages come first: they are what tells "PostHog cannot schedule
+ * anything" apart from "flags schedule, experiments do not". Products follow in
+ * relevance order, each contributing its overview page before any of them
+ * contributes a second, so a broad signal still gets breadth.
  */
 export function docUrlsForText(
   text: string,
-  options: { maxProducts?: number; maxUrls?: number } = {},
+  options: { maxProducts?: number; maxUrls?: number; maxCapabilityUrls?: number } = {},
 ): string[] {
   const maxProducts = options.maxProducts ?? 3;
   const maxUrls = options.maxUrls ?? 6;
+  const maxCapabilityUrls = options.maxCapabilityUrls ?? 3;
   const products = matchProducts(text, maxProducts);
   if (products.length === 0) return [];
 
   const picked: string[] = [];
-  const depth = Math.max(...products.map((product) => product.docs.length));
+  const add = (url: string | undefined): void => {
+    if (!url || picked.includes(url) || picked.length >= maxUrls) return;
+    picked.push(url);
+  };
 
+  const capabilityUrls = [
+    ...new Set(matchCapabilities(text).flatMap((capability) => capability.docs)),
+  ].slice(0, maxCapabilityUrls);
+  for (const url of capabilityUrls) add(url);
+
+  const depth = Math.max(...products.map((product) => product.docs.length));
   for (let rank = 0; rank < depth && picked.length < maxUrls; rank += 1) {
-    for (const product of products) {
-      const url = product.docs[rank];
-      if (!url || picked.includes(url)) continue;
-      picked.push(url);
-      if (picked.length >= maxUrls) break;
-    }
+    for (const product of products) add(product.docs[rank]);
   }
 
   return picked;

@@ -19,9 +19,15 @@ const FOCUS_SENTENCES = 4;
 /**
  * Docs fetched during this process, so a run whose page writes go nowhere (a
  * dry run, or an unreachable database) fetches each page once rather than once
- * per item.
+ * per item. One run is one process, so nothing here outlives the freshness the
+ * index already manages.
  */
 const fetched = new Map<string, PostHogPage>();
+
+/** Drops the per-process memo. For tests, which need each case isolated. */
+export function clearFetchedDocs(): void {
+  fetched.clear();
+}
 
 /** Words too common to tell one product's docs from another's. */
 const STOP_WORDS = new Set([
