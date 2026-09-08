@@ -3,7 +3,7 @@ name: Daily competitor happenings
 on:
   schedule:
     # GitHub cron is UTC only, so both DST offsets are scheduled and the job
-    # bails out on whichever one is not 07:00 in Los Angeles today.
+    # bails out on the one that lands before 07:00 in Los Angeles today.
     - cron: "0 14 * * *" # 07:00 PDT
     - cron: "0 15 * * *" # 07:00 PST
   workflow_dispatch:
@@ -27,12 +27,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check it is 07:00 in America/Los_Angeles
+      - name: Check it is not before 07:00 in America/Los_Angeles
         id: window
         run: |
           hour="$(TZ=America/Los_Angeles date +%H)"
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$hour" != "07" ]; then
-            echo "Local hour is $hour — the other cron entry covers today."
+          # Only a too-early run bails. GitHub delays scheduled workflows under
+          # load — an exact 07 match turns any late start into a silently
+          # skipped day — and dedupe makes a second entry a no-op if both land.
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$hour" -lt 7 ]; then
+            echo "Local hour is $hour — too early, the later cron entry covers today."
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
