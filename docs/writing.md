@@ -13,8 +13,8 @@ What that means for a Slack alert, which is short and read at a glance:
 - Address the reader as "you". Active voice, present tense, concise.
   Contractions are fine.
 - No em dash. When a line needs a dash, it is an en dash with a space either
-  side: `Consider enhancing Experiments – PostHog stops them manually`. A
-  hyphen is not a dash.
+  side: `PostHog experiments stop manually – there is no end time`. A hyphen is
+  not a dash.
 - Oxford comma, American English spelling, straight quotes and apostrophes.
 - No "simply", "just", "easily", "obviously", "of course", or "clearly".
 - No hedging: helps you to, empowers, enables you to unlock, leverage,

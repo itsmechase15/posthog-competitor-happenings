@@ -50,7 +50,8 @@ One short, pretty message per new signal, in this order and nothing else:
 2. **What you need to KNOW** – the one sentence on what changed, under the heading. No unlabeled line above it
 3. **Impact** – Minor / Notable / Major, right under the sentence
 4. **More detail** – a few short bullets that elaborate, clearly separate from the KNOW sentence
-5. **Recommended action(s)** – one bullet per action, each the action plus one sentence
+5. **Recommended action(s)** – a heading, then each action stacked in its own
+   block: bold title on one line, one short sentence under it
 6. **Access GitHub issue for more information** – link to the issue for this item
 7. Small footer – competitor · source · model · source link
 
