@@ -94,6 +94,12 @@ describe("PostgresStore", () => {
     expect(await store.countItems("mixpanel", "newsletter")).toBe(0);
   });
 
+  it("hands back the id of an item it has already stored", async () => {
+    const [stored] = await store.insertNewItems([item("id-lookup")]);
+    expect(await store.findItemId(item("id-lookup"))).toBe(stored!.id);
+    expect(await store.findItemId(item("never-stored"))).toBeNull();
+  });
+
   it("records an analysis and stamps the Slack post", async () => {
     const [stored] = await store.insertNewItems([item("analysis-target")]);
     const analysisId = await store.recordAnalysis({

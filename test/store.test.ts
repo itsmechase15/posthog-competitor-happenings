@@ -33,6 +33,13 @@ describe("MemoryStore", () => {
     expect([...known]).toEqual(["mixpanel|changelog|a"]);
   });
 
+  it("hands back the id of an item it has already stored", async () => {
+    const store = new MemoryStore();
+    const [stored] = await store.insertNewItems([item("a")]);
+    expect(await store.findItemId(item("a"))).toBe(stored!.id);
+    expect(await store.findItemId(item("b"))).toBeNull();
+  });
+
   it("counts items per competitor and source", async () => {
     const store = new MemoryStore();
     await store.insertNewItems([item("a"), item("b")]);

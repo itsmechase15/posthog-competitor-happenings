@@ -1,0 +1,4 @@
+# One announcement URL. Changing this file on main runs
+# .github/workflows/force-post.yml, which posts that item to Slack even if the
+# dedupe table has seen it before. Lines starting with # are ignored.
+https://amplitude.com/releases/schedule-experiment-stop

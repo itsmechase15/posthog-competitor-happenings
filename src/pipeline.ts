@@ -1,4 +1,4 @@
-import { analyzeItems, createAnalyzer } from "./analysis/analyze.js";
+import { analyzeItems, createAnalyzer, createFallbackAnalyzer } from "./analysis/analyze.js";
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
@@ -157,7 +157,16 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
   log.info(`GitHub issues: ${issues.description}`);
 
   try {
-    await refreshPostHogIndex(config, store);
+    try {
+      await refreshPostHogIndex(config, store);
+    } catch (error) {
+      // The crawl only supplies citations. Losing it costs detail; failing the
+      // run costs the message this mode exists to send.
+      log.error(
+        "PostHog index refresh failed, continuing without fresh claims",
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     const { candidates } = await collectCandidates(config);
     const wanted = normalizeUrl(targetUrl);
@@ -172,12 +181,20 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     }
     log.info(`matched ${match.competitor}/${match.source} "${match.title}"`);
 
-    const [prepared] = await enrichArticles(config, [match]);
-    const [stored] = await store.insertNewItems([prepared ?? match]);
-    if (!stored) throw new Error(`failed to store ${targetUrl}`);
+    const [prepared = match] = await enrichArticles(config, [match]);
+    const [inserted] = await store.insertNewItems([prepared]);
+    // An item already in the dedupe table keeps its row; this mode re-posts it
+    // rather than refusing, which is the whole point of naming a URL by hand.
+    const id = inserted?.id ?? (await store.findItemId(prepared));
+    if (!id) throw new Error(`failed to store ${targetUrl}`);
+    if (!inserted) log.info(`${targetUrl} is already stored — re-posting it`);
+    const stored: StoredItem = { ...prepared, id };
 
-    const analyzer = createAnalyzer(config);
-    const [analyzed] = await analyzeItems([stored], store, analyzer);
+    let [analyzed] = await analyzeItems([stored], store, createAnalyzer(config));
+    if (!analyzed) {
+      log.warn(`analysis failed for ${targetUrl} — falling back to a heuristic summary`);
+      [analyzed] = await analyzeItems([stored], store, createFallbackAnalyzer());
+    }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
     const alert = await prepareAlert(config, issues, analyzed);

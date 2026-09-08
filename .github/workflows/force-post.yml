@@ -1,0 +1,80 @@
+name: Force post one item
+
+# Posts a single named announcement to Slack, ignoring the dedupe table and the
+# first-run seed guard. Two ways in, because the Actions tab is not always the
+# hand on the trigger:
+#
+#   1. Run it from the Actions tab and pass the URL as `force_url`.
+#   2. Commit the URL to .github/force-post-url.txt. Merging that to main posts
+#      it, which leaves the request itself in the git history.
+on:
+  workflow_dispatch:
+    inputs:
+      force_url:
+        description: "Announcement URL to post. It has to still be in a live feed"
+        required: true
+        type: string
+      dry_run:
+        description: "Print the Slack payload instead of posting it"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: [".github/force-post-url.txt"]
+
+# Shared with the daily run so the two can never post over each other.
+concurrency:
+  group: competitor-happenings
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the URL to post
+        id: target
+        env:
+          FORCE_URL: ${{ inputs.force_url }}
+        run: |
+          url="$FORCE_URL"
+          if [ -z "$url" ]; then
+            url="$(grep -v '^[[:space:]]*#' .github/force-post-url.txt | grep -m1 -oE 'https?://[^[:space:]]+' || true)"
+          fi
+          if [ -z "$url" ]; then
+            echo "Nothing to post: pass force_url, or put a URL in .github/force-post-url.txt." >&2
+            exit 1
+          fi
+          echo "Posting $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Post it
+        run: node dist/index.js --url "${{ steps.target.outputs.url }}"
+        env:
+          # Unset here means an in-memory store: the post still goes out, it
+          # just leaves no dedupe trace behind.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
