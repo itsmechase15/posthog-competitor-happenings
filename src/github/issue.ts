@@ -1,11 +1,12 @@
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
 import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
-import { findPostHogProduct } from "../posthog/products.js";
+import { findPostHogProduct, productForDocUrl, productsForAction } from "../posthog/products.js";
 import type {
   AnalyzedItem,
   FeatureImage,
   IssueRef,
+  PostHogRef,
   RecommendedAction,
 } from "../types.js";
 import { SPACED_EN_DASH, truncate } from "../util/text.js";
@@ -81,21 +82,53 @@ export function buildIssueTitle(alert: AnalyzedItem, action: RecommendedAction):
   return `${truncate(head, Math.max(24, MAX_TITLE_CHARS - suffix.length))}${suffix}`;
 }
 
+/** A docs page says what PostHog ships; everything else on posthog.com is copy. */
+function isDocsRef(ref: PostHogRef): boolean {
+  return ref.url.includes("posthog.com/docs/");
+}
+
 /**
- * The cited pages. Marketing gets the suggested edits, because editing the
- * page is the job; product gets the same pages as context for what PostHog
- * says about itself today.
+ * The refs that back one action.
+ *
+ * A page action is the page work, so it gets every cited page and the edits
+ * suggested for them. A product action is a claim about what PostHog ships,
+ * and only the docs support that: a compare-page paragraph and its suggested
+ * edit are the marketing issue's job, and a docs page for some other product
+ * named in the same alert belongs to that product's own issue.
+ */
+function supportingRefs(alert: AnalyzedItem, action: RecommendedAction): PostHogRef[] {
+  const refs = alert.analysis.posthogRefs;
+  if (isPageAction(action)) return refs;
+
+  const wanted = new Set(productsForAction(action).map((product) => product.label));
+
+  return refs.filter((ref) => {
+    if (ref.suggestedEdit || !isDocsRef(ref)) return false;
+    const product = productForDocUrl(ref.url);
+    if (!product) return true;
+    return wanted.size === 0 || wanted.has(product.label);
+  });
+}
+
+/**
+ * The cited pages. Marketing gets the pages to edit with the suggested edits,
+ * because editing the page is the job; product gets the docs that speak to the
+ * action it is being asked to take, and nothing else.
  */
 function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   const heading = isPageAction(action)
     ? "## PostHog pages to update"
     : "## PostHog pages for context";
+  const refs = supportingRefs(alert, action);
 
-  if (alert.analysis.posthogRefs.length === 0) {
-    return `${heading}\n_No indexed PostHog.com page covers this yet, which is itself worth a look._`;
+  if (refs.length === 0) {
+    const empty = isPageAction(action)
+      ? "No indexed PostHog.com page covers this yet, which is itself worth a look."
+      : "No PostHog docs page in context speaks to this action, so nothing here has been checked against what PostHog ships.";
+    return `${heading}\n_${empty}_`;
   }
 
-  const pages = alert.analysis.posthogRefs
+  const pages = refs
     .map((ref) => {
       const lines = [`### ${ref.url}`, `- **Claim today:** ${ref.claim}`];
       if (ref.suggestedEdit && isPageAction(action)) {
@@ -106,20 +139,6 @@ function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
     .join("\n\n");
 
   return `${heading}\n${pages}`;
-}
-
-/**
- * The other actions from the same launch, named but not restated. Each one is
- * its own issue, opened in the same run, so this is a pointer rather than a
- * second copy of the work.
- */
-function siblingSection(actions: RecommendedAction[], current: RecommendedAction): string | null {
-  const others = actions.filter((action) => action !== current);
-  if (others.length === 0) return null;
-  const lines = others
-    .map((action) => `- **${actionLabel(action)}** (${actionOwner(action)}), tracked in its own issue`)
-    .join("\n");
-  return `## Also recommended for this launch\n${lines}`;
 }
 
 function bullets(values: string[], empty: string): string {
@@ -149,7 +168,6 @@ export function buildIssueBody(
     `## Impact\n${IMPACT_LABEL[analysis.impact]}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     pagesSection(alert, action),
-    siblingSection(analysis.actions, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${item.source}](${item.url})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""

@@ -97,6 +97,16 @@ export function normalizeUrl(raw: string): string {
   }
 }
 
+/**
+ * How a page is named inside a sentence: "the best amplitude alternatives
+ * page". Used where a reader has to be told which page an action is about and
+ * a bare URL would eat the whole line.
+ */
+export function pageNameFromUrl(raw: string): string {
+  const title = titleFromUrl(raw);
+  return title === raw ? raw : `the ${title.toLowerCase()} page`;
+}
+
 /** Turn a slug like "first-party-domains" into "First party domains". */
 export function titleFromUrl(raw: string): string {
   try {
