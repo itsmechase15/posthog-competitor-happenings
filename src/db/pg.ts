@@ -77,6 +77,16 @@ export class PostgresStore implements Store {
     return inserted;
   }
 
+  async findItemId(item: CandidateItem): Promise<string | null> {
+    const result = await this.pool.query<{ id: string }>(
+      `SELECT id::text
+       FROM items
+       WHERE competitor = $1 AND source = $2 AND external_id = $3`,
+      [item.competitor, item.source, item.externalId],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
   async findKnownKeys(items: CandidateItem[]): Promise<Set<string>> {
     if (items.length === 0) return new Set();
     const result = await this.pool.query<{

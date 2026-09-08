@@ -84,6 +84,14 @@ class HeuristicAnalyzer implements Analyzer {
   }
 }
 
+/**
+ * The analyzer that cannot fail: it restates the source instead of assessing
+ * it, and every message it produces says so.
+ */
+export function createFallbackAnalyzer(): Analyzer {
+  return new HeuristicAnalyzer();
+}
+
 export function createAnalyzer(config: Config): Analyzer {
   if (!config.cursorApiKey) {
     log.warn(

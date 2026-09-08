@@ -82,7 +82,7 @@ npm run run -- \
   --out artifacts/slack-test-message.md
 ```
 
-The item still has to exist in a live feed — this mode selects from what the fetchers actually returned, so it cannot manufacture an announcement. It writes both the rendered message and the exact `chat.postMessage` payload. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a checked-in example produced this way.
+The item still has to exist in a live feed — this mode selects from what the fetchers actually returned, so it cannot manufacture an announcement. Everything else gives way: an item already in the dedupe table is re-posted under its existing row, a PostHog crawl that fails costs citations rather than the message, and a model that refuses falls back to the labelled heuristic. It writes both the rendered message and the exact `chat.postMessage` payload. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a checked-in example produced this way.
 
 ## GitHub issues
 
@@ -134,6 +134,10 @@ Every candidate is checked with a `HEAD` request first, so a 404 or an HTML erro
 ## GitHub Actions
 
 [`.github/workflows/daily.yml`](./.github/workflows/daily.yml) runs the cycle daily. GitHub's cron only speaks UTC, so the workflow is scheduled at both 14:00 and 15:00 UTC and the job exits early on whichever one is not 07:00 in `America/Los_Angeles` that day. You can also trigger it manually, with a dry-run checkbox.
+
+[`.github/workflows/force-post.yml`](./.github/workflows/force-post.yml) posts one named item on demand, for proving delivery without waiting for tomorrow. It runs `--url`, so the dedupe table and the seed guard do not apply. Either run it from the Actions tab with a `force_url`, or put the URL in [`.github/force-post-url.txt`](./.github/force-post-url.txt) and merge that to main — changing the file is itself the trigger, which keeps a record of every forced post in the git history. Both workflows share one concurrency group, so a forced post can never race the daily run.
+
+`DATABASE_URL` is optional for the forced post alone: without it the run uses the in-memory store, so the message still goes out but nothing is recorded and the item stays eligible for a normal alert later. The daily run refuses to start without it, because a missing database there would re-alert the whole backlog tomorrow.
 
 Add these under **Settings → Secrets and variables → Actions**:
 

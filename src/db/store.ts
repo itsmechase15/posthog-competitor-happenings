@@ -43,6 +43,12 @@ export interface Store {
   insertNewItems(items: CandidateItem[]): Promise<StoredItem[]>;
 
   /**
+   * The id an item is already stored under, or null. Single-item mode uses it
+   * to re-post something the deduplicator has seen before.
+   */
+  findItemId(item: CandidateItem): Promise<string | null>;
+
+  /**
    * Which of these items are already stored, as `competitor|source|externalId`
    * keys. Lets a dry run answer "what is new?" without writing anything.
    */

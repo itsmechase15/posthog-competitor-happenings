@@ -53,6 +53,10 @@ class ReadOnlyStore implements Store {
       .map((item, index) => ({ ...item, id: `dry-run-${index + 1}` }));
   }
 
+  findItemId(...args: Parameters<Store["findItemId"]>) {
+    return this.inner.findItemId(...args);
+  }
+
   findKnownKeys(...args: Parameters<Store["findKnownKeys"]>) {
     return this.inner.findKnownKeys(...args);
   }

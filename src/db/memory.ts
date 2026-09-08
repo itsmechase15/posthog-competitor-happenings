@@ -31,6 +31,10 @@ export class MemoryStore implements Store {
     return inserted;
   }
 
+  async findItemId(item: CandidateItem): Promise<string | null> {
+    return this.items.get(itemKey(item))?.id ?? null;
+  }
+
   async findKnownKeys(items: CandidateItem[]): Promise<Set<string>> {
     return new Set(items.map(itemKey).filter((key) => this.items.has(key)));
   }
