@@ -1,6 +1,6 @@
 import { FALLBACK_MODEL } from "../analysis/fallback.js";
 import { COMPETITORS } from "../config.js";
-import { actionLabel, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
+import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
 import type { Alert, RecommendedAction } from "../types.js";
 import {
   firstSentence,
@@ -74,11 +74,17 @@ export function detailPoints(alert: Alert): string[] {
 /**
  * One action, as Slack shows it: a bold title on its own line, then one short
  * sentence under it. The title carries the PostHog feature for "Consider
- * enhancing", so it still names something concrete when read on its own.
+ * enhancing", so it still names something concrete when read on its own, and
+ * the feature links to its product page when we know one. A feature we do not
+ * recognize stays plain text rather than pointing at a guessed URL.
  */
 export function actionSectionText(action: RecommendedAction): string {
+  const { label, feature } = actionTitleParts(action);
+  const title = !feature
+    ? escape(label)
+    : `${escape(label)} ${feature.url ? link(feature.url, feature.label) : escape(feature.label)}`;
   const detail = escape(firstSentence(action.detail, MAX_ACTION_CHARS));
-  return `*${escape(actionLabel(action))}*\n${detail}`;
+  return `*${title}*\n${detail}`;
 }
 
 /**
