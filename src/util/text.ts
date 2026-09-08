@@ -14,6 +14,27 @@ export function truncate(input: string, max: number): string {
 }
 
 /**
+ * PostHog writes dashes British-style: an en dash with a space either side.
+ * https://posthog.com/handbook/wizard-and-docs/docs-style-guide
+ */
+export const EN_DASH = "\u2013";
+export const SPACED_EN_DASH = ` ${EN_DASH} `;
+
+/**
+ * Punctuation the style guide settles for us, applied to every string on its
+ * way to Slack or an issue: en dashes instead of em dashes, straight quotes
+ * instead of curly ones. A model that slips back to `—` cannot ship it.
+ */
+export function sanitizeCopy(input: string): string {
+  return input
+    .replace(/[ \t]*[\u2014\u2015][ \t]*/g, SPACED_EN_DASH)
+    // A dash between words takes spaces; a range like 2024–2025 keeps none.
+    .replace(/(?<!\d)[ \t]*\u2013[ \t]*(?!\d)/g, SPACED_EN_DASH)
+    .replace(/[\u2018\u2019\u201b]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"');
+}
+
+/**
  * Split prose into sentences. Abbreviations and decimals would fool a bare
  * split on ".", so a boundary also needs whitespace and a capital or digit
  * after it.
