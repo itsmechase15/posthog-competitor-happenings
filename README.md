@@ -51,7 +51,9 @@ Messages land in the private `#posthog-competitor-happenings` channel, id `C0C07
 
 1. **Bot token (preferred).** Set `SLACK_BOT_TOKEN` and the app calls `chat.postMessage` against `SLACK_CHANNEL_ID`, which defaults to `C0C07A1DM09`. This is the path the daily runner should use. It targets a private channel by id, and when Slack refuses a message it says why — `chat.postMessage` answers HTTP 200 with `{"ok": false, "error": "..."}`, which the app checks and surfaces rather than treating as success.
 
-   The app needs a bot user with `chat:write`, invited to the channel with `/invite @your-app`. Without the invite you get `not_in_channel`.
+   The app needs a bot user with `chat:write`, invited to the channel with `/invite @your-app`. Without the invite you get `not_in_channel`; without the scope you get `missing_scope`, which is fixed in api.slack.com → OAuth & Permissions by adding the scope, reinstalling the app to the workspace, and copying the new `xoxb-` token into `SLACK_BOT_TOKEN`. Reinstalling issues a new token, so the secret has to be updated too.
+
+   `npm run run -- --check-slack` answers both questions before anything is posted: it prints the bot, the workspace, and the scopes the token actually carries. The forced post runs it first, so a token that cannot deliver fails before a GitHub issue is opened for a message nobody will see.
 
 2. **Incoming webhook (fallback).** Set `SLACK_WEBHOOK_URL` instead if creating a Slack app is more trouble than it is worth. The channel is fixed at the webhook, so `SLACK_CHANNEL_ID` is ignored.
 
@@ -67,6 +69,7 @@ The image is attached as a Block Kit `image` block pointing at a public URL, so 
 | --- | --- |
 | `npm run run` | One full cycle via `tsx`, no build step |
 | `npm run run -- --url <url>` | Push one named item through the whole pipeline, ignoring dedupe and the seed guard. Add `--out <path>` to save the message |
+| `npm run run -- --check-slack` | Ask Slack what `SLACK_BOT_TOKEN` is and which scopes it carries, and exit non-zero if it cannot post |
 | `npm run build` | Compile to `dist/` |
 | `npm start` | One full cycle from `dist/` |
 | `npm run typecheck` | Type-check `src/` and `test/` |

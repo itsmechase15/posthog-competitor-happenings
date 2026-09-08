@@ -63,6 +63,13 @@ jobs:
 
       - run: npm run build
 
+      # Before the pipeline, because it opens a GitHub issue on the way to
+      # Slack and an undeliverable message should not leave one behind.
+      - name: Check the Slack bot token
+        run: node dist/index.js --check-slack
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
       - name: Post it
         run: node dist/index.js --url "${{ steps.target.outputs.url }}"
         env:

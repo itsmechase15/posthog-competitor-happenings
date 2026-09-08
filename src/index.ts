@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
 import { runCycle, runSingleItem } from "./pipeline.js";
 import { renderMessageText, type SlackMessage } from "./slack/message.js";
+import { checkBotToken } from "./slack/post.js";
 
 const log = createLogger("run");
 
@@ -41,12 +42,29 @@ async function main(): Promise<void> {
     options: {
       url: { type: "string" },
       out: { type: "string" },
+      "check-slack": { type: "boolean" },
     },
     allowPositionals: false,
   });
 
   const config = loadConfig();
   const startedAt = Date.now();
+
+  if (values["check-slack"]) {
+    if (!config.slackBotToken) {
+      log.error("SLACK_BOT_TOKEN is not set — there is no bot token to check");
+      process.exitCode = 1;
+      return;
+    }
+    const check = await checkBotToken(config.slackBotToken, config.httpTimeoutMs);
+    if (check.ok) {
+      log.info(`Slack bot token: ${check.detail}`);
+      return;
+    }
+    log.error(`Slack bot token: ${check.detail}`);
+    process.exitCode = 1;
+    return;
+  }
 
   const analyzerLabel = config.cursorApiKey
     ? `${config.cursorModel} via cursor ${config.cursorRuntime}`

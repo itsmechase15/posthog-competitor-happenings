@@ -3,6 +3,8 @@ import type { Config } from "../src/config.js";
 import { createPoster } from "../src/pipeline.js";
 import {
   BotTokenPoster,
+  checkBotToken,
+  SLACK_AUTH_TEST_URL,
   SLACK_POST_MESSAGE_URL,
   WebhookPoster,
 } from "../src/slack/post.js";
@@ -54,6 +56,15 @@ describe("BotTokenPoster", () => {
     );
   });
 
+  it("names the scope Slack says is missing", async () => {
+    mockFetch(
+      jsonResponse({ ok: false, error: "missing_scope", needed: "chat:write", provided: "im:read" }),
+    );
+    await expect(new BotTokenPoster("xoxb-test", "C1", 5_000).post(message)).rejects.toThrow(
+      /missing_scope \(needs chat:write, token has im:read\)/,
+    );
+  });
+
   it("throws on a transport-level failure", async () => {
     mockFetch(new Response("nope", { status: 502 }));
     await expect(new BotTokenPoster("xoxb-test", "C1", 5_000).post(message)).rejects.toThrow(
@@ -65,6 +76,51 @@ describe("BotTokenPoster", () => {
     expect(new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).description).toContain(
       "C0C07A1DM09",
     );
+  });
+});
+
+describe("checkBotToken", () => {
+  function authResponse(body: unknown, scopes?: string): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        ...(scopes === undefined ? {} : { "x-oauth-scopes": scopes }),
+      },
+    });
+  }
+
+  it("passes a token that carries chat:write", async () => {
+    const fetchSpy = mockFetch(
+      authResponse({ ok: true, team: "PostHog", user: "competitor-bot" }, "chat:write,im:read"),
+    );
+    const check = await checkBotToken("xoxb-test", 5_000);
+
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe(SLACK_AUTH_TEST_URL);
+    expect(check.ok).toBe(true);
+    expect(check.detail).toContain("competitor-bot in PostHog");
+  });
+
+  it("fails a token that cannot post, and says what to add", async () => {
+    mockFetch(authResponse({ ok: true, team: "PostHog", user: "competitor-bot" }, "im:read"));
+    const check = await checkBotToken("xoxb-test", 5_000);
+
+    expect(check.ok).toBe(false);
+    expect(check.detail).toContain("missing chat:write");
+    expect(check.detail).toContain("im:read");
+  });
+
+  it("fails a token Slack does not recognise", async () => {
+    mockFetch(jsonResponse({ ok: false, error: "invalid_auth" }));
+    expect(await checkBotToken("xoxb-test", 5_000)).toEqual({
+      ok: false,
+      detail: "auth.test refused the token: invalid_auth",
+    });
+  });
+
+  it("accepts a token when Slack reports no scope header at all", async () => {
+    mockFetch(authResponse({ ok: true, team: "PostHog", user: "competitor-bot" }));
+    expect((await checkBotToken("xoxb-test", 5_000)).ok).toBe(true);
   });
 });
 

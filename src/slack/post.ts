@@ -9,12 +9,81 @@ export interface SlackPoster {
 }
 
 export const SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage";
+export const SLACK_AUTH_TEST_URL = "https://slack.com/api/auth.test";
+
+/** Slack lists the scopes a token actually carries in this response header. */
+const SCOPES_HEADER = "x-oauth-scopes";
+
+/** The only scope `chat.postMessage` needs. */
+const REQUIRED_SCOPE = "chat:write";
 
 interface SlackApiResponse {
   ok: boolean;
   error?: string;
   ts?: string;
   channel?: string;
+  /** Present on a `missing_scope` refusal, and the whole fix when it is. */
+  needed?: string;
+  provided?: string;
+}
+
+interface SlackAuthTestResponse extends SlackApiResponse {
+  team?: string;
+  user?: string;
+}
+
+export interface SlackCredentialCheck {
+  ok: boolean;
+  /** One line, safe to log: identities and scope names, never the token. */
+  detail: string;
+}
+
+/**
+ * Ask Slack what the token is and what it may do, before anything with side
+ * effects runs. A token missing `chat:write` fails here rather than after an
+ * issue has already been opened for a message that cannot be delivered.
+ */
+export async function checkBotToken(
+  botToken: string,
+  timeoutMs: number,
+): Promise<SlackCredentialCheck> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(SLACK_AUTH_TEST_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${botToken}` },
+      signal: controller.signal,
+    });
+    const body = (await response.json().catch(() => ({}))) as SlackAuthTestResponse;
+
+    if (!body.ok) {
+      return { ok: false, detail: `auth.test refused the token: ${body.error ?? "unknown error"}` };
+    }
+
+    const scopes = (response.headers.get(SCOPES_HEADER) ?? "")
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+    const identity = `${body.user ?? "unknown bot"} in ${body.team ?? "unknown workspace"}`;
+    const granted = scopes.length > 0 ? scopes.join(", ") : "none reported";
+
+    if (scopes.length > 0 && !scopes.includes(REQUIRED_SCOPE)) {
+      return {
+        ok: false,
+        detail: `${identity} cannot post: the token is missing ${REQUIRED_SCOPE}. Granted: ${granted}. Add the scope in api.slack.com → OAuth & Permissions, reinstall the app, then update SLACK_BOT_TOKEN`,
+      };
+    }
+
+    return { ok: true, detail: `${identity}, scopes: ${granted}` };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `auth.test could not be reached: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -61,7 +130,12 @@ export class BotTokenPoster implements SlackPoster {
       // Slack answers 200 even when it refuses the post, so the body decides.
       const body = (await response.json()) as SlackApiResponse;
       if (!body.ok) {
-        throw new Error(`chat.postMessage failed: ${body.error ?? "unknown error"}`);
+        // A scope refusal names the scope that is missing; without it the
+        // error is just "missing_scope" and nobody knows what to grant.
+        const scopes = body.needed
+          ? ` (needs ${body.needed}, token has ${body.provided || "nothing"})`
+          : "";
+        throw new Error(`chat.postMessage failed: ${body.error ?? "unknown error"}${scopes}`);
       }
       log.debug(`posted to ${body.channel ?? this.channelId} at ${body.ts ?? "?"}`);
     } finally {
