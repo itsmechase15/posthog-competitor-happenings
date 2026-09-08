@@ -1,5 +1,5 @@
 import { findPostHogProduct } from "./posthog/products.js";
-import type { Action, Impact, RecommendedAction, SourceId } from "./types.js";
+import type { Action, ActionOwner, Impact, RecommendedAction, SourceId } from "./types.js";
 
 /**
  * Everything user-facing says "impact", never "severity". The old word only
@@ -25,6 +25,21 @@ export const ACTION_LABEL: Record<Action, string> = {
   consider_building: "Consider building",
   consider_enhancing: "Consider enhancing",
 };
+
+/**
+ * Who owns each action. Marketing writes the pages, product decides what gets
+ * built, so an alert that needs both is two pieces of work for two teams.
+ */
+export const ACTION_OWNER: Record<Action, ActionOwner> = {
+  update_pages: "marketing",
+  new_compare_page: "marketing",
+  consider_building: "product",
+  consider_enhancing: "product",
+};
+
+export function actionOwner(action: RecommendedAction): ActionOwner {
+  return ACTION_OWNER[action.type];
+}
 
 /** An action title, kept in two pieces so Slack can link the product name. */
 export interface ActionTitle {

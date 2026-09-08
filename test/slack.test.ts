@@ -7,7 +7,9 @@ import {
   renderMessageText,
   type SlackMessage,
 } from "../src/slack/message.js";
-import type { Alert } from "../src/types.js";
+import type { Alert, RecommendedAction } from "../src/types.js";
+
+const ISSUES_BASE = "https://github.com/itsmechase15/posthog-competitor-happenings/issues";
 
 const base: Alert = {
   item: {
@@ -54,11 +56,28 @@ const base: Alert = {
     altText: "Amplitude: Schedule experiment stop",
     origin: "page",
   },
-  issue: { url: "https://github.com/itsmechase15/posthog-competitor-happenings/issues/7", number: 7 },
+  issues: [],
 };
 
+/** The alert as a real run produces it: one issue opened per action. */
+const withIssues = (alert: Alert): Alert => ({
+  ...alert,
+  issues: alert.analysis.actions.map((action, index) => ({
+    action,
+    issue: { url: `${ISSUES_BASE}/${7 + index}`, number: 7 + index },
+  })),
+});
+
+/** A different set of actions, with no issues, for the title and link cases. */
+const withActions = (...actions: RecommendedAction[]): Alert => ({
+  ...base,
+  issues: [],
+  analysis: { ...base.analysis, actions },
+});
+
 describe("buildSlackMessage", () => {
-  const message = buildSlackMessage(base);
+  const alert = withIssues(base);
+  const message = buildSlackMessage(alert);
   const blocks = message.blocks as Array<Record<string, any>>;
   const rendered = JSON.stringify(message);
 
@@ -157,33 +176,27 @@ describe("buildSlackMessage", () => {
     return [texts[heading] as string, ...(end === -1 ? after : after.slice(0, end))];
   };
 
-  it("stacks each action as its own block: bold title, then one sentence under it", () => {
+  it("stacks each action as its own block: bold title, one sentence, its issue", () => {
     expect(actionBlocks(message)).toEqual([
       "*Recommended action(s)*",
-      "*Consider enhancing <https://posthog.com/experiments|Experiments>*\nPostHog experiments start manually and stop manually; there is no end time.",
-      "*Update pages*\nThe Amplitude compare page says neither tool schedules experiment stops.",
+      `*Consider enhancing <https://posthog.com/experiments|Experiments>*\nPostHog experiments start manually and stop manually; there is no end time.\n<${ISSUES_BASE}/7|Access GitHub issue #7>`,
+      `*Update pages*\nThe Amplitude compare page says neither tool schedules experiment stops.\n<${ISSUES_BASE}/8|Access GitHub issue #8>`,
     ]);
   });
 
   it("keeps the action detail to one sentence, so no block turns into a paragraph", () => {
     const [, first] = actionBlocks(message);
     expect(first).not.toContain("small change to the experiment form");
-    expect((first as string).split("\n")).toHaveLength(2);
+    expect((first as string).split("\n")).toHaveLength(3);
   });
 
   it("trims a long sentence so the detail line stays short", () => {
-    const long = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [
-          {
-            type: "update_pages",
-            detail: `The Amplitude compare page ${"still says neither tool schedules experiment stops, ".repeat(6)}and that is now wrong.`,
-          },
-        ],
-      },
-    });
+    const long = buildSlackMessage(
+      withActions({
+        type: "update_pages",
+        detail: `The Amplitude compare page ${"still says neither tool schedules experiment stops, ".repeat(6)}and that is now wrong.`,
+      }),
+    );
     const detail = (actionBlocks(long)[1] as string).split("\n")[1] as string;
     expect(detail.length).toBeLessThanOrEqual(150);
     expect(detail.endsWith("\u2026")).toBe(true);
@@ -197,9 +210,11 @@ describe("buildSlackMessage", () => {
         "",
         "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
         "PostHog experiments start manually and stop manually; there is no end time.",
+        `<${ISSUES_BASE}/7|Access GitHub issue #7>`,
         "",
         "*Update pages*",
         "The Amplitude compare page says neither tool schedules experiment stops.",
+        `<${ISSUES_BASE}/8|Access GitHub issue #8>`,
       ].join("\n"),
     );
     expect(text).not.toContain("\u2022 Update pages");
@@ -216,19 +231,13 @@ describe("buildSlackMessage", () => {
   });
 
   it("links a product name we know, inside the bold title", () => {
-    const flags = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [
-          {
-            type: "consider_enhancing",
-            feature: "feature flags",
-            detail: "PostHog flags have no scheduled rollout.",
-          },
-        ],
-      },
-    });
+    const flags = buildSlackMessage(
+      withActions({
+        type: "consider_enhancing",
+        feature: "feature flags",
+        detail: "PostHog flags have no scheduled rollout.",
+      }),
+    );
     expect(actionBlocks(flags)[1]).toBe(
       "*Consider enhancing <https://posthog.com/feature-flags|Feature flags>*\nPostHog flags have no scheduled rollout.",
     );
@@ -238,13 +247,7 @@ describe("buildSlackMessage", () => {
     const titles = ["Feature Flags", "feature flags", "FEATURE  FLAGS", "Feature flag"].map(
       (feature) =>
         actionBlocks(
-          buildSlackMessage({
-            ...base,
-            analysis: {
-              ...base.analysis,
-              actions: [{ type: "consider_enhancing", feature, detail: "A gap." }],
-            },
-          }),
+          buildSlackMessage(withActions({ type: "consider_enhancing", feature, detail: "A gap." })),
         )[1]?.split("\n")[0],
     );
     expect(new Set(titles)).toEqual(
@@ -253,19 +256,13 @@ describe("buildSlackMessage", () => {
   });
 
   it("leaves a feature we have no product page for as plain text", () => {
-    const unlinked = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [
-          {
-            type: "consider_enhancing",
-            feature: "Revenue analytics",
-            detail: "PostHog reads Stripe, but not on a schedule you pick.",
-          },
-        ],
-      },
-    });
+    const unlinked = buildSlackMessage(
+      withActions({
+        type: "consider_enhancing",
+        feature: "Revenue analytics",
+        detail: "PostHog reads Stripe, but not on a schedule you pick.",
+      }),
+    );
     expect(actionBlocks(unlinked)[1]).toBe(
       "*Consider enhancing Revenue analytics*\nPostHog reads Stripe, but not on a schedule you pick.",
     );
@@ -278,13 +275,9 @@ describe("buildSlackMessage", () => {
       ["Surveys", "https://posthog.com/surveys"],
       ["Error tracking", "https://posthog.com/error-tracking"],
     ] as const) {
-      const message = buildSlackMessage({
-        ...base,
-        analysis: {
-          ...base.analysis,
-          actions: [{ type: "consider_enhancing", feature, detail: "A gap." }],
-        },
-      });
+      const message = buildSlackMessage(
+        withActions({ type: "consider_enhancing", feature, detail: "A gap." }),
+      );
       expect(actionBlocks(message)[1]?.split("\n")[0]).toBe(
         `*Consider enhancing <${url}|${feature}>*`,
       );
@@ -292,13 +285,9 @@ describe("buildSlackMessage", () => {
   });
 
   it("links nothing on the three actions that name no feature", () => {
-    const pages = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [{ type: "update_pages", detail: "The compare page is stale." }],
-      },
-    });
+    const pages = buildSlackMessage(
+      withActions({ type: "update_pages", detail: "The compare page is stale." }),
+    );
     expect(actionBlocks(pages)[1]).toBe("*Update pages*\nThe compare page is stale.");
   });
 
@@ -308,17 +297,13 @@ describe("buildSlackMessage", () => {
   });
 
   it("links a product in every action of a multi-action alert", () => {
-    const both = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [
-          { type: "consider_enhancing", feature: "Experiments", detail: "No end time." },
-          { type: "consider_enhancing", feature: "Feature flags", detail: "No scheduled rollout." },
-          { type: "update_pages", detail: "The compare page is stale." },
-        ],
-      },
-    });
+    const both = buildSlackMessage(
+      withActions(
+        { type: "consider_enhancing", feature: "Experiments", detail: "No end time." },
+        { type: "consider_enhancing", feature: "Feature flags", detail: "No scheduled rollout." },
+        { type: "update_pages", detail: "The compare page is stale." },
+      ),
+    );
     expect(actionBlocks(both).slice(1)).toEqual([
       "*Consider enhancing <https://posthog.com/experiments|Experiments>*\nNo end time.",
       "*Consider enhancing <https://posthog.com/feature-flags|Feature flags>*\nNo scheduled rollout.",
@@ -326,14 +311,49 @@ describe("buildSlackMessage", () => {
     ]);
   });
 
-  it("falls back to the bare label when a stored action names no feature", () => {
-    const bare = buildSlackMessage({
-      ...base,
-      analysis: {
-        ...base.analysis,
-        actions: [{ type: "consider_enhancing", detail: "PostHog has an adjacent gap." }],
-      },
+  it("gives each action of a three-action alert its own issue link", () => {
+    const three = buildSlackMessage(
+      withIssues(
+        withActions(
+          { type: "consider_enhancing", feature: "Experiments", detail: "No end time." },
+          { type: "consider_enhancing", feature: "Feature flags", detail: "No scheduled rollout." },
+          { type: "update_pages", detail: "The compare page is stale." },
+        ),
+      ),
+    );
+    expect(actionBlocks(three).slice(1).map((block) => block.split("\n")[2])).toEqual([
+      `<${ISSUES_BASE}/7|Access GitHub issue #7>`,
+      `<${ISSUES_BASE}/8|Access GitHub issue #8>`,
+      `<${ISSUES_BASE}/9|Access GitHub issue #9>`,
+    ]);
+  });
+
+  it("never leaves one issue link standing for the whole alert", () => {
+    const links = (actionBlocks(message).join("\n").match(/Access GitHub issue/g) ?? []).length;
+    expect(links).toBe(2);
+    const outsideActions = (message.blocks as Array<Record<string, any>>).filter((block) =>
+      (block.text?.text as string | undefined)?.startsWith(`*<${ISSUES_BASE}`),
+    );
+    expect(outsideActions).toEqual([]);
+  });
+
+  it("shows an action with no issue behind it, rather than dropping it", () => {
+    const partial = buildSlackMessage({
+      ...alert,
+      issues: [
+        { action: alert.analysis.actions[0] as RecommendedAction, issue: null },
+        alert.issues[1] as (typeof alert.issues)[number],
+      ],
     });
+    const [, first, second] = actionBlocks(partial);
+    expect(first?.split("\n")).toHaveLength(2);
+    expect(second).toContain(`<${ISSUES_BASE}/8|Access GitHub issue #8>`);
+  });
+
+  it("falls back to the bare label when a stored action names no feature", () => {
+    const bare = buildSlackMessage(
+      withActions({ type: "consider_enhancing", detail: "PostHog has an adjacent gap." }),
+    );
     expect(actionBlocks(bare)[1]).toBe("*Consider enhancing*\nPostHog has an adjacent gap.");
   });
 
@@ -349,10 +369,9 @@ describe("buildSlackMessage", () => {
     expect(JSON.stringify(slipped)).toContain("scheduled stops \u2013 on experiments and flags");
   });
 
-  it("links the GitHub issue for the detail it no longer carries", () => {
-    expect(rendered).toContain(
-      `<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>`,
-    );
+  it("links each action's own issue for the detail it no longer carries", () => {
+    expect(rendered).toContain(`<${ISSUES_BASE}/7|${ISSUE_LINK_LABEL} #7>`);
+    expect(rendered).toContain(`<${ISSUES_BASE}/8|${ISSUE_LINK_LABEL} #8>`);
   });
 
   it("keeps PostHog page citations and suggested edits out of Slack", () => {
@@ -363,11 +382,11 @@ describe("buildSlackMessage", () => {
   });
 
   it("stays short: one image, a handful of sections, one footer", () => {
-    // Six fixed blocks plus one per action, and an alert carries at most three.
-    expect(blocks.length).toBeLessThanOrEqual(9);
+    // Five fixed blocks plus one per action, and an alert carries at most three.
+    expect(blocks.length).toBeLessThanOrEqual(8);
   });
 
-  it("orders the blocks image, KNOW, impact, detail, actions, issue, footer", () => {
+  it("orders the blocks image, KNOW, impact, detail, actions, footer", () => {
     const headings = blocks.map((block) =>
       block.type === "image"
         ? "image"
@@ -383,26 +402,32 @@ describe("buildSlackMessage", () => {
       `*${ACTION_HEADING}*`,
       "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
       "*Update pages*",
-      `*<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>*`,
       "footer",
     ]);
   });
 
-  it("says nothing about the missing issue outside a dry run", () => {
-    const message = buildSlackMessage({ ...base, issue: null });
+  it("says nothing about the missing issues outside a dry run", () => {
+    const message = buildSlackMessage(base);
     expect(JSON.stringify(message)).not.toContain(ISSUE_LINK_LABEL);
     expect(JSON.stringify(message)).not.toContain("not created");
   });
 
-  it("explains the missing issue when a dry run passed a note", () => {
+  it("explains the missing issues when a dry run passed a note", () => {
     const message = buildSlackMessage({
       ...base,
-      issue: null,
-      issueNote: "GitHub issue not created — skipped (dry run)",
+      issueNote: "GitHub issues not created — skipped (dry run)",
     });
     expect(JSON.stringify(message)).toContain(
-      "GitHub issue not created \u2013 skipped (dry run)",
+      "GitHub issues not created \u2013 skipped (dry run)",
     );
+  });
+
+  it("drops the dry-run note once the issues are real", () => {
+    const message = buildSlackMessage({
+      ...alert,
+      issueNote: "GitHub issues not created — skipped (dry run)",
+    });
+    expect(JSON.stringify(message)).not.toContain("not created");
   });
 
   it("keeps source and analyzer in a small footer, with a link to the source", () => {

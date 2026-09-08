@@ -5,9 +5,9 @@ import {
   IMPACTS,
   LEGACY_IMPACTS,
   toImpact,
+  type ActionIssue,
   type Analysis,
   type FeatureImage,
-  type IssueRef,
   type RecommendedAction,
 } from "../types.js";
 import { sanitizeCopy } from "../util/text.js";
@@ -135,37 +135,76 @@ const issueSchema = z.object({
   number: z.number().int().nonnegative(),
 });
 
+/** One action's issue, stored in the same order as `actions`. */
+const actionIssueSchema = z.object({
+  type: actionToken.optional(),
+  feature: feature.optional(),
+  issue: issueSchema.optional().nullable(),
+});
+
 /**
  * What actually goes in `analyses.analysis`: the verdict plus the picture and
- * the issue it was posted with, so a retry re-posts the same alert instead of
- * re-resolving an image and opening a second issue.
+ * the issues it was posted with, so a retry re-posts the same alert instead of
+ * re-resolving an image and opening a second set of issues.
  */
 export const alertPayloadSchema = analysisSchema.extend({
   image: imageSchema.optional().nullable(),
+  issues: z.array(actionIssueSchema).max(4).optional().nullable(),
+  /** How a row written before an alert had one issue per action stored it. */
   issue: issueSchema.optional().nullable(),
 });
 
 export interface StoredAlertPayload {
   analysis: Analysis;
   image: FeatureImage | null;
-  issue: IssueRef | null;
+  /** One entry per action, in order, whether or not an issue was opened for it. */
+  issues: ActionIssue[];
+}
+
+/**
+ * Pair each action with its issue. A row from before the split carries one
+ * issue for the whole alert, which belonged to the first action, so that is
+ * where it is read back.
+ */
+function readActionIssues(
+  parsed: z.infer<typeof alertPayloadSchema>,
+  actions: RecommendedAction[],
+): ActionIssue[] {
+  const stored = parsed.issues ?? null;
+  return actions.map((action, index) => ({
+    action,
+    issue: stored
+      ? (stored[index]?.issue ?? null)
+      : index === 0
+        ? (parsed.issue ?? null)
+        : null,
+  }));
 }
 
 export function parseStoredAlert(raw: unknown): StoredAlertPayload {
   const parsed = alertPayloadSchema.parse(raw);
+  const analysis = normalizeAnalysis(parsed);
   return {
-    analysis: normalizeAnalysis(parsed),
+    analysis,
     image: parsed.image ?? null,
-    issue: parsed.issue ?? null,
+    issues: readActionIssues(parsed, analysis.actions),
   };
 }
 
 export function serializeAlertPayload(
   analysis: Analysis,
   image: FeatureImage | null,
-  issue: IssueRef | null,
+  issues: ActionIssue[],
 ): Record<string, unknown> {
-  return { ...analysis, image, issue };
+  return {
+    ...analysis,
+    image,
+    issues: issues.map(({ action, issue }) => ({
+      type: action.type,
+      ...(action.feature ? { feature: action.feature } : {}),
+      issue,
+    })),
+  };
 }
 
 /**

@@ -159,7 +159,12 @@ describe("PostgresStore", () => {
         openQuestions: [],
       },
       image: { url: "https://cdn.invalid/a.png", altText: "alt", origin: "page" },
-      issue: { url: "https://github.com/o/r/issues/1", number: 1 },
+      issues: [
+        {
+          action: { type: "update_pages", detail: "d" },
+          issue: { url: "https://github.com/o/r/issues/1", number: 1 },
+        },
+      ],
     });
 
     // Until it is stamped, the next run must see it as still owing a message.
@@ -179,7 +184,7 @@ describe("PostgresStore", () => {
         actions: Array<{ type: string }>;
         impact: string;
         image: { url: string };
-        issue: { number: number };
+        issues: Array<{ type: string; issue: { number: number } | null }>;
       };
     }>("select severity, slack_posted_at, analysis from analyses where id::text = $1", [
       analysisId,
@@ -188,7 +193,10 @@ describe("PostgresStore", () => {
     expect(row?.analysis.impact).toBe("notable");
     expect(row?.analysis.actions).toEqual([{ type: "update_pages", detail: "d" }]);
     expect(row?.analysis.image.url).toBe("https://cdn.invalid/a.png");
-    expect(row?.analysis.issue.number).toBe(1);
+    // One stored entry per action, so a retry links what this run opened.
+    expect(row?.analysis.issues).toEqual([
+      { type: "update_pages", issue: { url: "https://github.com/o/r/issues/1", number: 1 } },
+    ]);
     // The legacy column keeps the impact token so no migration is needed.
     expect(row?.severity).toBe("notable");
     expect(new Date(row!.slack_posted_at).toISOString()).toBe(postedAt.toISOString());
@@ -213,7 +221,16 @@ describe("PostgresStore", () => {
         openQuestions: [],
       },
       image: { url: "https://cdn.invalid/b.png", altText: "alt", origin: "screenshot" },
-      issue: { url: "https://github.com/o/r/issues/2", number: 2 },
+      issues: [
+        {
+          action: { type: "new_compare_page", detail: "d" },
+          issue: { url: "https://github.com/o/r/issues/2", number: 2 },
+        },
+        {
+          action: { type: "consider_enhancing", feature: "Experiments", detail: "d2" },
+          issue: { url: "https://github.com/o/r/issues/3", number: 3 },
+        },
+      ],
     });
 
     const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
@@ -227,13 +244,18 @@ describe("PostgresStore", () => {
     ]);
     expect(target?.analysis.actions[1]?.feature).toBe("Experiments");
     expect(target?.analysis.posthogRefs[0]?.url).toBe("https://posthog.com/compare/y");
-    // A retry re-posts the same picture and links the same issue.
+    // A retry re-posts the same picture and links the issues this run opened,
+    // one per action, rather than opening a second set.
     expect(target?.image).toEqual({
       url: "https://cdn.invalid/b.png",
       altText: "alt",
       origin: "screenshot",
     });
-    expect(target?.issue).toEqual({ url: "https://github.com/o/r/issues/2", number: 2 });
+    expect(target?.issues.map((entry) => entry.issue?.number)).toEqual([2, 3]);
+    expect(target?.issues.map((entry) => entry.action.type)).toEqual([
+      "new_compare_page",
+      "consider_enhancing",
+    ]);
     expect(target?.item).toMatchObject({
       competitor: "mixpanel",
       source: "blog",
@@ -265,7 +287,33 @@ describe("PostgresStore", () => {
     // A row written before `actions` existed reads back as a list of one.
     expect(target?.analysis.actions).toEqual([{ type: "update_pages", detail: "d" }]);
     expect(target?.image).toBeNull();
-    expect(target?.issue).toBeNull();
+    expect(target?.issues).toEqual([
+      { action: { type: "update_pages", detail: "d" }, issue: null },
+    ]);
+  });
+
+  it("reads a row from before the split, whose one issue was the whole alert's", async () => {
+    await store.insertNewItems([item("single-issue-target")]);
+    await db.query(
+      `insert into analyses (item_id, severity, analysis, model)
+       values ((select id from items where external_id = 'single-issue-target'), 'notable', $1::jsonb, 'claude-opus-5')`,
+      [
+        JSON.stringify({
+          impact: "notable",
+          summary: "s",
+          actions: [
+            { type: "update_pages", detail: "d" },
+            { type: "consider_building", detail: "d2" },
+          ],
+          issue: { url: "https://github.com/o/r/issues/9", number: 9 },
+        }),
+      ],
+    );
+
+    const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
+    const target = pending.find((row) => row.item.externalId === "single-issue-target");
+    // The one issue belonged to the first action, so that is where it lands.
+    expect(target?.issues.map((entry) => entry.issue?.number ?? null)).toEqual([9, null]);
   });
 
   it("ignores analyses older than the retry window", async () => {

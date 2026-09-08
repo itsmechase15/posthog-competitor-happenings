@@ -172,22 +172,55 @@ describe("parseAnalysis", () => {
 });
 
 describe("parseStoredAlert", () => {
-  it("reads back the image and issue stored with an analysis", () => {
+  it("reads back the image and the issue opened for each action", () => {
     const stored = parseStoredAlert({
       ...valid,
       image: { url: "https://cdn.invalid/a.png", altText: "alt", origin: "page" },
-      issue: { url: "https://github.com/o/r/issues/3", number: 3 },
+      issues: [
+        { type: "update_pages", issue: { url: "https://github.com/o/r/issues/3", number: 3 } },
+        {
+          type: "consider_enhancing",
+          feature: "Data pipelines",
+          issue: { url: "https://github.com/o/r/issues/4", number: 4 },
+        },
+      ],
     });
     expect(stored.image?.url).toBe("https://cdn.invalid/a.png");
-    expect(stored.issue?.number).toBe(3);
+    expect(stored.issues.map((entry) => entry.issue?.number)).toEqual([3, 4]);
+    expect(stored.issues.map((entry) => entry.action.type)).toEqual([
+      "update_pages",
+      "consider_enhancing",
+    ]);
     expect(stored.analysis.impact).toBe("notable");
   });
 
   it("reads a phase 1 row that has neither", () => {
     const stored = parseStoredAlert({ ...valid, impact: undefined, severity: "minor" });
     expect(stored.image).toBeNull();
-    expect(stored.issue).toBeNull();
+    expect(stored.issues.map((entry) => entry.issue)).toEqual([null, null]);
     expect(stored.analysis.impact).toBe("minor");
+  });
+
+  it("puts a row's single stored issue on the first action, where it came from", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      issue: { url: "https://github.com/o/r/issues/5", number: 5 },
+    });
+    expect(stored.issues.map((entry) => entry.issue?.number ?? null)).toEqual([5, null]);
+  });
+
+  it("pairs an action with no stored issue with null, rather than shifting the rest", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      issues: [
+        { type: "update_pages", issue: null },
+        {
+          type: "consider_enhancing",
+          issue: { url: "https://github.com/o/r/issues/6", number: 6 },
+        },
+      ],
+    });
+    expect(stored.issues.map((entry) => entry.issue?.number ?? null)).toEqual([null, 6]);
   });
 
   it("reads a row stored on the low/medium/high scale", () => {
