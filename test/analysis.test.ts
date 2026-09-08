@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { diversifyClaims } from "../src/analysis/analyze.js";
 import { heuristicAnalysis } from "../src/analysis/fallback.js";
 import { buildAnalysisPrompt } from "../src/analysis/prompt.js";
+import { MAX_ACTION_CHARS } from "../src/slack/message.js";
 import type { PostHogClaim } from "../src/types.js";
 import { extractJsonObject, parseAnalysis, parseStoredAlert } from "../src/analysis/schema.js";
 import type { StoredItem } from "../src/types.js";
@@ -457,7 +458,7 @@ describe("buildAnalysisPrompt", () => {
   });
 
   it("asks for an action detail that opens with one short sentence", () => {
-    expect(withRefs).toContain("one short sentence, under 150 characters");
+    expect(withRefs).toContain(`one short sentence, under ${MAX_ACTION_CHARS} characters`);
     expect(withRefs).toContain("Slack shows that sentence and nothing else");
   });
 

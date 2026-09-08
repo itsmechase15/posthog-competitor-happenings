@@ -8,9 +8,20 @@ export function collapseWhitespace(input: string): string {
   return input.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Shorten to `max` characters, ellipsis included. The cut lands on the last
+ * word boundary, so a trimmed sentence reads as a sentence that stops rather
+ * than one that breaks mid-word ("experimen…"). A run of text with no space
+ * near the limit – a URL, a long identifier – is cut where the limit falls,
+ * since there is no boundary to prefer. Trailing punctuation that would sit
+ * against the ellipsis goes too.
+ */
 export function truncate(input: string, max: number): string {
   if (input.length <= max) return input;
-  return `${input.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+  const head = input.slice(0, Math.max(0, max - 1)).trimEnd();
+  const boundary = head.lastIndexOf(" ");
+  const cut = boundary > max * 0.6 ? head.slice(0, boundary) : head;
+  return `${cut.replace(/[\s,;:\u2013\u2014-]+$/, "")}…`;
 }
 
 /**

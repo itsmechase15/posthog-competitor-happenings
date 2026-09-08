@@ -1,4 +1,7 @@
 import { COMPETITORS } from "../config.js";
+// The sentence budget the prompt asks for is the one Slack renders to, so it
+// is stated once, where the message is built.
+import { MAX_ACTION_CHARS } from "../slack/message.js";
 import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 
@@ -65,7 +68,7 @@ Rules:
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
 - The other three action types take no "feature". Leave the key out rather than sending it empty.
 - "detail" explains the gap: what the competitor now does, what PostHog does or does not do, and the specific next step. Never generic "why this matters" copy.
-- Open "detail" with one short sentence, under 150 characters, that stands up alone: Slack shows that sentence and nothing else, on a single line under the action title. Put the rest in later sentences, which the GitHub issue carries.
+- Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone, and lead it with the work to do rather than with the gap: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - "posthog_refs" cites indexed PostHog URLs from the context below. Only cite URLs given to you. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things the source does not answer that change what PostHog should do. Skip anything you can answer from the source.
 - Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and keep impact minor.

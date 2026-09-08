@@ -4,6 +4,7 @@ import {
   ACTION_HEADING,
   buildSlackMessage,
   ISSUE_LINK_LABEL,
+  MAX_ACTION_CHARS,
   renderMessageText,
   type SlackMessage,
 } from "../src/slack/message.js";
@@ -190,16 +191,25 @@ describe("buildSlackMessage", () => {
     expect((first as string).split("\n")).toHaveLength(3);
   });
 
-  it("trims a long sentence so the detail line stays short", () => {
-    const long = buildSlackMessage(
-      withActions({
-        type: "update_pages",
-        detail: `The Amplitude compare page ${"still says neither tool schedules experiment stops, ".repeat(6)}and that is now wrong.`,
-      }),
+  it("keeps a whole sentence that leads with the work to do", () => {
+    const sentence =
+      "Add a scheduled end time to experiments so a time-boxed test stops itself and freezes its analysis window, since flags already schedule changes and experiments end by hand.";
+    const message = buildSlackMessage(
+      withActions({ type: "consider_enhancing", feature: "Experiments", detail: sentence }),
     );
+    expect((actionBlocks(message)[1] as string).split("\n")[1]).toBe(sentence);
+  });
+
+  it("trims a long sentence at a word boundary, so the detail never breaks mid-word", () => {
+    const sentence = `The Amplitude compare page ${"still says neither tool schedules experiment stops, ".repeat(6)}and that is now wrong.`;
+    const long = buildSlackMessage(withActions({ type: "update_pages", detail: sentence }));
     const detail = (actionBlocks(long)[1] as string).split("\n")[1] as string;
-    expect(detail.length).toBeLessThanOrEqual(150);
+    expect(detail.length).toBeLessThanOrEqual(MAX_ACTION_CHARS);
     expect(detail.endsWith("\u2026")).toBe(true);
+
+    const kept = detail.slice(0, -1);
+    expect(sentence.startsWith(kept)).toBe(true);
+    expect(sentence.slice(kept.length)).toMatch(/^[\s,]/);
   });
 
   it("renders the actions with a blank line between them, not as dense bullets", () => {
