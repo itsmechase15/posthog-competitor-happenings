@@ -110,6 +110,10 @@ class UnreachableDatabaseFallback implements Store {
     return this.attempt((store) => store.getIndexedPageUrls());
   }
 
+  getPages(...args: Parameters<Store["getPages"]>) {
+    return this.attempt((store) => store.getPages(...args));
+  }
+
   upsertPage(...args: Parameters<Store["upsertPage"]>) {
     return this.attempt((store) => store.upsertPage(...args));
   }
@@ -176,6 +180,10 @@ class ReadOnlyStore implements Store {
 
   getIndexedPageUrls() {
     return this.inner.getIndexedPageUrls();
+  }
+
+  getPages(...args: Parameters<Store["getPages"]>) {
+    return this.inner.getPages(...args);
   }
 
   async upsertPage() {

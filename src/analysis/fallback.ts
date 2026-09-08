@@ -3,6 +3,7 @@ import type {
   Analysis,
   Impact,
   PostHogClaim,
+  PostHogDoc,
   RecommendedAction,
   StoredItem,
 } from "../types.js";
@@ -74,7 +75,11 @@ function pointsFrom(lead: string, item: StoredItem): string[] {
  * product facts. It restates the source and points at the pages we already
  * indexed, so a dry run is honest about being unanalyzed.
  */
-export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Analysis {
+export function heuristicAnalysis(
+  item: StoredItem,
+  claims: PostHogClaim[],
+  docs: PostHogDoc[] = [],
+): Analysis {
   const competitor = COMPETITORS[item.competitor];
   const haystack = `${item.title} ${bodyOf(item)}`.toLowerCase();
   const lead = leadOf(item);
@@ -89,6 +94,12 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
     .slice(0, 2)
     .map((claim) => ({ url: claim.url, claim: truncate(claim.paragraph, 240) }));
 
+  // The docs pages this signal touches, so whoever picks the issue up can read
+  // what PostHog already ships instead of taking the heuristic's word for it.
+  const docRefs = docs
+    .slice(0, 2)
+    .map((doc) => ({ url: doc.url, claim: truncate(firstSentence(doc.excerpt, 240) || doc.title, 240) }));
+
   const summary = lead
     ? `${competitor.label}: ${firstSentence(lead, 240)}`
     : `${competitor.label} published "${item.title}".`;
@@ -97,8 +108,8 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
     impact: impactOf(haystack),
     summary,
     keyPoints: pointsFrom(lead, item),
-    actions: [fallbackAction(competitor.label, refs[0]?.url)],
-    posthogRefs: refs,
+    actions: [fallbackAction(competitor.label, refs[0]?.url, docRefs[0]?.url)],
+    posthogRefs: [...refs, ...docRefs],
     openQuestions: [],
   };
 }
@@ -109,16 +120,24 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
  * guessing one would be an invented fact. It points at page coverage instead,
  * which is the one thing the indexed claims actually tell us.
  */
-function fallbackAction(label: string, closestPage: string | undefined): RecommendedAction {
+function fallbackAction(
+  label: string,
+  closestPage: string | undefined,
+  closestDoc: string | undefined,
+): RecommendedAction {
   const preamble = "No model analysis ran, so this is unassessed.";
+  const docHint = closestDoc
+    ? ` What PostHog ships in this area is documented at ${closestDoc}; read it before treating anything here as a gap.`
+    : "";
+
   if (closestPage) {
     return {
       type: "update_pages",
-      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether it still describes ${label} accurately after this change.`,
+      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether it still describes ${label} accurately after this change.${docHint}`,
     };
   }
   return {
     type: "new_compare_page",
-    detail: `${preamble} No indexed PostHog.com page mentions ${label} in a way that covers this, which is itself the gap worth checking.`,
+    detail: `${preamble} No indexed PostHog.com page mentions ${label} in a way that covers this, which is itself the gap worth checking.${docHint}`,
   };
 }

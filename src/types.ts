@@ -126,3 +126,14 @@ export interface PostHogClaim {
   paragraph: string;
   heading: string | null;
 }
+
+/**
+ * A PostHog docs page, cut down to what it says about one signal. This is the
+ * evidence an action is checked against before it may claim PostHog cannot do
+ * something.
+ */
+export interface PostHogDoc {
+  url: string;
+  title: string;
+  excerpt: string;
+}

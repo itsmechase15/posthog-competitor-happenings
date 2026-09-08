@@ -6,6 +6,7 @@ import { extractPage } from "../util/html.js";
 import { fetchText } from "../util/http.js";
 import { normalizeUrl, truncate } from "../util/text.js";
 import { parseSitemap } from "../sources/sitemap.js";
+import { CANONICAL_DOC_URLS } from "./products.js";
 
 const log = createLogger("posthog-index");
 
@@ -31,16 +32,22 @@ const INCLUDED_PREFIXES = [
 ];
 const EXCLUDED_PREFIXES = ["/questions/", "/community/", "/careers", "/handbook"];
 
-/** Lower sorts first: pages most likely to carry a competitor claim get the budget. */
+/**
+ * Lower sorts first. The canonical product docs lead, ahead even of the
+ * comparison pages: they are what an "enhance this" or "build this"
+ * recommendation gets checked against, and a compare page written last year is
+ * not evidence about what the product does today.
+ */
 export function candidatePriority(url: string): number {
   const lower = url.toLowerCase();
+  if (CANONICAL_DOC_URLS.includes(normalizeUrl(url))) return 0;
   const named = COMPETITOR_IDS.some((id) => lower.includes(id));
-  if (named && lower.includes("/compare")) return 0;
-  if (named) return 1;
-  if (lower.includes("/compare")) return 2;
-  if (lower.includes("/blog/")) return 3;
-  if (lower.includes("/product")) return 4;
-  return 5;
+  if (named && lower.includes("/compare")) return 1;
+  if (named) return 2;
+  if (lower.includes("/compare")) return 3;
+  if (lower.includes("/blog/")) return 4;
+  if (lower.includes("/product")) return 5;
+  return 6;
 }
 
 export function isIndexCandidate(url: string): boolean {
@@ -93,8 +100,11 @@ async function listCandidateUrls(config: Config): Promise<string[]> {
     userAgent: config.userAgent,
     accept: "application/xml, text/xml, */*",
   });
-  const urls = parseSitemap(xml)
-    .entries.map((entry) => normalizeUrl(entry.url))
+  // The canonical docs are added by hand rather than trusted to the sitemap:
+  // they are the pages analysis reads to check a gap claim, so they are in the
+  // index whether or not posthog.com lists them today.
+  const urls = [...CANONICAL_DOC_URLS, ...parseSitemap(xml).entries.map((entry) => entry.url)]
+    .map(normalizeUrl)
     .filter(isIndexCandidate);
   return [...new Set(urls)].sort(
     (a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b),

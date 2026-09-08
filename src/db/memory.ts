@@ -64,6 +64,12 @@ export class MemoryStore implements Store {
     return new Map([...this.pages.values()].map((page) => [page.url, page.fetchedAt]));
   }
 
+  async getPages(urls: string[]): Promise<PostHogPage[]> {
+    return urls
+      .map((url) => this.pages.get(url))
+      .filter((page): page is PostHogPage => page !== undefined);
+  }
+
   async upsertPage(page: PostHogPage): Promise<void> {
     this.pages.set(page.url, page);
   }

@@ -276,6 +276,29 @@ export class PostgresStore implements Store {
     return map;
   }
 
+  async getPages(urls: string[]): Promise<PostHogPage[]> {
+    if (urls.length === 0) return [];
+    const result = await this.pool.query<{
+      url: string;
+      title: string;
+      text: string;
+      mentions: CompetitorId[] | null;
+      fetched_at: Date | null;
+    }>(
+      `SELECT url, title, text, mentions, fetched_at
+       FROM pages
+       WHERE url = ANY($1::text[])`,
+      [urls],
+    );
+    return result.rows.map((row) => ({
+      url: row.url,
+      title: row.title,
+      text: row.text,
+      mentions: row.mentions ?? [],
+      fetchedAt: row.fetched_at ?? new Date(0),
+    }));
+  }
+
   async upsertPage(page: PostHogPage): Promise<void> {
     await this.pool.query(
       `INSERT INTO pages (url, title, text, mentions, fetched_at)
