@@ -12,32 +12,71 @@ import {
 } from "../types.js";
 import { sanitizeCopy } from "../util/text.js";
 
+/**
+ * A field the model means to leave out but sends as "" instead. Read as
+ * absent, because the alternative is throwing away a whole good analysis over
+ * one empty string: a reply that correctly gave no `feature` to an
+ * update_pages action, by writing `"feature": ""`, used to fail the parse and
+ * take the other two actions down with it.
+ */
+function blankAsMissing(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
+
+const optionalText = (max: number) =>
+  z.preprocess(blankAsMissing, z.string().min(1).max(max).optional());
+
+/** Blank entries are dropped rather than failing the list they are in. */
+const lines = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value.filter((entry) => typeof entry !== "string" || entry.trim() !== "")
+      : value,
+  z.array(z.string().min(1)).max(8),
+);
+
 const refSchema = z.object({
   url: z.string().min(1),
   claim: z.string().min(1),
-  suggested_edit: z.string().min(1).optional(),
-  suggestedEdit: z.string().min(1).optional(),
+  suggested_edit: optionalText(600),
+  suggestedEdit: optionalText(600),
 });
 
-const lines = z.array(z.string().min(1)).max(8);
+/** A citation with no page or no claim says nothing, so it goes rather than throws. */
+const refs = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value.filter((entry) => {
+          if (typeof entry !== "object" || entry === null) return false;
+          const ref = entry as { url?: unknown; claim?: unknown };
+          return (
+            typeof ref.url === "string" &&
+            ref.url.trim() !== "" &&
+            typeof ref.claim === "string" &&
+            ref.claim.trim() !== ""
+          );
+        })
+      : value,
+  z.array(refSchema).max(5),
+);
 
 /** Either scale, so a row or a reply on the low/medium/high tokens still parses. */
 const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
 
 const actionToken = z.enum(ACTIONS);
-const detail = z.string().min(1).max(900);
-const feature = z.string().min(1).max(120);
+const detail = optionalText(900);
+const feature = optionalText(120);
 
 /** One entry of `actions`, in whichever casing the model reached for. */
 const actionSchema = z.object({
   type: actionToken.optional(),
   action: actionToken.optional(),
-  detail: detail.optional(),
-  action_detail: detail.optional(),
-  actionDetail: detail.optional(),
-  feature: feature.optional(),
-  posthog_feature: feature.optional(),
-  posthogFeature: feature.optional(),
+  detail,
+  action_detail: detail,
+  actionDetail: detail,
+  feature,
+  posthog_feature: feature,
+  posthogFeature: feature,
 });
 
 export const analysisSchema = z.object({
@@ -50,13 +89,13 @@ export const analysisSchema = z.object({
   actions: z.array(actionSchema).max(4).optional(),
   /** A single action is how rows written before this field looked. */
   action: actionToken.optional(),
-  action_detail: detail.optional(),
-  actionDetail: detail.optional(),
-  feature: feature.optional(),
-  posthog_feature: feature.optional(),
-  posthogFeature: feature.optional(),
-  posthog_refs: z.array(refSchema).max(5).optional(),
-  posthogRefs: z.array(refSchema).max(5).optional(),
+  action_detail: detail,
+  actionDetail: detail,
+  feature,
+  posthog_feature: feature,
+  posthogFeature: feature,
+  posthog_refs: refs.optional(),
+  posthogRefs: refs.optional(),
   open_questions: lines.optional(),
   openQuestions: lines.optional(),
 });
