@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { Config } from "../src/config.js";
 import { MemoryStore } from "../src/db/memory.js";
+import { createStore } from "../src/db/index.js";
 import type { CandidateItem } from "../src/types.js";
 
 function item(externalId: string): CandidateItem {
@@ -108,5 +110,41 @@ describe("MemoryStore", () => {
     await store.replaceClaimsForUrl(url, [claim]);
     await store.replaceClaimsForUrl(url, [{ ...claim, paragraph: "two" }]);
     expect((await store.getClaims("mixpanel", 5)).map((c) => c.paragraph)).toEqual(["two"]);
+  });
+});
+
+describe("createStore", () => {
+  const config = (overrides: Partial<Config>): Config =>
+    ({ dryRun: false, databaseUrl: undefined, ...overrides }) as Config;
+
+  // Nothing listens on port 1, so every connection is refused immediately.
+  const unreachable = "postgres://postgres@127.0.0.1:1/postgres";
+
+  it("insists on a database for the daily run", () => {
+    expect(() => createStore(config({}))).toThrow(/DATABASE_URL is required/);
+  });
+
+  it("keeps a force post going when the database cannot be reached", async () => {
+    const store = createStore(config({ databaseUrl: unreachable }), {
+      allowMemoryFallback: true,
+    });
+    try {
+      // The insert falls back, and everything after it stays on the fallback.
+      const [stored] = await store.insertNewItems([item("unreachable")]);
+      expect(stored?.id).toBeTruthy();
+      expect(await store.findItemId(item("unreachable"))).toBe(stored?.id);
+      expect(await store.countItems("mixpanel", "changelog")).toBe(1);
+    } finally {
+      await store.close();
+    }
+  });
+
+  it("fails the daily run instead, so tomorrow does not re-alert everything", async () => {
+    const store = createStore(config({ databaseUrl: unreachable }));
+    try {
+      await expect(store.insertNewItems([item("unreachable")])).rejects.toThrow();
+    } finally {
+      await store.close();
+    }
   });
 });

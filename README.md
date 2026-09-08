@@ -140,7 +140,9 @@ Every candidate is checked with a `HEAD` request first, so a 404 or an HTML erro
 
 [`.github/workflows/force-post.yml`](./.github/workflows/force-post.yml) posts one named item on demand, for proving delivery without waiting for tomorrow. It runs `--url`, so the dedupe table and the seed guard do not apply. Either run it from the Actions tab with a `force_url`, or put the URL in [`.github/force-post-url.txt`](./.github/force-post-url.txt) and merge that to main — changing the file is itself the trigger, which keeps a record of every forced post in the git history. Both workflows share one concurrency group, so a forced post can never race the daily run.
 
-`DATABASE_URL` is optional for the forced post alone: without it the run uses the in-memory store, so the message still goes out but nothing is recorded and the item stays eligible for a normal alert later. The daily run refuses to start without it, because a missing database there would re-alert the whole backlog tomorrow.
+`DATABASE_URL` is optional for the forced post alone: without it the run uses the in-memory store, so the message still goes out but nothing is recorded and the item stays eligible for a normal alert later. The same applies when the database is set but unreachable — the forced post falls back and logs that it left no dedupe trace, rather than dropping a message it had already analyzed. The daily run does neither: it refuses to start without a database and fails on one it cannot reach, because carrying on there would re-alert the whole backlog tomorrow.
+
+It has to be the **pooler** connection string. Supabase's direct host (`db.<ref>.supabase.co`) resolves to IPv6 only, and GitHub Actions runners have no IPv6 route, so a direct URL fails on the runner with `connect ENETUNREACH` while working fine from a dual-stack laptop. The pooler host is dual-stack; a run that hits this says so in its log.
 
 Add these under **Settings → Secrets and variables → Actions**:
 
