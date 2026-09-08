@@ -73,7 +73,11 @@ export interface Analysis {
   summary: string;
   /** The elaboration, as short lines under "More detail". */
   keyPoints: string[];
-  /** At least one, in the order they should be read. */
+  /**
+   * In the order they should be read. Usually one to three, and empty when the
+   * only thing the model asked for was a page edit about something other than
+   * this launch, which the relevance guard drops.
+   */
   actions: RecommendedAction[];
   posthogRefs: PostHogRef[];
   /** What we could not tell from the source, for whoever picks the issue up. */

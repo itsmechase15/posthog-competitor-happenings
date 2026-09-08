@@ -15,6 +15,7 @@ import type {
 import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
 import { buildAnalysisPrompt } from "./prompt.js";
+import { enforceUpdatePagesTopic } from "./relevance.js";
 import { parseAnalysis } from "./schema.js";
 import { verifyAgainstDocs } from "./verify.js";
 
@@ -124,7 +125,8 @@ export function createAnalyzer(config: Config): Analyzer {
  * or does not do; and the competitor's own comparison pages, which are where a
  * claim that PostHog cannot do something turns up. Every verdict is then
  * reconciled with the docs, so an action cannot claim a gap the docs
- * contradict. A failed analysis drops that item and leaves the rest alone.
+ * contradict, and page edits that wandered off this launch's topic are
+ * dropped. A failed analysis drops that item and leaves the rest alone.
  */
 export type { Analyzer };
 
@@ -170,10 +172,20 @@ export async function analyzeItems(
         await analyzer.analyze(item, claims, docs, compareClaims),
         docs,
       );
-      for (const note of verified.notes) log.warn(`corrected ${item.url}: ${note}`);
-      const analysis = verified.analysis;
+      // The heuristic is exempt: its one action says outright that nothing was
+      // assessed and asks someone to check the closest page, which is a
+      // sentence about no launch in particular by design.
+      const scoped =
+        analyzer.model === FALLBACK_MODEL
+          ? { analysis: verified.analysis, notes: [] as string[] }
+          : enforceUpdatePagesTopic(verified.analysis, item);
+      for (const note of [...verified.notes, ...scoped.notes]) {
+        log.warn(`corrected ${item.url}: ${note}`);
+      }
+      const analysis = scoped.analysis;
       analyzed.push({ item, analysis, model: analyzer.model });
-      const actions = analysis.actions.map((action) => action.type).join(", ");
+      const actions =
+        analysis.actions.map((action) => action.type).join(", ") || "no action worth taking";
       log.info(
         `analyzed ${item.competitor}/${item.source} "${item.title}" against ${docs.length} docs pages → ${actions}`,
       );

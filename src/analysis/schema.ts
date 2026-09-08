@@ -119,24 +119,41 @@ function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | nul
   };
 }
 
+export interface ReadOptions {
+  /**
+   * Read an actions list that is empty as empty, rather than as a broken
+   * reply. A stored alert can genuinely have no action: the relevance guard
+   * drops a page edit that was not about the launch, and sometimes that was
+   * the only thing the model asked for. A model reply still has to name one.
+   */
+  allowNoAction?: boolean;
+}
+
 /**
  * An alert can need several actions. Replies and rows written before `actions`
  * existed carry exactly one, inline, so they are read as a list of one.
  */
-function readActions(parsed: z.infer<typeof analysisSchema>): RecommendedAction[] {
+function readActions(
+  parsed: z.infer<typeof analysisSchema>,
+  options: ReadOptions,
+): RecommendedAction[] {
   const listed = (parsed.actions ?? [])
     .map(toAction)
     .filter((action): action is RecommendedAction => action !== null);
   if (listed.length > 0) return listed;
 
   const single = toAction(parsed);
-  if (!single) throw new Error("analysis is missing an action with an action_detail");
-  return [single];
+  if (single) return [single];
+  if (options.allowNoAction && Array.isArray(parsed.actions)) return [];
+  throw new Error("analysis is missing an action with an action_detail");
 }
 
 /** Models drift between snake_case and camelCase; accept both and normalize. */
-export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analysis {
-  const actions = readActions(parsed);
+export function normalizeAnalysis(
+  parsed: z.infer<typeof analysisSchema>,
+  options: ReadOptions = {},
+): Analysis {
+  const actions = readActions(parsed, options);
 
   const token = parsed.impact ?? parsed.severity;
   if (!token) throw new Error("analysis is missing impact");
@@ -222,7 +239,7 @@ function readActionIssues(
 
 export function parseStoredAlert(raw: unknown): StoredAlertPayload {
   const parsed = alertPayloadSchema.parse(raw);
-  const analysis = normalizeAnalysis(parsed);
+  const analysis = normalizeAnalysis(parsed, { allowNoAction: true });
   return {
     analysis,
     image: parsed.image ?? null,
