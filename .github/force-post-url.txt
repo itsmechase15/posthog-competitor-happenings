@@ -9,4 +9,6 @@
 # retrigger 2026-09-08 again: the last attempt reached the model, read the docs,
 # and then lost the reply to a blank "feature" field, so Slack got the heuristic
 # summary instead of the recommend
+# retrigger 2026-09-08 for the first post that opens one issue per recommended
+# action: each stacked action should carry its own "Access GitHub issue #n"
 https://amplitude.com/releases/schedule-experiment-stop
