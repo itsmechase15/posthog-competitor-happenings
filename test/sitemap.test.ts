@@ -17,6 +17,7 @@ const competitor: CompetitorConfig = {
   blogPathPrefixes: ["/blog/"],
   xUsername: "fixture",
   aliases: ["fixture"],
+  comparePages: ["https://fixture.invalid/compare/posthog"],
 };
 
 describe("parseSitemap", () => {

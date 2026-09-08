@@ -102,11 +102,27 @@ export interface IssueRef {
   number: number;
 }
 
-/** An analyzed item with everything Slack needs: a picture and an issue to link. */
+/** Who picks the work up. Marketing owns the pages, product owns the roadmap. */
+export const ACTION_OWNERS = ["marketing", "product"] as const;
+export type ActionOwner = (typeof ACTION_OWNERS)[number];
+
+/**
+ * One recommended action and the issue opened for it. Every action gets its
+ * own issue, because a page fix and a feature gap land on different desks and
+ * get closed on different days.
+ */
+export interface ActionIssue {
+  action: RecommendedAction;
+  /** Null when no issue could be opened, e.g. a dry run or a missing token. */
+  issue: IssueRef | null;
+}
+
+/** An analyzed item with everything Slack needs: a picture and an issue per action. */
 export interface Alert extends AnalyzedItem {
   image: FeatureImage;
-  issue: IssueRef | null;
-  /** Why there is no issue link. Dry runs only — a real run either links or stays quiet. */
+  /** One entry per recommended action, in the order the actions are read. */
+  issues: ActionIssue[];
+  /** Why there are no issue links. Dry runs only — a real run either links or stays quiet. */
   issueNote?: string;
 }
 
@@ -121,6 +137,18 @@ export interface PostHogPage {
 
 /** A single competitor-mentioning paragraph lifted out of a PostHog page. */
 export interface PostHogClaim {
+  url: string;
+  competitor: CompetitorId;
+  paragraph: string;
+  heading: string | null;
+}
+
+/**
+ * A paragraph about PostHog lifted out of a competitor's own comparison page.
+ * Where they say PostHog cannot do something PostHog does, PostHog's pages
+ * have a claim to answer.
+ */
+export interface CompetitorClaim {
   url: string;
   competitor: CompetitorId;
   paragraph: string;

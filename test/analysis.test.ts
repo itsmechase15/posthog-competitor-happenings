@@ -237,22 +237,55 @@ describe("parseAnalysis", () => {
 });
 
 describe("parseStoredAlert", () => {
-  it("reads back the image and issue stored with an analysis", () => {
+  it("reads back the image and the issue opened for each action", () => {
     const stored = parseStoredAlert({
       ...valid,
       image: { url: "https://cdn.invalid/a.png", altText: "alt", origin: "page" },
-      issue: { url: "https://github.com/o/r/issues/3", number: 3 },
+      issues: [
+        { type: "update_pages", issue: { url: "https://github.com/o/r/issues/3", number: 3 } },
+        {
+          type: "consider_enhancing",
+          feature: "Data pipelines",
+          issue: { url: "https://github.com/o/r/issues/4", number: 4 },
+        },
+      ],
     });
     expect(stored.image?.url).toBe("https://cdn.invalid/a.png");
-    expect(stored.issue?.number).toBe(3);
+    expect(stored.issues.map((entry) => entry.issue?.number)).toEqual([3, 4]);
+    expect(stored.issues.map((entry) => entry.action.type)).toEqual([
+      "update_pages",
+      "consider_enhancing",
+    ]);
     expect(stored.analysis.impact).toBe("notable");
   });
 
   it("reads a phase 1 row that has neither", () => {
     const stored = parseStoredAlert({ ...valid, impact: undefined, severity: "minor" });
     expect(stored.image).toBeNull();
-    expect(stored.issue).toBeNull();
+    expect(stored.issues.map((entry) => entry.issue)).toEqual([null, null]);
     expect(stored.analysis.impact).toBe("minor");
+  });
+
+  it("puts a row's single stored issue on the first action, where it came from", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      issue: { url: "https://github.com/o/r/issues/5", number: 5 },
+    });
+    expect(stored.issues.map((entry) => entry.issue?.number ?? null)).toEqual([5, null]);
+  });
+
+  it("pairs an action with no stored issue with null, rather than shifting the rest", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      issues: [
+        { type: "update_pages", issue: null },
+        {
+          type: "consider_enhancing",
+          issue: { url: "https://github.com/o/r/issues/6", number: 6 },
+        },
+      ],
+    });
+    expect(stored.issues.map((entry) => entry.issue?.number ?? null)).toEqual([null, 6]);
   });
 
   it("reads a row stored on the low/medium/high scale", () => {
@@ -489,9 +522,10 @@ describe("buildAnalysisPrompt", () => {
       );
     });
 
-    it("asks for update_pages and an open question when the docs settle nothing", () => {
+    it("asks for an open question when the docs settle nothing, not a page edit", () => {
       expect(withDocs).toContain("do not guess");
       expect(withDocs).toContain("open_questions");
+      expect(withDocs).toContain("update_pages is not the safe fallback for an unverified gap");
     });
 
     it("asks for the docs URL in posthog_refs", () => {
@@ -500,7 +534,63 @@ describe("buildAnalysisPrompt", () => {
 
     it("says plainly when no docs are in context, rather than leaving a gap open", () => {
       expect(withRefs).toContain("no product docs are in context for this signal");
-      expect(withRefs).toContain("prefer update_pages");
+      expect(withRefs).toContain("do not fall back on update_pages");
+    });
+  });
+
+  describe("when update_pages is allowed", () => {
+    it("states the three reasons a PostHog page is worth editing", () => {
+      expect(withRefs).toContain("When update_pages is allowed");
+      expect(withRefs).toContain("wrong or misleading because of this launch");
+      expect(withRefs).toContain("claims a parity or an advantage this launch breaks");
+      expect(withRefs).toContain("understates it or reads as if PostHog does not have it");
+      expect(withRefs).toContain(
+        "comparison page claims PostHog does not do something PostHog does do",
+      );
+    });
+
+    it("rules out the vague reasons", () => {
+      expect(withRefs).toContain("Do not recommend update_pages because customers might ask");
+      expect(withRefs).toContain("because a feature matrix has no row for it");
+      expect(withRefs).toContain('because a page "could be stronger"');
+      expect(withRefs).toContain("leave update_pages out and let the other actions carry the alert");
+    });
+
+    it("makes the action name the page it is fixing", () => {
+      expect(withRefs).toContain('Point at the specific page and the specific line in "posthog_refs"');
+    });
+
+    it("covers marketing, product marketing, and compare pages", () => {
+      expect(withRefs).toContain("marketing, product marketing, or compare page");
+    });
+  });
+
+  describe("what the competitor says about PostHog", () => {
+    const compareClaims = [
+      {
+        url: "https://mixpanel.com/compare/posthog",
+        competitor: "mixpanel" as const,
+        paragraph: "PostHog does not offer scheduled reports for your whole team.",
+        heading: "Reporting",
+      },
+    ];
+    const withCompare = buildAnalysisPrompt(item, [claim], [], compareClaims);
+
+    it("puts their comparison page in context, quoted and cited", () => {
+      expect(withCompare).toContain("What Mixpanel says about PostHog on their own comparison pages");
+      expect(withCompare).toContain("https://mixpanel.com/compare/posthog");
+      expect(withCompare).toContain("PostHog does not offer scheduled reports");
+      expect(withCompare).toContain('section "Reporting"');
+    });
+
+    it("ties their claim to the third reason for update_pages", () => {
+      expect(withCompare).toContain("reason 3 for update_pages applies");
+      expect(withCompare).toContain("Never treat this as evidence about PostHog's product");
+    });
+
+    it("says so when their page is not in context, rather than inviting a guess", () => {
+      expect(withRefs).toContain("no Mixpanel comparison page about PostHog is in context");
+      expect(withRefs).toContain("do not assume what they claim about PostHog");
     });
   });
 });

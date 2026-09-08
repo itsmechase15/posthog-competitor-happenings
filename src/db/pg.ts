@@ -186,7 +186,7 @@ export class PostgresStore implements Store {
    * NOT NULL constraint holds and no migration is needed; nothing reads it back.
    */
   async recordAnalysis(input: RecordAnalysisInput): Promise<string> {
-    const payload = serializeAlertPayload(input.analysis, input.image, input.issue);
+    const payload = serializeAlertPayload(input.analysis, input.image, input.issues);
     const result = await this.pool.query<{ id: string }>(
       `INSERT INTO analyses (item_id, severity, analysis, model)
        VALUES ($1, $2, $3::jsonb, $4)
@@ -244,7 +244,7 @@ export class PostgresStore implements Store {
           model: row.model,
           analysis: stored.analysis,
           image: stored.image,
-          issue: stored.issue,
+          issues: stored.issues,
           item: {
             id: row.item_id,
             competitor: row.competitor,

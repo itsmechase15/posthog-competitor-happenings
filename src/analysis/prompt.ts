@@ -1,5 +1,5 @@
 import { COMPETITORS } from "../config.js";
-import type { PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
+import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 
 const MAX_BODY_CHARS = 4_000;
@@ -26,9 +26,21 @@ function renderClaims(claims: PostHogClaim[]): string {
     .join("\n");
 }
 
+function renderCompareClaims(label: string, claims: CompetitorClaim[]): string {
+  if (claims.length === 0) {
+    return `(no ${label} comparison page about PostHog is in context, so do not assume what they claim about PostHog)`;
+  }
+  return claims
+    .map((claim, index) => {
+      const heading = claim.heading ? ` ${EN_DASH} section "${claim.heading}"` : "";
+      return `${index + 1}. ${claim.url}${heading}\n   "${truncate(claim.paragraph, MAX_CLAIM_CHARS)}"`;
+    })
+    .join("\n");
+}
+
 function renderDocs(docs: PostHogDoc[]): string {
   if (docs.length === 0) {
-    return "(no product docs are in context for this signal, so you cannot verify a gap: prefer update_pages, keep impact lower, and put what you could not check in open_questions)";
+    return "(no product docs are in context for this signal, so you cannot verify a gap: keep impact lower, put what you could not check in open_questions, and do not fall back on update_pages unless a page in front of you is genuinely wrong or understated)";
   }
   return docs
     .map((doc, index) => {
@@ -47,7 +59,7 @@ Rules:
 - "impact" is a label only. minor = cosmetic or incremental. notable = real capability PostHog customers will ask about. major = strategic move that changes the comparison.
 - "actions" is 1 to 3 things PostHog should do, most important first. One signal often needs two: a stale page to fix and a feature gap to close. Do not pad it: every action has to earn its line.
 - Each action has a "type", a "detail", and, for consider_enhancing, a "feature". "type" is one of:
-  - update_pages: an existing PostHog page now says something stale or beatable.
+  - update_pages: a PostHog marketing, product marketing, or compare page is now wrong, understates what PostHog does, or is contradicted by the competitor's own comparison page. It has a bar of its own, below.
   - new_compare_page: this deserves a comparison page PostHog does not have.
   - consider_building: PostHog has nothing like this.
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
@@ -63,8 +75,14 @@ Check the docs before you recommend anything. Every action below is a claim abou
 - Never write that PostHog cannot do something unless a docs excerpt in front of you shows that gap. "PostHog has no X" with no docs page behind it is the wrong answer even when it turns out to be true.
 - When the docs show an adjacent capability, say so in "detail" and recommend only the part that is genuinely missing. Worked example: Feature flags can schedule a change for a future date (https://posthog.com/docs/feature-flags/scheduled-flag-changes), while Experiments start, pause, and stop by hand (https://posthog.com/docs/experiments/managing-lifecycle). So "PostHog cannot schedule anything" is wrong, and "PostHog schedules flag changes but an experiment still has to be stopped by hand" is the real gap.
 - consider_building is only for a capability with no PostHog product behind it at all. If any docs page in context covers the area, the action is consider_enhancing and "feature" names that product.
-- When the docs in context do not settle whether PostHog does this, do not guess. Use update_pages, keep impact lower, and put the unanswered question in "open_questions".
+- When the docs in context do not settle whether PostHog does this, do not guess. Say so in the summary, keep impact lower, and put the unanswered question in "open_questions". update_pages is not the safe fallback for an unverified gap: it has its own bar below.
 - Cite the docs URL you relied on in "posthog_refs" whenever an action says what PostHog does or does not do. Prefer a docs URL over a compare URL for that.
+
+When update_pages is allowed. PostHog's marketing, product marketing, and compare pages are only worth editing when at least one of these is true, so recommend update_pages only then, and say in "detail" which one it is:
+  1. A PostHog page is now wrong or misleading because of this launch. It says the competitor cannot do something they now do, or it claims a parity or an advantage this launch breaks.
+  2. PostHog has an adjacent capability the docs confirm, and the page understates it or reads as if PostHog does not have it.
+  3. The competitor's own comparison page claims PostHog does not do something PostHog does do, and PostHog's page does not answer that claim. Read the comparison-page section below for what they actually say, and check the docs for what PostHog actually does, before you use this reason.
+Do not recommend update_pages because customers might ask about the launch, because a page could mention the news, because a feature matrix has no row for it, or because a page "could be stronger". Those are not page errors. When no page in context is wrong, understated, or contradicted, leave update_pages out and let the other actions carry the alert. Point at the specific page and the specific line in "posthog_refs" with a "suggested_edit"; an update_pages action that cannot name the page it is fixing does not belong in the reply.
 
 PostHog writing style, which every string you write has to follow:
 https://posthog.com/handbook/wizard-and-docs/docs-style-guide and https://posthog.com/handbook/brand/tone
@@ -96,6 +114,7 @@ export function buildAnalysisPrompt(
   item: StoredItem,
   claims: PostHogClaim[],
   docs: PostHogDoc[] = [],
+  compareClaims: CompetitorClaim[] = [],
 ): string {
   const competitor = COMPETITORS[item.competitor];
   const body = itemBody(item);
@@ -119,6 +138,10 @@ ${renderDocs(docs)}
 ## Indexed PostHog.com pages that mention ${competitor.label}
 Marketing copy, useful for finding a stale page to fix. Not evidence of what the product does.
 ${renderClaims(claims)}
+
+## What ${competitor.label} says about PostHog on their own comparison pages
+Their sales copy about PostHog. Where they claim PostHog does not do something the docs above show PostHog does, reason 3 for update_pages applies and PostHog's page should answer it. Never treat this as evidence about PostHog's product.
+${renderCompareClaims(competitor.label, compareClaims)}
 
 ## Response
 Reply with exactly this JSON shape:

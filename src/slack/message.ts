@@ -1,7 +1,7 @@
 import { FALLBACK_MODEL } from "../analysis/fallback.js";
 import { COMPETITORS } from "../config.js";
 import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
-import type { Alert, RecommendedAction } from "../types.js";
+import type { ActionIssue, Alert, IssueRef, RecommendedAction } from "../types.js";
 import {
   firstSentence,
   sanitizeCopy,
@@ -15,7 +15,16 @@ export interface SlackMessage {
   blocks: unknown[];
 }
 
-export const ISSUE_LINK_LABEL = "Access GitHub issue for more information";
+export const ISSUE_LINK_LABEL = "Access GitHub issue";
+
+/**
+ * The link under one action. Every action has an issue of its own, so the
+ * number is part of the label: three links reading "Access GitHub issue" would
+ * be indistinguishable on a phone.
+ */
+export function issueLinkLabel(issue: IssueRef): string {
+  return `${ISSUE_LINK_LABEL} #${issue.number}`;
+}
 
 /** The one sentence lives under this heading; the bullets under the next one. */
 export const KNOW_HEADING = "What you need to KNOW";
@@ -72,19 +81,33 @@ export function detailPoints(alert: Alert): string[] {
 }
 
 /**
- * One action, as Slack shows it: a bold title on its own line, then one short
- * sentence under it. The title carries the PostHog feature for "Consider
- * enhancing", so it still names something concrete when read on its own, and
- * the feature links to its product page when we know one. A feature we do not
- * recognize stays plain text rather than pointing at a guessed URL.
+ * One action, as Slack shows it: a bold title on its own line, one short
+ * sentence under it, then the link to that action's own issue. The title
+ * carries the PostHog feature for "Consider enhancing", so it still names
+ * something concrete when read on its own, and the feature links to its
+ * product page when we know one. A feature we do not recognize stays plain
+ * text rather than pointing at a guessed URL.
  */
-export function actionSectionText(action: RecommendedAction): string {
+export function actionSectionText(action: RecommendedAction, issue: IssueRef | null): string {
   const { label, feature } = actionTitleParts(action);
   const title = !feature
     ? escape(label)
     : `${escape(label)} ${feature.url ? link(feature.url, feature.label) : escape(feature.label)}`;
-  const detail = escape(firstSentence(action.detail, MAX_ACTION_CHARS));
-  return `*${title}*\n${detail}`;
+  const lines = [`*${title}*`, escape(firstSentence(action.detail, MAX_ACTION_CHARS))];
+  if (issue) lines.push(link(issue.url, issueLinkLabel(issue)));
+  return lines.join("\n");
+}
+
+/**
+ * The actions to render, each paired with its own issue. The analysis is the
+ * spine, so an alert whose issues were never opened – a dry run, or a run with
+ * no token – still shows every action, just without a link under it.
+ */
+export function actionEntries(alert: Alert): ActionIssue[] {
+  return alert.analysis.actions.slice(0, MAX_ACTIONS).map((action, index) => ({
+    action,
+    issue: alert.issues[index]?.issue ?? null,
+  }));
 }
 
 /**
@@ -118,7 +141,7 @@ export function renderMessageText(message: SlackMessage): string {
 }
 
 export function buildSlackMessage(alert: Alert): SlackMessage {
-  const { item, analysis, model, image, issue, issueNote } = alert;
+  const { item, analysis, model, image, issueNote } = alert;
   const competitor = COMPETITORS[item.competitor];
   const lead = leadSentence(alert);
   const points = detailPoints(alert);
@@ -146,20 +169,18 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
     );
   }
 
-  // One section per action, under a heading of its own. Slack puts real space
-  // between sections, so each action reads as its own thing on a phone instead
-  // of as another bullet in a dense list.
-  const actions = analysis.actions.slice(0, MAX_ACTIONS);
-  if (actions.length > 0) {
+  // One section per action, under a heading of its own, each linking the issue
+  // opened for it. Slack puts real space between sections, so each action reads
+  // as its own thing on a phone, with its own place to go for the detail.
+  const entries = actionEntries(alert);
+  if (entries.length > 0) {
     blocks.push(section(`*${ACTION_HEADING}*`));
-    for (const action of actions) {
-      blocks.push(section(actionSectionText(action)));
+    for (const entry of entries) {
+      blocks.push(section(actionSectionText(entry.action, entry.issue)));
     }
   }
 
-  if (issue) {
-    blocks.push(section(`*${link(issue.url, ISSUE_LINK_LABEL)}*`));
-  } else if (issueNote) {
+  if (issueNote && entries.every((entry) => entry.issue === null)) {
     blocks.push(section(`_${escape(issueNote)}_`));
   }
 

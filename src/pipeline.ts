@@ -2,7 +2,7 @@ import { analyzeItems, createAnalyzer, createFallbackAnalyzer } from "./analysis
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
-import { buildIssueDraft, createIssueCreator, type IssueCreator } from "./github/issue.js";
+import { buildIssueDrafts, createIssueCreator, type IssueCreator } from "./github/issue.js";
 import { createLogger } from "./log.js";
 import { resolveFeatureImage } from "./media/image.js";
 import { refreshPostHogIndex } from "./posthog/index.js";
@@ -15,7 +15,7 @@ import {
 } from "./slack/post.js";
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
-import type { Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
+import type { ActionIssue, Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
 import { daysAgo, normalizeUrl, SPACED_EN_DASH } from "./util/text.js";
 
 const log = createLogger("pipeline");
@@ -52,10 +52,11 @@ export function createPoster(config: Config): SlackPoster {
 }
 
 /**
- * Turn a verdict into something postable: find the feature image, then open the
- * issue that carries the long detail Slack no longer shows. A dry run and a
- * run with no token both come back with no issue, and only the dry run says so
- * in the message.
+ * Turn a verdict into something postable: find the feature image, then open
+ * one issue per recommended action, each carrying the long detail Slack no
+ * longer shows. Three actions is three issues, because a compare-page fix and
+ * a feature gap are two teams' work. A dry run and a run with no token both
+ * come back with no issues, and only the dry run says so in the message.
  */
 async function prepareAlert(
   config: Config,
@@ -63,15 +64,26 @@ async function prepareAlert(
   analyzed: AnalyzedItem,
 ): Promise<Alert> {
   const image = await resolveFeatureImage(config, analyzed.item);
-  const issue = await issues.create(buildIssueDraft(analyzed, image));
+
+  const opened: ActionIssue[] = [];
+  for (const { action, draft } of buildIssueDrafts(analyzed, image)) {
+    opened.push({ action, issue: await issues.create(draft) });
+  }
+
+  const noneOpened = opened.every((entry) => entry.issue === null);
   return {
     ...analyzed,
     image,
-    issue,
-    ...(issue === null && config.dryRun
-      ? { issueNote: `GitHub issue not created${SPACED_EN_DASH}${issues.description}` }
+    issues: opened,
+    ...(noneOpened && config.dryRun
+      ? { issueNote: `GitHub issues not created${SPACED_EN_DASH}${issues.description}` }
       : {}),
   };
+}
+
+/** How many issues an alert actually left behind, for the run summary. */
+function openedCount(alert: Alert): number {
+  return alert.issues.filter((entry) => entry.issue !== null).length;
 }
 
 /** Items with no date are kept: a missing date is not evidence of staleness. */
@@ -204,7 +216,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
       analysis: alert.analysis,
       model: alert.model,
       image: alert.image,
-      issue: alert.issue,
+      issues: alert.issues,
     });
     await poster.post(message);
     await store.markSlackPosted(analysisId, new Date());
@@ -267,20 +279,20 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     const fresh: PendingPost[] = [];
     for (const entry of analyzed) {
       const alert = await prepareAlert(config, issues, entry);
-      if (alert.issue) summary.issuesOpened += 1;
+      summary.issuesOpened += openedCount(alert);
       fresh.push({
         analysisId: await store.recordAnalysis({
           itemId: entry.item.id,
           analysis: alert.analysis,
           model: alert.model,
           image: alert.image,
-          issue: alert.issue,
+          issues: alert.issues,
         }),
         item: alert.item,
         analysis: alert.analysis,
         model: alert.model,
         image: alert.image,
-        issue: alert.issue,
+        issues: alert.issues,
       });
     }
 

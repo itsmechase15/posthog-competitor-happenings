@@ -1,9 +1,9 @@
 import type {
+  ActionIssue,
   Analysis,
   CandidateItem,
   CompetitorId,
   FeatureImage,
-  IssueRef,
   PostHogClaim,
   PostHogPage,
   SourceId,
@@ -16,8 +16,8 @@ export interface RecordAnalysisInput {
   model: string;
   /** Stored with the analysis so a retry re-posts the same picture. */
   image: FeatureImage | null;
-  /** Stored so a retry links the existing issue instead of opening a second one. */
-  issue: IssueRef | null;
+  /** One per action, stored so a retry links those issues instead of opening more. */
+  issues: ActionIssue[];
 }
 
 export interface PendingPost {
@@ -27,7 +27,8 @@ export interface PendingPost {
   model: string;
   /** Null for analyses written before alerts carried an image. */
   image: FeatureImage | null;
-  issue: IssueRef | null;
+  /** One per action. A row from before the split puts its one issue on the first action. */
+  issues: ActionIssue[];
 }
 
 /**

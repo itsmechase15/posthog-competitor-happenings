@@ -1,7 +1,13 @@
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
-import { actionLabel, IMPACT_LABEL } from "../labels.js";
-import type { AnalyzedItem, FeatureImage, IssueRef, RecommendedAction } from "../types.js";
+import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
+import { findPostHogProduct } from "../posthog/products.js";
+import type {
+  AnalyzedItem,
+  FeatureImage,
+  IssueRef,
+  RecommendedAction,
+} from "../types.js";
 import { SPACED_EN_DASH, truncate } from "../util/text.js";
 
 const log = createLogger("github");
@@ -17,50 +23,103 @@ export interface IssueDraft {
   labels: string[];
 }
 
+/** One action's issue, kept next to the action so the caller can pair them up. */
+export interface ActionIssueDraft {
+  action: RecommendedAction;
+  draft: IssueDraft;
+}
+
 interface IssueResponse {
   number?: number;
   html_url?: string;
   message?: string;
 }
 
-function slug(value: string): string {
-  return value.replace(/_/g, "-");
+/** A label GitHub accepts: lowercase, no spaces, no punctuation to escape. */
+function labelSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
 }
 
-export function buildIssueLabels(alert: AnalyzedItem): string[] {
+/** Marketing owns page work, so the page actions are the ones that route there. */
+function isPageAction(action: RecommendedAction): boolean {
+  return action.type === "update_pages" || action.type === "new_compare_page";
+}
+
+/**
+ * Labels for one action's issue. Beyond the alert's own labels, the action
+ * type and the owner are what a marketing or product filter actually queries,
+ * and the product label is added whenever the action names one we recognize.
+ */
+export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction): string[] {
   const { item, analysis } = alert;
+  const product = action.feature ? findPostHogProduct(action.feature) : undefined;
+  const productName = product?.label ?? action.feature;
+
   return [
     "competitor-happenings",
     item.competitor,
     `source:${item.source}`,
     `impact:${analysis.impact}`,
-    ...analysis.actions.map((action) => `action:${slug(action.type)}`),
+    `action:${labelSlug(action.type)}`,
+    `owner:${actionOwner(action)}`,
+    ...(productName ? [`product:${labelSlug(productName)}`] : []),
   ];
 }
 
-export function buildIssueTitle(alert: AnalyzedItem): string {
+/**
+ * Competitor and feature first, so issues from one launch sit together, then
+ * the action, so a list of three issues reads as three different jobs.
+ */
+export function buildIssueTitle(alert: AnalyzedItem, action: RecommendedAction): string {
   const label = COMPETITORS[alert.item.competitor].label;
-  return truncate(`${label}: ${alert.item.title}`, MAX_TITLE_CHARS);
+  const suffix = `${SPACED_EN_DASH}${actionLabel(action)}`;
+  const head = `${label}: ${alert.item.title}`;
+  return `${truncate(head, Math.max(24, MAX_TITLE_CHARS - suffix.length))}${suffix}`;
 }
 
-function pagesSection(alert: AnalyzedItem): string {
+/**
+ * The cited pages. Marketing gets the suggested edits, because editing the
+ * page is the job; product gets the same pages as context for what PostHog
+ * says about itself today.
+ */
+function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
+  const heading = isPageAction(action)
+    ? "## PostHog pages to update"
+    : "## PostHog pages for context";
+
   if (alert.analysis.posthogRefs.length === 0) {
-    return "_No indexed PostHog.com page covers this yet, which is itself worth a look._";
+    return `${heading}\n_No indexed PostHog.com page covers this yet, which is itself worth a look._`;
   }
-  return alert.analysis.posthogRefs
+
+  const pages = alert.analysis.posthogRefs
     .map((ref) => {
       const lines = [`### ${ref.url}`, `- **Claim today:** ${ref.claim}`];
-      if (ref.suggestedEdit) lines.push(`- **Suggested edit:** ${ref.suggestedEdit}`);
+      if (ref.suggestedEdit && isPageAction(action)) {
+        lines.push(`- **Suggested edit:** ${ref.suggestedEdit}`);
+      }
       return lines.join("\n");
     })
     .join("\n\n");
+
+  return `${heading}\n${pages}`;
 }
 
-/** The issue gets every action in full, where Slack shows one sentence each. */
-function actionsSection(actions: RecommendedAction[]): string {
-  return actions
-    .map((action) => `- **${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`)
+/**
+ * The other actions from the same launch, named but not restated. Each one is
+ * its own issue, opened in the same run, so this is a pointer rather than a
+ * second copy of the work.
+ */
+function siblingSection(actions: RecommendedAction[], current: RecommendedAction): string | null {
+  const others = actions.filter((action) => action !== current);
+  if (others.length === 0) return null;
+  const lines = others
+    .map((action) => `- **${actionLabel(action)}** (${actionOwner(action)}), tracked in its own issue`)
     .join("\n");
+  return `## Also recommended for this launch\n${lines}`;
 }
 
 function bullets(values: string[], empty: string): string {
@@ -69,22 +128,28 @@ function bullets(values: string[], empty: string): string {
 }
 
 /**
- * The long form of an alert. Everything Slack used to carry — page citations,
- * suggested edits, open questions — lives here now, so Slack can stay short.
+ * The long form of one recommended action. Everything Slack cannot carry –
+ * the full detail, page citations, suggested edits, open questions – lives
+ * here, scoped to the one job this issue is asking for.
  */
-export function buildIssueBody(alert: AnalyzedItem, image: FeatureImage | null): string {
+export function buildIssueBody(
+  alert: AnalyzedItem,
+  image: FeatureImage | null,
+  action: RecommendedAction,
+): string {
   const { item, analysis, model } = alert;
   const competitor = COMPETITORS[item.competitor];
   const published = item.publishedAt?.toISOString().slice(0, 10) ?? "unknown";
 
   const sections = [
-    `**${competitor.label}** · ${item.source} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}**`,
+    `**${competitor.label}** · ${item.source} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
+    `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     `## What you need to know\n${analysis.summary}`,
     `## Impact\n${IMPACT_LABEL[analysis.impact]}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    `## Recommended action(s)\n${actionsSection(analysis.actions)}`,
-    `## PostHog pages to update\n${pagesSection(alert)}`,
+    pagesSection(alert, action),
+    siblingSection(analysis.actions, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${item.source}](${item.url})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""
@@ -95,12 +160,31 @@ export function buildIssueBody(alert: AnalyzedItem, image: FeatureImage | null):
   return sections.filter((section): section is string => section !== null).join("\n\n");
 }
 
-export function buildIssueDraft(alert: AnalyzedItem, image: FeatureImage | null): IssueDraft {
+export function buildIssueDraft(
+  alert: AnalyzedItem,
+  image: FeatureImage | null,
+  action: RecommendedAction,
+): IssueDraft {
   return {
-    title: buildIssueTitle(alert),
-    body: buildIssueBody(alert, image),
-    labels: buildIssueLabels(alert),
+    title: buildIssueTitle(alert, action),
+    body: buildIssueBody(alert, image, action),
+    labels: buildIssueLabels(alert, action),
   };
+}
+
+/**
+ * One draft per recommended action. An alert that says "enhance Experiments,
+ * enhance feature flags, and fix the compare page" is three issues, so nobody
+ * has to read someone else's work to find their own.
+ */
+export function buildIssueDrafts(
+  alert: AnalyzedItem,
+  image: FeatureImage | null,
+): ActionIssueDraft[] {
+  return alert.analysis.actions.map((action) => ({
+    action,
+    draft: buildIssueDraft(alert, image, action),
+  }));
 }
 
 export interface IssueCreator {

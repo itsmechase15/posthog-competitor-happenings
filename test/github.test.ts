@@ -3,11 +3,12 @@ import type { Config } from "../src/config.js";
 import {
   buildIssueBody,
   buildIssueDraft,
+  buildIssueDrafts,
   createIssueCreator,
   DisabledIssueCreator,
   GitHubIssueCreator,
 } from "../src/github/issue.js";
-import type { AnalyzedItem, FeatureImage } from "../src/types.js";
+import type { AnalyzedItem, FeatureImage, RecommendedAction } from "../src/types.js";
 
 const analyzed: AnalyzedItem = {
   item: {
@@ -57,21 +58,90 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("buildIssueDraft", () => {
-  const draft = buildIssueDraft(analyzed, image);
+const pageAction = analyzed.analysis.actions[0] as RecommendedAction;
+const productAction = analyzed.analysis.actions[1] as RecommendedAction;
 
-  it("titles the issue competitor plus feature", () => {
-    expect(draft.title).toBe("Amplitude: Schedule experiment stop");
+describe("buildIssueDrafts", () => {
+  const drafts = buildIssueDrafts(analyzed, image);
+
+  it("opens one issue per recommended action, not one per alert", () => {
+    expect(drafts).toHaveLength(2);
+    expect(drafts.map((entry) => entry.action.type)).toEqual([
+      "update_pages",
+      "consider_enhancing",
+    ]);
   });
 
-  it("labels competitor, source, impact, and every action", () => {
+  it("names the action in each title, so three issues read as three jobs", () => {
+    expect(drafts.map((entry) => entry.draft.title)).toEqual([
+      "Amplitude: Schedule experiment stop \u2013 Update pages",
+      "Amplitude: Schedule experiment stop \u2013 Consider enhancing Experiments",
+    ]);
+  });
+
+  it("keeps the action title inside GitHub's title limit", () => {
+    const long = buildIssueDrafts(
+      { ...analyzed, item: { ...analyzed.item, title: "Scheduled stops ".repeat(20) } },
+      image,
+    );
+    for (const { draft } of long) {
+      expect(draft.title.length).toBeLessThanOrEqual(120);
+      expect(draft.title).toContain("\u2013 ");
+    }
+  });
+
+  it("routes page work to marketing and product work to product", () => {
+    expect(drafts[0]?.draft.labels).toContain("owner:marketing");
+    expect(drafts[1]?.draft.labels).toContain("owner:product");
+  });
+
+  it("scopes each body to its own action", () => {
+    const [pages, product] = drafts.map((entry) => entry.draft.body) as [string, string];
+    expect(pages).toContain(
+      "## Recommended action\n**Update pages** \u2013 PostHog has no end time.",
+    );
+    expect(pages).not.toContain("## Recommended action\n**Consider enhancing");
+    expect(product).toContain("## Recommended action\n**Consider enhancing Experiments** \u2013");
+  });
+
+  it("points each issue at the sibling work without restating it", () => {
+    const [pages, product] = drafts.map((entry) => entry.draft.body) as [string, string];
+    expect(pages).toContain(
+      "## Also recommended for this launch\n- **Consider enhancing Experiments** (product), tracked in its own issue",
+    );
+    expect(product).toContain("- **Update pages** (marketing), tracked in its own issue");
+  });
+
+  it("leaves the sibling section out when the alert has one action", () => {
+    const single = buildIssueDrafts(
+      { ...analyzed, analysis: { ...analyzed.analysis, actions: [pageAction] } },
+      image,
+    );
+    expect(single).toHaveLength(1);
+    expect(single[0]?.draft.body).not.toContain("Also recommended");
+  });
+});
+
+describe("buildIssueDraft", () => {
+  const draft = buildIssueDraft(analyzed, image, pageAction);
+
+  it("labels competitor, source, impact, this action, its owner, and its product", () => {
     expect(draft.labels).toEqual([
       "competitor-happenings",
       "amplitude",
       "source:changelog",
       "impact:notable",
       "action:update-pages",
+      "owner:marketing",
+    ]);
+    expect(buildIssueDraft(analyzed, image, productAction).labels).toEqual([
+      "competitor-happenings",
+      "amplitude",
+      "source:changelog",
+      "impact:notable",
       "action:consider-enhancing",
+      "owner:product",
+      "product:experiments",
     ]);
   });
 
@@ -80,9 +150,8 @@ describe("buildIssueDraft", () => {
       "## What you need to know\nAmplitude experiments can now be scheduled to stop on their own.",
       "## Impact\nNotable",
       "## More detail\n- Set a start time, an end time, or both.",
-      "## Recommended action(s)",
-      "- **Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
-      "- **Consider enhancing Experiments** \u2013 PostHog experiments stop manually;",
+      "## Recommended action",
+      "**Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
       "https://posthog.com/compare/best-amplitude-alternatives",
       "**Suggested edit:** Note that Amplitude now schedules stops.",
       "Does this cover flags outside experiments?",
@@ -90,6 +159,21 @@ describe("buildIssueDraft", () => {
     ]) {
       expect(draft.body).toContain(fragment);
     }
+  });
+
+  it("gives marketing the suggested edits and product the same pages as context", () => {
+    expect(draft.body).toContain("## PostHog pages to update");
+    const product = buildIssueDraft(analyzed, image, productAction).body;
+    expect(product).toContain("## PostHog pages for context");
+    expect(product).toContain("**Claim today:** Both tools require manual experiment management.");
+    expect(product).not.toContain("Suggested edit");
+  });
+
+  it("says who owns the work in the header", () => {
+    expect(draft.body).toContain("owned by **marketing**");
+    expect(buildIssueDraft(analyzed, image, productAction).body).toContain(
+      "owned by **product**",
+    );
   });
 
   it("keeps the action title plain, because Slack mrkdwn links are not markdown", () => {
@@ -105,6 +189,7 @@ describe("buildIssueDraft", () => {
     const body = buildIssueBody(
       { ...analyzed, analysis: { ...analyzed.analysis, posthogRefs: [], openQuestions: [] } },
       null,
+      pageAction,
     );
     expect(body).toContain("No indexed PostHog.com page covers this yet");
     expect(body).toContain("None raised.");
@@ -123,7 +208,7 @@ describe("GitHubIssueCreator", () => {
     vi.stubGlobal("fetch", spy);
 
     const issue = await new GitHubIssueCreator("o/r", "ghs-test", 5_000).create(
-      buildIssueDraft(analyzed, image),
+      buildIssueDraft(analyzed, image, pageAction),
     );
 
     expect(issue).toEqual({ number: 7, url: "https://github.com/o/r/issues/7" });
@@ -151,7 +236,7 @@ describe("GitHubIssueCreator", () => {
     vi.stubGlobal("fetch", spy);
 
     const issue = await new GitHubIssueCreator("o/r", "ghs-test", 5_000).create(
-      buildIssueDraft(analyzed, image),
+      buildIssueDraft(analyzed, image, pageAction),
     );
 
     expect(issue?.number).toBe(8);
@@ -169,7 +254,7 @@ describe("GitHubIssueCreator", () => {
       ),
     );
     const issue = await new GitHubIssueCreator("o/r", "bad", 5_000).create(
-      buildIssueDraft(analyzed, image),
+      buildIssueDraft(analyzed, image, pageAction),
     );
     expect(issue).toBeNull();
   });

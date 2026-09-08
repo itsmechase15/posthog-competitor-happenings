@@ -17,6 +17,12 @@ export interface CompetitorConfig {
   xUsername: string;
   /** Lowercase strings that count as a mention of this competitor. */
   aliases: string[];
+  /**
+   * The competitor's own pages comparing themselves to PostHog. What they
+   * claim PostHog cannot do is the third reason to update a PostHog page, so
+   * these go in front of the model alongside PostHog's own copy.
+   */
+  comparePages: string[];
 }
 
 export const COMPETITORS: Record<CompetitorId, CompetitorConfig> = {
@@ -28,6 +34,7 @@ export const COMPETITORS: Record<CompetitorId, CompetitorConfig> = {
     blogPathPrefixes: ["/blog/"],
     xUsername: "mixpanel",
     aliases: ["mixpanel"],
+    comparePages: ["https://mixpanel.com/compare/posthog"],
   },
   amplitude: {
     id: "amplitude",
@@ -37,6 +44,7 @@ export const COMPETITORS: Record<CompetitorId, CompetitorConfig> = {
     blogPathPrefixes: ["/blog/"],
     xUsername: "Amplitude_HQ",
     aliases: ["amplitude"],
+    comparePages: ["https://amplitude.com/compare/posthog"],
   },
 };
 
