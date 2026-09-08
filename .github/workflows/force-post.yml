@@ -83,5 +83,5 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
-          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID }}
+          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID || secrets.AGENTMAIL_INBOX_ID }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
