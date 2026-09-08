@@ -11,4 +11,7 @@
 # summary instead of the recommend
 # retrigger 2026-09-08 for the first post that opens one issue per recommended
 # action: each stacked action should carry its own "Access GitHub issue #n"
+# retrigger 2026-09-08 now that the action detail has room for a whole
+# lead-with-the-work sentence: the last post cut both of them mid-word at 150
+# characters ("experimen…", "ships tod…")
 https://amplitude.com/releases/schedule-experiment-stop
