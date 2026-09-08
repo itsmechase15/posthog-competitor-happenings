@@ -14,7 +14,7 @@ Every alert has the same parts, in this order:
 2. **What you need to KNOW** – the heading carries the one sentence on what changed. There is no unlabeled line above it competing to be read first.
 3. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
 4. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
-5. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line and exactly one short sentence below. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing.
+5. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line and exactly one short sentence below. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
 6. **Access GitHub issue for more information** – the issue opened for this item.
 7. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
 
