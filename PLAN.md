@@ -24,13 +24,20 @@ Index PostHog.com pages that mention Mixpanel or Amplitude. Cite URL + claim + s
 
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
-- Impact `minor | notable | major` = **label only** (not a post gate — every new signal can Slack)
-- Exactly one recommended action:
+- Impact `minor | notable | major` = **label only** (not a post gate – every new signal can Slack)
+- One to three recommended actions, most important first. One signal often
+  needs two, e.g. a stale page to fix and a feature gap to close:
   - update pages (existing compare/content)
   - new compare page
   - consider building (PostHog has nothing like this)
-  - consider enhancing (related feature; gap)
-- Action copy focuses on the gap / why PostHog has nothing like it — not generic "why care"
+  - consider enhancing (related feature; gap). Names the PostHog feature to
+    enhance, so the line reads "Consider enhancing Experiments – ..." rather
+    than a label with a vague gap after it. Enhancing means reaching parity
+    with what the competitor shipped, or beating it
+- Action copy focuses on the gap / why PostHog has nothing like it – not generic "why care"
+- Copy follows the PostHog [docs style guide](https://posthog.com/handbook/wizard-and-docs/docs-style-guide)
+  and [tone of voice](https://posthog.com/handbook/brand/tone). En dash with
+  spaces, never an em dash. See [docs/writing.md](./docs/writing.md)
 - "Severity" is gone from everything user-facing; the scale itself stays
   `minor | notable | major`. Reads still accept a `low | medium | high` reply
   or row and map it back, and the legacy `analyses.severity` column keeps
@@ -39,13 +46,13 @@ Index PostHog.com pages that mention Mixpanel or Amplitude. Cite URL + claim + s
 ### Slack
 One short, pretty message per new signal, in this order and nothing else:
 
-1. Feature image — changelog/blog image, tweet image, or a screenshot of the feature page. Never posted without one
-2. **What you need to KNOW** — the one sentence on what changed, under the heading. No unlabelled line above it
-3. **Impact** — Minor / Notable / Major, right under the sentence
-4. **More detail** — a few short bullets that elaborate, clearly separate from the KNOW sentence
-5. **Recommended action** — the action plus one sentence
-6. **Access GitHub issue for more information** — link to the issue for this item
-7. Small footer — competitor · source · model · source link
+1. Feature image – changelog/blog image, tweet image, or a screenshot of the feature page. Never posted without one
+2. **What you need to KNOW** – the one sentence on what changed, under the heading. No unlabeled line above it
+3. **Impact** – Minor / Notable / Major, right under the sentence
+4. **More detail** – a few short bullets that elaborate, clearly separate from the KNOW sentence
+5. **Recommended action(s)** – one bullet per action, each the action plus one sentence
+6. **Access GitHub issue for more information** – link to the issue for this item
+7. Small footer – competitor · source · model · source link
 
 PostHog page citations, suggested edits, and open questions are not in Slack.
 They live in the issue.
