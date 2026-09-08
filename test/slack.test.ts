@@ -33,12 +33,16 @@ const base: Alert = {
       {
         type: "consider_enhancing",
         feature: "Experiments",
+        // The shape actions are written in: the change to make first, the gap
+        // that justifies it second. docs/writing.md has the bad version.
         detail:
-          "PostHog experiments start manually and stop manually; there is no end time. Adding one is a small change to the experiment form.",
+          "Add a scheduled end time on experiments so a test can stop on its own \u2013 flags already schedule changes, experiments stop by hand. It is a small change to the experiment form.",
       },
       {
         type: "update_pages",
-        detail: "The Amplitude compare page says neither tool schedules experiment stops.",
+        // A page action names the page and what it should say.
+        detail:
+          "On the best amplitude alternatives page, say Amplitude can now schedule an experiment stop. It currently says neither tool does.",
       },
     ],
     posthogRefs: [
@@ -179,8 +183,8 @@ describe("buildSlackMessage", () => {
   it("stacks each action as its own block: bold title, one sentence, its issue", () => {
     expect(actionBlocks(message)).toEqual([
       "*Recommended action(s)*",
-      `*Consider enhancing <https://posthog.com/experiments|Experiments>*\nPostHog experiments start manually and stop manually; there is no end time.\n<${ISSUES_BASE}/7|Access GitHub issue #7>`,
-      `*Update pages*\nThe Amplitude compare page says neither tool schedules experiment stops.\n<${ISSUES_BASE}/8|Access GitHub issue #8>`,
+      `*Consider enhancing <https://posthog.com/experiments|Experiments>*\nAdd a scheduled end time on experiments so a test can stop on its own \u2013 flags already schedule changes, experiments stop by hand.\n<${ISSUES_BASE}/7|Access GitHub issue #7>`,
+      `*Update pages*\nOn the best amplitude alternatives page, say Amplitude can now schedule an experiment stop.\n<${ISSUES_BASE}/8|Access GitHub issue #8>`,
     ]);
   });
 
@@ -209,11 +213,11 @@ describe("buildSlackMessage", () => {
         "*Recommended action(s)*",
         "",
         "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
-        "PostHog experiments start manually and stop manually; there is no end time.",
+        "Add a scheduled end time on experiments so a test can stop on its own \u2013 flags already schedule changes, experiments stop by hand.",
         `<${ISSUES_BASE}/7|Access GitHub issue #7>`,
         "",
         "*Update pages*",
-        "The Amplitude compare page says neither tool schedules experiment stops.",
+        "On the best amplitude alternatives page, say Amplitude can now schedule an experiment stop.",
         `<${ISSUES_BASE}/8|Access GitHub issue #8>`,
       ].join("\n"),
     );

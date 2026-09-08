@@ -461,6 +461,21 @@ describe("buildAnalysisPrompt", () => {
     expect(withRefs).toContain("Slack shows that sentence and nothing else");
   });
 
+  it("shows the good and bad shape of that sentence, per action type", () => {
+    expect(withRefs).toContain("leads with the work, not with what PostHog lacks");
+    // Product actions ask for the change first, then the gap behind it.
+    expect(withRefs).toContain(
+      'Good: "Add a scheduled end time on experiments so a test can stop on its own',
+    );
+    expect(withRefs).toContain(
+      'Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand."',
+    );
+    // Page actions name the page and what it should say.
+    expect(withRefs).toContain('Good: "On the PostHog vs Amplitude experiments compare, say');
+    expect(withRefs).toContain('Bad: "The compare page is out of date."');
+    expect(withRefs).toContain("name that page in the opening sentence");
+  });
+
   it("states the PostHog writing rules, with both handbook pages", () => {
     expect(withRefs).toContain("https://posthog.com/handbook/wizard-and-docs/docs-style-guide");
     expect(withRefs).toContain("https://posthog.com/handbook/brand/tone");
