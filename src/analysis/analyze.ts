@@ -1,9 +1,17 @@
 import { Agent } from "@cursor/sdk";
+import { createCompareIndex, type CompareIndex } from "../competitor/compare.js";
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
 import { gatherDocsContext } from "../posthog/docs.js";
-import type { Analysis, AnalyzedItem, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
+import type {
+  Analysis,
+  AnalyzedItem,
+  CompetitorClaim,
+  PostHogClaim,
+  PostHogDoc,
+  StoredItem,
+} from "../types.js";
 import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
 import { buildAnalysisPrompt } from "./prompt.js";
@@ -44,8 +52,13 @@ class CursorAnalyzer implements Analyzer {
     private readonly runtime: "local" | "cloud",
   ) {}
 
-  async analyze(item: StoredItem, claims: PostHogClaim[], docs: PostHogDoc[]): Promise<Analysis> {
-    const prompt = buildAnalysisPrompt(item, claims, docs);
+  async analyze(
+    item: StoredItem,
+    claims: PostHogClaim[],
+    docs: PostHogDoc[],
+    compareClaims: CompetitorClaim[],
+  ): Promise<Analysis> {
+    const prompt = buildAnalysisPrompt(item, claims, docs, compareClaims);
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= ANALYSIS_ATTEMPTS; attempt += 1) {
@@ -105,12 +118,13 @@ export function createAnalyzer(config: Config): Analyzer {
 }
 
 /**
- * Analyze each new item against two kinds of PostHog context: the indexed
- * claims for its competitor, which find stale marketing copy, and the product
+ * Analyze each new item against three kinds of context: PostHog's indexed
+ * claims about the competitor, which find stale marketing copy; the PostHog
  * docs for what it touches, which are the only evidence for what PostHog does
- * or does not do. Every verdict is then reconciled with those docs, so an
- * action cannot claim a gap the docs contradict. A failed analysis drops that
- * item and leaves the rest alone.
+ * or does not do; and the competitor's own comparison pages, which are where a
+ * claim that PostHog cannot do something turns up. Every verdict is then
+ * reconciled with the docs, so an action cannot claim a gap the docs
+ * contradict. A failed analysis drops that item and leaves the rest alone.
  */
 export type { Analyzer };
 
@@ -119,6 +133,7 @@ export async function analyzeItems(
   store: Store,
   analyzer: Analyzer,
   config: Config,
+  compare: CompareIndex = createCompareIndex(config),
 ): Promise<AnalyzedItem[]> {
   const claimsByCompetitor = new Map<string, PostHogClaim[]>();
   const analyzed: AnalyzedItem[] = [];
@@ -140,8 +155,21 @@ export async function analyzeItems(
       return [] as PostHogDoc[];
     });
 
+    // Per competitor, and cached: what they claim about PostHog is the same
+    // whichever of their launches we are reading.
+    const compareClaims = await compare.claimsFor(item.competitor).catch((error: unknown) => {
+      log.warn(
+        `comparison pages failed for ${item.competitor}`,
+        error instanceof Error ? error.message : error,
+      );
+      return [] as CompetitorClaim[];
+    });
+
     try {
-      const verified = verifyAgainstDocs(await analyzer.analyze(item, claims, docs), docs);
+      const verified = verifyAgainstDocs(
+        await analyzer.analyze(item, claims, docs, compareClaims),
+        docs,
+      );
       for (const note of verified.notes) log.warn(`corrected ${item.url}: ${note}`);
       const analysis = verified.analysis;
       analyzed.push({ item, analysis, model: analyzer.model });

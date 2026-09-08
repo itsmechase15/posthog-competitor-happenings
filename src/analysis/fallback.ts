@@ -133,7 +133,7 @@ function fallbackAction(
   if (closestPage) {
     return {
       type: "update_pages",
-      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether it still describes ${label} accurately after this change.${docHint}`,
+      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether this change makes anything it says about ${label} wrong, and edit it only if it does.${docHint}`,
     };
   }
   return {

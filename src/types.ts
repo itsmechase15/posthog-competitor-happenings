@@ -144,6 +144,18 @@ export interface PostHogClaim {
 }
 
 /**
+ * A paragraph about PostHog lifted out of a competitor's own comparison page.
+ * Where they say PostHog cannot do something PostHog does, PostHog's pages
+ * have a claim to answer.
+ */
+export interface CompetitorClaim {
+  url: string;
+  competitor: CompetitorId;
+  paragraph: string;
+  heading: string | null;
+}
+
+/**
  * A PostHog docs page, cut down to what it says about one signal. This is the
  * evidence an action is checked against before it may claim PostHog cannot do
  * something.
