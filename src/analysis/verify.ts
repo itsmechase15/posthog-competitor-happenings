@@ -51,7 +51,7 @@ export function verifyAgainstDocs(analysis: Analysis, docs: PostHogDoc[]): DocsV
     const primary = relevant[0];
 
     if (action.type === "consider_building" && primary) {
-      const feature = productForDocUrl(primary.url)?.name ?? action.feature;
+      const feature = productForDocUrl(primary.url)?.label ?? action.feature;
       notes.push(
         `retyped consider_building to consider_enhancing${feature ? ` ${feature}` : ""}: ${primary.url} covers this area`,
       );
@@ -83,7 +83,7 @@ export function verifyAgainstDocs(analysis: Analysis, docs: PostHogDoc[]): DocsV
     // A consider_enhancing with no feature renders in Slack as a title that
     // names nothing, and the docs say which product this is about.
     if (action.type === "consider_enhancing" && !action.feature && primary) {
-      const feature = productForDocUrl(primary.url)?.name;
+      const feature = productForDocUrl(primary.url)?.label;
       if (feature) {
         notes.push(`named ${feature} as the feature to enhance, from ${primary.url}`);
         return { ...action, feature };
@@ -127,7 +127,7 @@ export function relevantDocs(action: RecommendedAction, docs: PostHogDoc[]): Pos
   const ranked = docs
     .map((doc) => {
       const product = productForDocUrl(doc.url);
-      const rank = product ? wanted.indexOf(product.name) : -1;
+      const rank = product ? wanted.indexOf(product.label) : -1;
       return { doc, rank };
     })
     .filter((entry) => entry.rank !== -1)
@@ -139,7 +139,7 @@ export function relevantDocs(action: RecommendedAction, docs: PostHogDoc[]): Pos
 function productNames(action: RecommendedAction): string[] {
   const named = action.feature ? findProductByName(action.feature) : undefined;
   const fromDetail = matchProducts(action.detail, 3);
-  return [...new Set([...(named ? [named.name] : []), ...fromDetail.map((p) => p.name)])];
+  return [...new Set([...(named ? [named.label] : []), ...fromDetail.map((product) => product.label)])];
 }
 
 function namedProducts(action: RecommendedAction): string {

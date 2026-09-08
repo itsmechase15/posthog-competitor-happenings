@@ -46,9 +46,11 @@ and the doubt goes in `open_questions` instead of becoming an invented gap.
 
 - [`src/analysis/prompt.ts`](../src/analysis/prompt.ts) states the rules to the
   model, with both handbook URLs, so the copy is right when it is written.
-- [`src/posthog/products.ts`](../src/posthog/products.ts) holds the canonical
-  docs URL per product, and [`src/posthog/docs.ts`](../src/posthog/docs.ts)
-  puts the relevant ones in the prompt.
+- [`src/posthog/products.ts`](../src/posthog/products.ts) is the one place that
+  knows PostHog's products: their names, the page an action title links, and
+  the docs a recommendation is checked against.
+  [`src/posthog/docs.ts`](../src/posthog/docs.ts) puts the relevant docs in the
+  prompt.
 - [`verifyAgainstDocs`](../src/analysis/verify.ts) reconciles the reply with
   those docs: a `consider_building` the docs contradict becomes
   `consider_enhancing` against the product that already exists, and a gap claim

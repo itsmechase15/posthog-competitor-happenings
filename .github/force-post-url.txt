@@ -2,7 +2,7 @@
 # .github/workflows/force-post.yml, which posts that item to Slack even if the
 # dedupe table has seen it before. Lines starting with # are ignored, so
 # touching a comment is enough to ask for the same URL to be posted again.
-# retrigger 2026-09-08 to see the stacked action layout in Slack
+# retrigger 2026-09-08 to see the linked product name in the action title
 # retrigger 2026-09-08 now that a recommend is checked against the PostHog docs:
 # this one should read as a gap in Experiments next to scheduled flag changes,
 # not as "PostHog cannot schedule anything"

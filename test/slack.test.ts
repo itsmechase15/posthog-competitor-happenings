@@ -160,7 +160,7 @@ describe("buildSlackMessage", () => {
   it("stacks each action as its own block: bold title, then one sentence under it", () => {
     expect(actionBlocks(message)).toEqual([
       "*Recommended action(s)*",
-      "*Consider enhancing Experiments*\nPostHog experiments start manually and stop manually; there is no end time.",
+      "*Consider enhancing <https://posthog.com/experiments|Experiments>*\nPostHog experiments start manually and stop manually; there is no end time.",
       "*Update pages*\nThe Amplitude compare page says neither tool schedules experiment stops.",
     ]);
   });
@@ -195,7 +195,7 @@ describe("buildSlackMessage", () => {
       [
         "*Recommended action(s)*",
         "",
-        "*Consider enhancing Experiments*",
+        "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
         "PostHog experiments start manually and stop manually; there is no end time.",
         "",
         "*Update pages*",
@@ -210,7 +210,120 @@ describe("buildSlackMessage", () => {
   });
 
   it("names the feature to enhance, so the title is not just 'Consider enhancing'", () => {
-    expect(actionBlocks(message)[1]?.split("\n")[0]).toBe("*Consider enhancing Experiments*");
+    expect(actionBlocks(message)[1]?.split("\n")[0]).toBe(
+      "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
+    );
+  });
+
+  it("links a product name we know, inside the bold title", () => {
+    const flags = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [
+          {
+            type: "consider_enhancing",
+            feature: "feature flags",
+            detail: "PostHog flags have no scheduled rollout.",
+          },
+        ],
+      },
+    });
+    expect(actionBlocks(flags)[1]).toBe(
+      "*Consider enhancing <https://posthog.com/feature-flags|Feature flags>*\nPostHog flags have no scheduled rollout.",
+    );
+  });
+
+  it("matches a product whatever case the model wrote it in", () => {
+    const titles = ["Feature Flags", "feature flags", "FEATURE  FLAGS", "Feature flag"].map(
+      (feature) =>
+        actionBlocks(
+          buildSlackMessage({
+            ...base,
+            analysis: {
+              ...base.analysis,
+              actions: [{ type: "consider_enhancing", feature, detail: "A gap." }],
+            },
+          }),
+        )[1]?.split("\n")[0],
+    );
+    expect(new Set(titles)).toEqual(
+      new Set(["*Consider enhancing <https://posthog.com/feature-flags|Feature flags>*"]),
+    );
+  });
+
+  it("leaves a feature we have no product page for as plain text", () => {
+    const unlinked = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [
+          {
+            type: "consider_enhancing",
+            feature: "Revenue analytics",
+            detail: "PostHog reads Stripe, but not on a schedule you pick.",
+          },
+        ],
+      },
+    });
+    expect(actionBlocks(unlinked)[1]).toBe(
+      "*Consider enhancing Revenue analytics*\nPostHog reads Stripe, but not on a schedule you pick.",
+    );
+    expect(JSON.stringify(unlinked)).not.toContain("posthog.com/revenue-analytics");
+  });
+
+  it("links every product whose page we have checked, not only the first two", () => {
+    for (const [feature, url] of [
+      ["Session replay", "https://posthog.com/session-replay"],
+      ["Surveys", "https://posthog.com/surveys"],
+      ["Error tracking", "https://posthog.com/error-tracking"],
+    ] as const) {
+      const message = buildSlackMessage({
+        ...base,
+        analysis: {
+          ...base.analysis,
+          actions: [{ type: "consider_enhancing", feature, detail: "A gap." }],
+        },
+      });
+      expect(actionBlocks(message)[1]?.split("\n")[0]).toBe(
+        `*Consider enhancing <${url}|${feature}>*`,
+      );
+    }
+  });
+
+  it("links nothing on the three actions that name no feature", () => {
+    const pages = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [{ type: "update_pages", detail: "The compare page is stale." }],
+      },
+    });
+    expect(actionBlocks(pages)[1]).toBe("*Update pages*\nThe compare page is stale.");
+  });
+
+  it("keeps the product link as mrkdwn, not escaped into text", () => {
+    expect(rendered).not.toContain("&lt;https://posthog.com/experiments");
+    expect(rendered).toContain("<https://posthog.com/experiments|Experiments>");
+  });
+
+  it("links a product in every action of a multi-action alert", () => {
+    const both = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [
+          { type: "consider_enhancing", feature: "Experiments", detail: "No end time." },
+          { type: "consider_enhancing", feature: "Feature flags", detail: "No scheduled rollout." },
+          { type: "update_pages", detail: "The compare page is stale." },
+        ],
+      },
+    });
+    expect(actionBlocks(both).slice(1)).toEqual([
+      "*Consider enhancing <https://posthog.com/experiments|Experiments>*\nNo end time.",
+      "*Consider enhancing <https://posthog.com/feature-flags|Feature flags>*\nNo scheduled rollout.",
+      "*Update pages*\nThe compare page is stale.",
+    ]);
   });
 
   it("falls back to the bare label when a stored action names no feature", () => {
@@ -268,7 +381,7 @@ describe("buildSlackMessage", () => {
       "*Impact*  :large_orange_circle: Notable",
       "*More detail*",
       `*${ACTION_HEADING}*`,
-      "*Consider enhancing Experiments*",
+      "*Consider enhancing <https://posthog.com/experiments|Experiments>*",
       "*Update pages*",
       `*<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>*`,
       "footer",

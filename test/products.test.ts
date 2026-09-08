@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { actionLabel, actionTitleParts } from "../src/labels.js";
 import {
   CANONICAL_DOC_URLS,
   docUrlsForText,
+  findPostHogProduct,
   findProductByName,
   matchProducts,
   POSTHOG_PRODUCTS,
@@ -15,15 +17,23 @@ describe("POSTHOG_PRODUCTS", () => {
     }
   });
 
-  it("names every product once, so an action's feature maps to one thing", () => {
-    const names = POSTHOG_PRODUCTS.map((product) => product.name);
-    expect(new Set(names).size).toBe(names.length);
+  it("labels every product once, so an action's feature maps to one thing", () => {
+    const labels = POSTHOG_PRODUCTS.map((product) => product.label);
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
   it("gives every product a docs page and a way to be recognised", () => {
     for (const product of POSTHOG_PRODUCTS) {
       expect(product.docs.length).toBeGreaterThan(0);
       expect(product.keywords.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("only carries a product page URL where posthog.com has one", () => {
+    for (const product of POSTHOG_PRODUCTS) {
+      if (product.url === undefined) continue;
+      expect(product.url).toMatch(/^https:\/\/posthog\.com\/[a-z-]+$/);
+      expect(product.url).not.toContain("/docs/");
     }
   });
 
@@ -40,12 +50,38 @@ describe("POSTHOG_PRODUCTS", () => {
   });
 });
 
+describe("findPostHogProduct", () => {
+  it("carries the product page for a product that has one", () => {
+    expect(findPostHogProduct("Experiments")?.url).toBe("https://posthog.com/experiments");
+    expect(findPostHogProduct("Feature flags")?.url).toBe("https://posthog.com/feature-flags");
+    expect(findPostHogProduct("Session replay")?.url).toBe("https://posthog.com/session-replay");
+  });
+
+  it("matches however the model cased or spaced the name", () => {
+    for (const written of ["feature flags", "FEATURE FLAGS", " Feature  Flags ", "feature flag"]) {
+      expect(findPostHogProduct(written)?.label).toBe("Feature flags");
+    }
+  });
+
+  it("leaves the URL off a product PostHog has no page for", () => {
+    const revenue = findPostHogProduct("Revenue analytics");
+    expect(revenue?.label).toBe("Revenue analytics");
+    expect(revenue?.url).toBeUndefined();
+  });
+
+  it("knows nothing about a name that is not a PostHog product", () => {
+    for (const unknown of ["Time travel", "", undefined]) {
+      expect(findPostHogProduct(unknown)).toBeUndefined();
+    }
+  });
+});
+
 describe("findProductByName", () => {
   it("reads the feature a model named, however it phrased it", () => {
-    expect(findProductByName("Experiments")?.name).toBe("Experiments");
-    expect(findProductByName("experiments")?.name).toBe("Experiments");
-    expect(findProductByName("PostHog Experiments (A/B testing)")?.name).toBe("Experiments");
-    expect(findProductByName("Session replay")?.name).toBe("Session replay");
+    expect(findProductByName("Experiments")?.label).toBe("Experiments");
+    expect(findProductByName("experiments")?.label).toBe("Experiments");
+    expect(findProductByName("PostHog Experiments (A/B testing)")?.label).toBe("Experiments");
+    expect(findProductByName("Session replay")?.label).toBe("Session replay");
   });
 
   it("returns nothing for a feature we hold no docs for", () => {
@@ -56,11 +92,11 @@ describe("findProductByName", () => {
 
 describe("productForDocUrl", () => {
   it("maps a docs page back to the product it documents", () => {
-    expect(productForDocUrl("https://posthog.com/docs/experiments/managing-lifecycle")?.name).toBe(
+    expect(productForDocUrl("https://posthog.com/docs/experiments/managing-lifecycle")?.label).toBe(
       "Experiments",
     );
     expect(
-      productForDocUrl("https://posthog.com/docs/feature-flags/scheduled-flag-changes")?.name,
+      productForDocUrl("https://posthog.com/docs/feature-flags/scheduled-flag-changes")?.label,
     ).toBe("Feature flags");
     expect(productForDocUrl("https://posthog.com/blog/anything")).toBeUndefined();
   });
@@ -71,7 +107,7 @@ describe("matchProducts", () => {
     const matched = matchProducts(
       "You can now schedule an experiment to stop automatically on a date you pick.",
     );
-    expect(matched[0]?.name).toBe("Experiments");
+    expect(matched[0]?.label).toBe("Experiments");
   });
 
   it("finds nothing rather than guessing when a signal names no product", () => {
@@ -82,7 +118,7 @@ describe("matchProducts", () => {
     const matched = matchProducts(
       "PostHog experiments have no end time, so someone has to stop them by hand.",
     );
-    expect(matched.map((product) => product.name)).toContain("Experiments");
+    expect(matched.map((product) => product.label)).toContain("Experiments");
   });
 });
 
@@ -134,5 +170,49 @@ describe("docUrlsForText", () => {
 
   it("returns nothing when no product matches, rather than a default page", () => {
     expect(docUrlsForText("We redesigned our pricing page footer.")).toEqual([]);
+  });
+});
+
+describe("actionTitleParts", () => {
+  it("carries the product URL for a feature it recognizes", () => {
+    expect(
+      actionTitleParts({ type: "consider_enhancing", feature: "experiments", detail: "A gap." }),
+    ).toEqual({
+      label: "Consider enhancing",
+      feature: { label: "Experiments", url: "https://posthog.com/experiments" },
+    });
+  });
+
+  it("writes a product with no page of its own in PostHog's casing, unlinked", () => {
+    expect(
+      actionTitleParts({
+        type: "consider_enhancing",
+        feature: "revenue analytics",
+        detail: "A gap.",
+      }),
+    ).toEqual({
+      label: "Consider enhancing",
+      feature: { label: "Revenue analytics", url: undefined },
+    });
+  });
+
+  it("keeps an unknown feature as the model wrote it, with no URL to link it to", () => {
+    expect(
+      actionTitleParts({ type: "consider_enhancing", feature: "Time travel", detail: "A gap." }),
+    ).toEqual({ label: "Consider enhancing", feature: { label: "Time travel", url: undefined } });
+  });
+
+  it("names no feature for the three actions that do not have one", () => {
+    expect(actionTitleParts({ type: "update_pages", detail: "Stale." })).toEqual({
+      label: "Update pages",
+    });
+  });
+});
+
+describe("actionLabel", () => {
+  it("writes the product in PostHog's casing wherever the title is plain text", () => {
+    expect(
+      actionLabel({ type: "consider_enhancing", feature: "feature flags", detail: "A gap." }),
+    ).toBe("Consider enhancing Feature flags");
   });
 });

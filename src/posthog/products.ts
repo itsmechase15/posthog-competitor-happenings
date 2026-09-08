@@ -1,24 +1,33 @@
 import { truncate } from "../util/text.js";
 
 /**
- * A PostHog product, the words that point at it, and the docs pages that say
- * what it can already do.
+ * A PostHog product: what to call it, where to link it, the words that point
+ * at it, and the docs pages that say what it can already do.
  *
- * This list exists because the competitor-mention index is the wrong evidence
- * for "PostHog can't do X". Compare pages are marketing copy written at a
- * point in time; docs are the product. Before the bot recommends building or
- * enhancing anything, the docs for the product it names go in front of the
- * model.
+ * The docs are why this list is more than a link table. The competitor-mention
+ * index is the wrong evidence for "PostHog can't do X": compare pages are
+ * marketing copy written at a point in time, and docs are the product. Before
+ * the bot recommends building or enhancing anything, the docs for the product
+ * it names go in front of the model.
  *
  * `docs` is deliberately short. The first entry is the product's overview page,
- * and the ones after it are the pages that answer the questions competitors
- * keep shipping against: scheduling, lifecycle, rollout, and alerting. Every
- * URL here is one a person can open.
+ * and the ones after it answer the questions competitors keep shipping
+ * against: scheduling, lifecycle, rollout, and statistics. Every URL here is
+ * one that has been opened and checked.
  */
 export interface PostHogProduct {
-  /** The name to use in an action's `feature`, e.g. "Experiments". */
-  name: string;
-  /** Lowercase substrings in a signal, or a model's own words, that point here. */
+  /** PostHog's own casing, which is sentence case: "Feature flags", not "Feature Flags". */
+  label: string;
+  /**
+   * The product marketing page, for an action title that links the product it
+   * names. Left off where PostHog has no such page: a feature with no URL
+   * stays unlinked, which reads fine, where a guessed URL sends the reader to
+   * a 404.
+   */
+  url?: string;
+  /** Other ways a model writes the same product. Matched case-insensitively, like the label. */
+  aliases?: string[];
+  /** Lowercase substrings in a signal, or in a model's own words, that point here. */
   keywords: string[];
   /** Canonical docs pages, overview first. */
   docs: string[];
@@ -26,7 +35,9 @@ export interface PostHogProduct {
 
 export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   {
-    name: "Experiments",
+    label: "Experiments",
+    url: "https://posthog.com/experiments",
+    aliases: ["experiment", "a/b testing", "ab testing"],
     keywords: [
       "experiment",
       "a/b test",
@@ -45,7 +56,9 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     ],
   },
   {
-    name: "Feature flags",
+    label: "Feature flags",
+    url: "https://posthog.com/feature-flags",
+    aliases: ["feature flag", "feature gates", "feature gating"],
     keywords: [
       "feature flag",
       "feature gate",
@@ -64,7 +77,9 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     ],
   },
   {
-    name: "Product analytics",
+    label: "Product analytics",
+    url: "https://posthog.com/product-analytics",
+    aliases: ["analytics", "insights", "dashboards"],
     keywords: [
       "funnel",
       "retention",
@@ -85,12 +100,15 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     ],
   },
   {
-    name: "Web analytics",
+    label: "Web analytics",
+    url: "https://posthog.com/web-analytics",
     keywords: ["web analytics", "pageview", "bounce rate", "utm", "referrer", "web vitals"],
     docs: ["https://posthog.com/docs/web-analytics"],
   },
   {
-    name: "Session replay",
+    label: "Session replay",
+    url: "https://posthog.com/session-replay",
+    aliases: ["session recording", "session recordings", "replays"],
     keywords: ["session replay", "session recording", "replay", "heatmap", "screen recording"],
     docs: [
       "https://posthog.com/docs/session-replay",
@@ -98,22 +116,30 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     ],
   },
   {
-    name: "Surveys",
+    label: "Surveys",
+    url: "https://posthog.com/surveys",
+    aliases: ["survey"],
     keywords: ["survey", "nps", "csat", "feedback widget", "in-app poll"],
     docs: ["https://posthog.com/docs/surveys"],
   },
   {
-    name: "Error tracking",
+    label: "Error tracking",
+    url: "https://posthog.com/error-tracking",
+    aliases: ["exception tracking", "issue tracking"],
     keywords: ["error tracking", "exception", "stack trace", "crash report", "issue tracking"],
     docs: ["https://posthog.com/docs/error-tracking"],
   },
   {
-    name: "Data warehouse",
+    label: "Data warehouse",
+    url: "https://posthog.com/data-stack",
+    aliases: ["warehouse", "data stack"],
     keywords: ["data warehouse", "warehouse", "snowflake", "bigquery", "redshift", "external data"],
     docs: ["https://posthog.com/docs/data-warehouse"],
   },
   {
-    name: "Data pipelines",
+    label: "Data pipelines",
+    url: "https://posthog.com/cdp",
+    aliases: ["cdp", "pipelines", "destinations"],
     keywords: [
       "pipeline",
       "destination",
@@ -127,35 +153,38 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     docs: ["https://posthog.com/docs/cdp", "https://posthog.com/docs/cdp/destinations"],
   },
   {
-    name: "LLM analytics",
+    label: "LLM analytics",
+    url: "https://posthog.com/ai-observability",
+    aliases: ["ai observability", "llm observability", "llm analytics"],
     keywords: ["llm", "prompt", "token usage", "ai observability", "generation", "trace", "agent"],
-    docs: [
-      "https://posthog.com/docs/llm-analytics",
-      "https://posthog.com/docs/ai-engineering",
-    ],
+    docs: ["https://posthog.com/docs/llm-analytics", "https://posthog.com/docs/ai-engineering"],
   },
   {
-    name: "Max AI",
+    label: "Max AI",
+    aliases: ["max"],
     keywords: ["ai assistant", "copilot", "natural language query", "ask ai", "chat with your data"],
     docs: ["https://posthog.com/docs/max-ai"],
   },
   {
-    name: "Revenue analytics",
+    label: "Revenue analytics",
     keywords: ["revenue", "mrr", "arr", "subscription", "stripe", "monetization"],
     docs: ["https://posthog.com/docs/revenue-analytics"],
   },
   {
-    name: "Logs",
+    label: "Logs",
+    url: "https://posthog.com/logs",
+    aliases: ["logging"],
     keywords: ["log", "logging", "log search", "observability"],
     docs: ["https://posthog.com/docs/logs"],
   },
   {
-    name: "Alerts",
+    label: "Alerts",
+    aliases: ["alerting"],
     keywords: ["alert", "anomaly detection", "threshold", "notification", "subscribe to a report"],
     docs: ["https://posthog.com/docs/alerts", "https://posthog.com/docs/data/annotations"],
   },
   {
-    name: "Notebooks",
+    label: "Notebooks",
     keywords: ["notebook", "canvas", "shared analysis"],
     docs: ["https://posthog.com/docs/notebooks"],
   },
@@ -221,15 +250,41 @@ export const CANONICAL_DOC_URLS: string[] = [
   ]),
 ];
 
+/** A model writes "feature flags", "Feature Flags", and "Feature  Flags" for the same thing. */
+function normalize(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+const BY_NAME = new Map<string, PostHogProduct>(
+  POSTHOG_PRODUCTS.flatMap((product) =>
+    [product.label, ...(product.aliases ?? [])].map((name) => [normalize(name), product] as const),
+  ),
+);
+
+/**
+ * The product a feature name refers to, or undefined when the name is not one
+ * we recognize. Callers that render a link read `url`, which is only set where
+ * PostHog has a product page.
+ */
+export function findPostHogProduct(feature: string | undefined): PostHogProduct | undefined {
+  return feature ? BY_NAME.get(normalize(feature)) : undefined;
+}
+
+/**
+ * The same lookup, but forgiving, for a feature name a model wrote in its own
+ * words: "PostHog Experiments (A/B testing)" has to find Experiments.
+ */
 export function findProductByName(name: string): PostHogProduct | undefined {
-  const wanted = name.trim().toLowerCase();
+  const wanted = normalize(name);
   if (!wanted) return undefined;
+
+  const exact = findPostHogProduct(name);
+  if (exact) return exact;
+
   return POSTHOG_PRODUCTS.find(
     (product) =>
-      product.name.toLowerCase() === wanted ||
-      // "Experiment", "experiments (A/B testing)", and "PostHog Experiments"
-      // all mean the same product.
-      wanted.includes(product.name.toLowerCase()) ||
+      wanted.includes(normalize(product.label)) ||
+      (product.aliases ?? []).some((alias) => wanted.includes(normalize(alias))) ||
       product.keywords.some((keyword) => wanted === keyword),
   );
 }
@@ -255,14 +310,14 @@ export function matchProducts(text: string, limit = POSTHOG_PRODUCTS.length): Po
       // match counts for more than a late one.
       if (hits > 0) score += hits * (product.keywords.indexOf(keyword) === 0 ? 3 : 1);
     }
-    // Only when the name is not already one of the keywords, so a product
+    // Only when the label is not already one of the keywords, so a product
     // whose name is its own first keyword is not counted twice.
-    const name = product.name.toLowerCase();
-    if (!product.keywords.includes(name) && lower.includes(name)) score += 3;
+    const label = normalize(product.label);
+    if (!product.keywords.includes(label) && lower.includes(label)) score += 3;
     return { product, score };
   }).filter((entry) => entry.score > 0);
 
-  scored.sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name));
+  scored.sort((a, b) => b.score - a.score || a.product.label.localeCompare(b.product.label));
   return scored.slice(0, limit).map((entry) => entry.product);
 }
 
@@ -325,9 +380,9 @@ export function docUrlsForText(
 
 /** The `feature` an action should name, given the product its docs came from. */
 export function featureLabelFor(url: string): string | undefined {
-  return productForDocUrl(url)?.name;
+  return productForDocUrl(url)?.label;
 }
 
 export function describeProducts(products: PostHogProduct[]): string {
-  return truncate(products.map((product) => product.name).join(", "), 200);
+  return truncate(products.map((product) => product.label).join(", "), 200);
 }
