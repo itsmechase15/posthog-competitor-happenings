@@ -85,6 +85,23 @@ describe("parseAnalysis", () => {
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
   });
 
+  it("keeps the verdict when the model leaves a feature blank", () => {
+    const blank = {
+      ...valid,
+      actions: [
+        { type: "update_pages", detail: "The compare page is out of date.", feature: "" },
+        { type: "consider_enhancing", detail: "Pipelines do not run on a schedule.", feature: "  " },
+      ],
+    };
+    const analysis = parseAnalysis(JSON.stringify(blank));
+    expect(analysis.actions.map((action) => action.type)).toEqual([
+      "update_pages",
+      "consider_enhancing",
+    ]);
+    expect(analysis.actions[0]?.feature).toBeUndefined();
+    expect(analysis.actions[1]?.feature).toBeUndefined();
+  });
+
   it("reads a legacy severity field as its impact level", () => {
     const legacy = { ...valid, severity: "major" } as Record<string, unknown>;
     delete legacy.impact;

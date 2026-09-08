@@ -26,7 +26,13 @@ const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
 
 const actionToken = z.enum(ACTIONS);
 const detail = z.string().min(1).max(900);
-const feature = z.string().min(1).max(120);
+/**
+ * Always optional, and a model that writes `""` means it named no product. Read
+ * that as absent rather than rejecting it: the feature is decoration on the
+ * action title, `verifyAgainstDocs` can recover the name from the docs anyway,
+ * and refusing the reply throws away the whole verdict over a blank field.
+ */
+const feature = z.string().max(120).transform((value) => value.trim() || undefined);
 
 /** One entry of `actions`, in whichever casing the model reached for. */
 const actionSchema = z.object({
