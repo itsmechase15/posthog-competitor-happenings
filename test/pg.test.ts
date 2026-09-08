@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PostgresStore, sslConfigFor } from "../src/db/pg.js";
+import { isUnreachable, PostgresStore, sslConfigFor, unreachableHint } from "../src/db/pg.js";
 import type { CandidateItem } from "../src/types.js";
 
 /**
@@ -67,6 +67,51 @@ describe("sslConfigFor", () => {
 
   it("verifies the chain when asked to", () => {
     expect(sslConfigFor("postgres://user@db.supabase.co:5432/postgres", true)).toBe(true);
+  });
+});
+
+describe("isUnreachable", () => {
+  function withCode(code: string): Error {
+    return Object.assign(new Error(code), { code });
+  }
+
+  it("recognises a socket that never opened", () => {
+    for (const code of ["ENETUNREACH", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT"]) {
+      expect(isUnreachable(withCode(code))).toBe(true);
+    }
+  });
+
+  it("recognises a failed TLS handshake", () => {
+    expect(isUnreachable(withCode("SELF_SIGNED_CERT_IN_CHAIN"))).toBe(true);
+    expect(isUnreachable(new Error("The server does not support SSL connections"))).toBe(true);
+  });
+
+  it("looks inside the pair of errors a dual-stack attempt reports", () => {
+    const both = new AggregateError(
+      [withCode("ENETUNREACH"), withCode("ECONNREFUSED")],
+      "connect failed",
+    );
+    expect(isUnreachable(both)).toBe(true);
+  });
+
+  it("leaves a query Postgres understood alone", () => {
+    // Undefined table and wrong password are bugs, not reachability.
+    expect(isUnreachable(withCode("42P01"))).toBe(false);
+    expect(isUnreachable(withCode("28P01"))).toBe(false);
+  });
+});
+
+describe("unreachableHint", () => {
+  it("names the pooler for a Supabase direct connection", () => {
+    const hint = unreachableHint("postgres://postgres:pw@db.abcdefghij.supabase.co:5432/postgres");
+    expect(hint).toMatch(/pooler\.supabase\.com/);
+    // The host belongs to the secret; the hint must not repeat any of it.
+    expect(hint).not.toMatch(/abcdefghij|pw/);
+  });
+
+  it("has nothing to add about any other host", () => {
+    expect(unreachableHint("postgres://user@db.example.com:5432/postgres")).toBeNull();
+    expect(unreachableHint("host=localhost port=5432")).toBeNull();
   });
 });
 

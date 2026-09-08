@@ -39,6 +39,66 @@ export function sslConfigFor(
   return strict ? true : { rejectUnauthorized: false };
 }
 
+/**
+ * Failures that mean no session was ever established: DNS, routing, refused
+ * sockets, and a TLS handshake that never completed. A query Postgres
+ * understood and rejected is not one of these, and neither is a bad password.
+ */
+const UNREACHABLE_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EPIPE",
+  "ETIMEDOUT",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
+/**
+ * Whether the database could not be reached at all. Node tries both address
+ * families for a dual-stack host and reports the pair as an `AggregateError`,
+ * so the causes are walked rather than only the outermost error read.
+ */
+export function isUnreachable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && UNREACHABLE_CODES.has(code)) return true;
+  // Connecting to a server with TLS off where TLS is mandatory, and the reverse.
+  if (/does not support SSL|server does not support TLS/i.test(error.message)) return true;
+
+  const nested = error instanceof AggregateError ? error.errors : [];
+  return [...nested, error.cause].some((inner) => isUnreachable(inner));
+}
+
+/**
+ * What to change when the database cannot be reached, for the shapes of
+ * connection string that have a known answer. Supabase's direct host publishes
+ * only an AAAA record and a GitHub Actions runner has no IPv6 route, so every
+ * connection there fails before TLS; the pooler host is dual-stack.
+ *
+ * The host is deliberately left out of the returned text: it is part of
+ * `DATABASE_URL`, and Actions masks the whole secret rather than its parts.
+ */
+export function unreachableHint(connectionString: string): string | null {
+  let host = "";
+  try {
+    host = new URL(connectionString).hostname;
+  } catch {
+    return null;
+  }
+
+  if (/^db\.[a-z0-9]+\.supabase\.(co|com)$/i.test(host)) {
+    return "DATABASE_URL is a Supabase direct connection, which resolves to IPv6 only. GitHub Actions runners are IPv4-only, so use the pooler connection string (host *.pooler.supabase.com) instead";
+  }
+  return null;
+}
+
 export class PostgresStore implements Store {
   private readonly pool: pg.Pool;
 
