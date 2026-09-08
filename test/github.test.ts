@@ -24,8 +24,17 @@ const analyzed: AnalyzedItem = {
     impact: "notable",
     summary: "Amplitude experiments can now be scheduled to stop on their own.",
     keyPoints: ["Set a start time, an end time, or both."],
-    action: "update_pages",
-    actionDetail: "PostHog has no end time. The compare page says neither tool does.",
+    actions: [
+      {
+        type: "update_pages",
+        detail: "PostHog has no end time. The compare page says neither tool does.",
+      },
+      {
+        type: "consider_enhancing",
+        feature: "Experiments",
+        detail: "PostHog experiments stop manually; a scheduled stop is a small form change.",
+      },
+    ],
     posthogRefs: [
       {
         url: "https://posthog.com/compare/best-amplitude-alternatives",
@@ -55,13 +64,14 @@ describe("buildIssueDraft", () => {
     expect(draft.title).toBe("Amplitude: Schedule experiment stop");
   });
 
-  it("labels competitor, source, impact, and action", () => {
+  it("labels competitor, source, impact, and every action", () => {
     expect(draft.labels).toEqual([
       "competitor-happenings",
       "amplitude",
       "source:changelog",
       "impact:notable",
       "action:update-pages",
+      "action:consider-enhancing",
     ]);
   });
 
@@ -70,7 +80,9 @@ describe("buildIssueDraft", () => {
       "## What you need to know\nAmplitude experiments can now be scheduled to stop on their own.",
       "## Impact\nNotable",
       "## More detail\n- Set a start time, an end time, or both.",
-      "**Update pages** — PostHog has no end time. The compare page says neither tool does.",
+      "## Recommended action(s)",
+      "- **Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
+      "- **Consider enhancing Experiments** \u2013 PostHog experiments stop manually;",
       "https://posthog.com/compare/best-amplitude-alternatives",
       "**Suggested edit:** Note that Amplitude now schedules stops.",
       "Does this cover flags outside experiments?",

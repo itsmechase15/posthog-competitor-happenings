@@ -10,8 +10,17 @@ const valid = {
   impact: "notable",
   summary: "Fixture Co shipped scheduled widget sync.",
   key_points: ["Syncs run on a cron the user picks."],
-  action: "update_pages",
-  action_detail: "PostHog has no scheduled sync; the compare page still says neither tool does.",
+  actions: [
+    {
+      type: "update_pages",
+      detail: "PostHog has no scheduled sync; the compare page still says neither tool does.",
+    },
+    {
+      type: "consider_enhancing",
+      feature: "Data pipelines",
+      detail: "PostHog pipelines run on ingest, not on a schedule the user picks.",
+    },
+  ],
   posthog_refs: [
     {
       url: "https://posthog.com/compare/best-mixpanel-alternatives",
@@ -45,7 +54,11 @@ describe("parseAnalysis", () => {
   it("parses a well-formed response", () => {
     const analysis = parseAnalysis(JSON.stringify(valid));
     expect(analysis.impact).toBe("notable");
-    expect(analysis.action).toBe("update_pages");
+    expect(analysis.actions.map((action) => action.type)).toEqual([
+      "update_pages",
+      "consider_enhancing",
+    ]);
+    expect(analysis.actions[1]?.feature).toBe("Data pipelines");
     expect(analysis.keyPoints).toEqual(["Syncs run on a cron the user picks."]);
     expect(analysis.openQuestions).toEqual(["Is it available on the free plan?"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe(
@@ -59,13 +72,14 @@ describe("parseAnalysis", () => {
         impact: "minor",
         summary: "s",
         keyPoints: ["k"],
-        action: "consider_building",
-        actionDetail: "d",
+        actions: [{ action: "consider_enhancing", actionDetail: "d", posthogFeature: "Surveys" }],
         posthogRefs: [{ url: "u", claim: "c", suggestedEdit: "e" }],
         openQuestions: ["q"],
       }),
     );
-    expect(analysis.actionDetail).toBe("d");
+    expect(analysis.actions).toEqual([
+      { type: "consider_enhancing", detail: "d", feature: "Surveys" },
+    ]);
     expect(analysis.keyPoints).toEqual(["k"]);
     expect(analysis.openQuestions).toEqual(["q"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
@@ -110,12 +124,50 @@ describe("parseAnalysis", () => {
   });
 
   it("rejects an action outside the allowed set", () => {
-    expect(() => parseAnalysis(JSON.stringify({ ...valid, action: "do_nothing" }))).toThrow();
+    expect(() =>
+      parseAnalysis(JSON.stringify({ ...valid, actions: [{ type: "do_nothing", detail: "d" }] })),
+    ).toThrow();
   });
 
-  it("rejects a response with no action_detail", () => {
-    const { action_detail, ...withoutDetail } = valid;
-    expect(() => parseAnalysis(JSON.stringify(withoutDetail))).toThrow(/action_detail/);
+  it("rejects a response with no usable action", () => {
+    const { actions, ...withoutActions } = valid;
+    expect(() => parseAnalysis(JSON.stringify(withoutActions))).toThrow(/action_detail/);
+    expect(() =>
+      parseAnalysis(JSON.stringify({ ...withoutActions, actions: [{ type: "update_pages" }] })),
+    ).toThrow(/action_detail/);
+  });
+
+  it("reads a single-action reply as a list of one", () => {
+    const { actions, ...single } = valid;
+    const analysis = parseAnalysis(
+      JSON.stringify({ ...single, action: "consider_building", action_detail: "d" }),
+    );
+    expect(analysis.actions).toEqual([{ type: "consider_building", detail: "d" }]);
+  });
+
+  it("keeps only the actions that say what to do and why", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [{ type: "update_pages" }, { type: "consider_building", detail: "d" }],
+      }),
+    );
+    expect(analysis.actions).toEqual([{ type: "consider_building", detail: "d" }]);
+  });
+
+  it("rewrites em dashes and curly quotes the model reached for", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        summary: "Fixture Co ships sync\u2014on a schedule.",
+        key_points: ["It\u2019s a cron, not a webhook."],
+        actions: [{ type: "update_pages", detail: "The page is stale\u2014fix the claim." }],
+      }),
+    );
+    expect(analysis.summary).toBe("Fixture Co ships sync \u2013 on a schedule.");
+    expect(analysis.keyPoints).toEqual(["It's a cron, not a webhook."]);
+    expect(analysis.actions[0]?.detail).toBe("The page is stale \u2013 fix the claim.");
+    expect(JSON.stringify(analysis)).not.toContain("\u2014");
   });
 });
 
@@ -164,13 +216,27 @@ describe("heuristicAnalysis", () => {
         heading: null,
       },
     ]);
-    expect(analysis.action).toBe("update_pages");
+    expect(analysis.actions[0]?.type).toBe("update_pages");
     expect(analysis.posthogRefs).toHaveLength(1);
-    expect(analysis.actionDetail).toContain("No model analysis ran");
+    expect(analysis.actions[0]?.detail).toContain("No model analysis ran");
   });
 
-  it("falls back to consider_enhancing when nothing is indexed", () => {
-    expect(heuristicAnalysis(item, []).action).toBe("consider_enhancing");
+  it("asks for a compare page when nothing is indexed", () => {
+    expect(heuristicAnalysis(item, []).actions[0]?.type).toBe("new_compare_page");
+  });
+
+  it("never recommends enhancing a feature it cannot name", () => {
+    for (const claims of [[], [
+      {
+        url: "https://posthog.com/compare/best-mixpanel-alternatives",
+        competitor: "mixpanel" as const,
+        paragraph: "PostHog and Mixpanel both offer product analytics.",
+        heading: null,
+      },
+    ]]) {
+      const types = heuristicAnalysis(item, claims).actions.map((action) => action.type);
+      expect(types).not.toContain("consider_enhancing");
+    }
   });
 
   it("restates the source rather than inventing an assessment", () => {
@@ -268,6 +334,19 @@ describe("buildAnalysisPrompt", () => {
     ]) {
       expect(withRefs).toContain(action);
     }
+  });
+
+  it("asks for several actions, each naming the feature to enhance", () => {
+    expect(withRefs).toContain('"actions"');
+    expect(withRefs).toContain("Name the PostHog feature to enhance");
+    expect(withRefs).toContain("Consider enhancing Experiments");
+  });
+
+  it("states the PostHog writing rules, with both handbook pages", () => {
+    expect(withRefs).toContain("https://posthog.com/handbook/wizard-and-docs/docs-style-guide");
+    expect(withRefs).toContain("https://posthog.com/handbook/brand/tone");
+    expect(withRefs).toContain("en dash with a space either side");
+    expect(withRefs).toContain("Never use an em dash");
   });
 
   it("asks for the fields the new Slack layout needs, in impact terms", () => {

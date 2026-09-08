@@ -1,8 +1,8 @@
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
-import { ACTION_LABEL, IMPACT_LABEL } from "../labels.js";
-import type { AnalyzedItem, FeatureImage, IssueRef } from "../types.js";
-import { truncate } from "../util/text.js";
+import { actionLabel, IMPACT_LABEL } from "../labels.js";
+import type { AnalyzedItem, FeatureImage, IssueRef, RecommendedAction } from "../types.js";
+import { SPACED_EN_DASH, truncate } from "../util/text.js";
 
 const log = createLogger("github");
 
@@ -34,7 +34,7 @@ export function buildIssueLabels(alert: AnalyzedItem): string[] {
     item.competitor,
     `source:${item.source}`,
     `impact:${analysis.impact}`,
-    `action:${slug(analysis.action)}`,
+    ...analysis.actions.map((action) => `action:${slug(action.type)}`),
   ];
 }
 
@@ -54,6 +54,13 @@ function pagesSection(alert: AnalyzedItem): string {
       return lines.join("\n");
     })
     .join("\n\n");
+}
+
+/** The issue gets every action in full, where Slack shows one sentence each. */
+function actionsSection(actions: RecommendedAction[]): string {
+  return actions
+    .map((action) => `- **${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`)
+    .join("\n");
 }
 
 function bullets(values: string[], empty: string): string {
@@ -76,7 +83,7 @@ export function buildIssueBody(alert: AnalyzedItem, image: FeatureImage | null):
     `## What you need to know\n${analysis.summary}`,
     `## Impact\n${IMPACT_LABEL[analysis.impact]}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    `## Recommended action\n**${ACTION_LABEL[analysis.action]}** — ${analysis.actionDetail}`,
+    `## Recommended action(s)\n${actionsSection(analysis.actions)}`,
     `## PostHog pages to update\n${pagesSection(alert)}`,
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${item.source}](${item.url})${

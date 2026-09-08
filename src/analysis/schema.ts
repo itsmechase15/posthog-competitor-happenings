@@ -8,7 +8,9 @@ import {
   type Analysis,
   type FeatureImage,
   type IssueRef,
+  type RecommendedAction,
 } from "../types.js";
+import { sanitizeCopy } from "../util/text.js";
 
 const refSchema = z.object({
   url: z.string().min(1),
@@ -22,6 +24,22 @@ const lines = z.array(z.string().min(1)).max(8);
 /** Either scale, so a row or a reply on the low/medium/high tokens still parses. */
 const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
 
+const actionToken = z.enum(ACTIONS);
+const detail = z.string().min(1).max(900);
+const feature = z.string().min(1).max(120);
+
+/** One entry of `actions`, in whichever casing the model reached for. */
+const actionSchema = z.object({
+  type: actionToken.optional(),
+  action: actionToken.optional(),
+  detail: detail.optional(),
+  action_detail: detail.optional(),
+  actionDetail: detail.optional(),
+  feature: feature.optional(),
+  posthog_feature: feature.optional(),
+  posthogFeature: feature.optional(),
+});
+
 export const analysisSchema = z.object({
   impact: impactToken.optional(),
   /** Phase 1 rows and older model replies call the same field severity. */
@@ -29,19 +47,57 @@ export const analysisSchema = z.object({
   summary: z.string().min(1).max(600),
   key_points: lines.optional(),
   keyPoints: lines.optional(),
-  action: z.enum(ACTIONS),
-  action_detail: z.string().min(1).max(900).optional(),
-  actionDetail: z.string().min(1).max(900).optional(),
+  actions: z.array(actionSchema).max(4).optional(),
+  /** A single action is how rows written before this field looked. */
+  action: actionToken.optional(),
+  action_detail: detail.optional(),
+  actionDetail: detail.optional(),
+  feature: feature.optional(),
+  posthog_feature: feature.optional(),
+  posthogFeature: feature.optional(),
   posthog_refs: z.array(refSchema).max(5).optional(),
   posthogRefs: z.array(refSchema).max(5).optional(),
   open_questions: lines.optional(),
   openQuestions: lines.optional(),
 });
 
+/** Every string a model wrote is punctuated PostHog's way before anything renders it. */
+function clean(value: string): string {
+  return sanitizeCopy(value).trim();
+}
+
+/** An entry is only usable when it says both what to do and why. */
+function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | null {
+  const type = parsed.type ?? parsed.action;
+  const detail = parsed.detail ?? parsed.action_detail ?? parsed.actionDetail;
+  if (!type || !detail) return null;
+
+  const feature = parsed.feature ?? parsed.posthog_feature ?? parsed.posthogFeature;
+  return {
+    type,
+    detail: clean(detail),
+    ...(feature ? { feature: clean(feature) } : {}),
+  };
+}
+
+/**
+ * An alert can need several actions. Replies and rows written before `actions`
+ * existed carry exactly one, inline, so they are read as a list of one.
+ */
+function readActions(parsed: z.infer<typeof analysisSchema>): RecommendedAction[] {
+  const listed = (parsed.actions ?? [])
+    .map(toAction)
+    .filter((action): action is RecommendedAction => action !== null);
+  if (listed.length > 0) return listed;
+
+  const single = toAction(parsed);
+  if (!single) throw new Error("analysis is missing an action with an action_detail");
+  return [single];
+}
+
 /** Models drift between snake_case and camelCase; accept both and normalize. */
 export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analysis {
-  const detail = parsed.action_detail ?? parsed.actionDetail;
-  if (!detail) throw new Error("analysis is missing action_detail");
+  const actions = readActions(parsed);
 
   const token = parsed.impact ?? parsed.severity;
   if (!token) throw new Error("analysis is missing impact");
@@ -53,19 +109,18 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
 
   return {
     impact,
-    summary: parsed.summary.trim(),
-    keyPoints: keyPoints.map((point) => point.trim()).filter(Boolean),
-    action: parsed.action,
-    actionDetail: detail.trim(),
+    summary: clean(parsed.summary),
+    keyPoints: keyPoints.map(clean).filter(Boolean),
+    actions,
     posthogRefs: refs.map((ref) => {
       const suggestedEdit = ref.suggested_edit ?? ref.suggestedEdit;
       return {
         url: ref.url.trim(),
-        claim: ref.claim.trim(),
-        ...(suggestedEdit ? { suggestedEdit: suggestedEdit.trim() } : {}),
+        claim: clean(ref.claim),
+        ...(suggestedEdit ? { suggestedEdit: clean(suggestedEdit) } : {}),
       };
     }),
-    openQuestions: openQuestions.map((question) => question.trim()).filter(Boolean),
+    openQuestions: openQuestions.map(clean).filter(Boolean),
   };
 }
 

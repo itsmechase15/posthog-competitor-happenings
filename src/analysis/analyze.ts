@@ -127,7 +127,8 @@ export async function analyzeItems(
     try {
       const analysis = await analyzer.analyze(item, claims);
       analyzed.push({ item, analysis, model: analyzer.model });
-      log.info(`analyzed ${item.competitor}/${item.source} "${item.title}" → ${analysis.action}`);
+      const actions = analysis.actions.map((action) => action.type).join(", ");
+      log.info(`analyzed ${item.competitor}/${item.source} "${item.title}" → ${actions}`);
     } catch (error) {
       log.error(
         `giving up on ${item.url}`,

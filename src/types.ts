@@ -28,6 +28,21 @@ export const ACTIONS = [
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
+/**
+ * One thing PostHog should do about a competitor signal. An alert often needs
+ * more than one: a stale compare page to fix and a feature to close a gap in.
+ */
+export interface RecommendedAction {
+  type: Action;
+  /** Full reasoning. Slack shows its first sentence; the GitHub issue gets all of it. */
+  detail: string;
+  /**
+   * The PostHog feature the action is about, e.g. "Experiments". Required for
+   * consider_enhancing, where the label on its own names nothing to enhance.
+   */
+  feature?: string;
+}
+
 /** A competitor signal before it has been written to the database. */
 export interface CandidateItem {
   competitor: CompetitorId;
@@ -58,9 +73,8 @@ export interface Analysis {
   summary: string;
   /** The elaboration, as short lines under "More detail". */
   keyPoints: string[];
-  action: Action;
-  /** Full reasoning. Slack shows its first sentence; the GitHub issue gets all of it. */
-  actionDetail: string;
+  /** At least one, in the order they should be read. */
+  actions: RecommendedAction[];
   posthogRefs: PostHogRef[];
   /** What we could not tell from the source, for whoever picks the issue up. */
   openQuestions: string[];

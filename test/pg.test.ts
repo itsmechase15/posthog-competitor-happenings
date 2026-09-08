@@ -109,8 +109,7 @@ describe("PostgresStore", () => {
         impact: "notable",
         summary: "s",
         keyPoints: ["k"],
-        action: "update_pages",
-        actionDetail: "d",
+        actions: [{ type: "update_pages", detail: "d" }],
         posthogRefs: [{ url: "https://posthog.com/compare/x", claim: "c", suggestedEdit: "e" }],
         openQuestions: [],
       },
@@ -132,7 +131,7 @@ describe("PostgresStore", () => {
       severity: string;
       slack_posted_at: string | Date;
       analysis: {
-        action: string;
+        actions: Array<{ type: string }>;
         impact: string;
         image: { url: string };
         issue: { number: number };
@@ -142,7 +141,7 @@ describe("PostgresStore", () => {
     ]);
     const row = rows.rows[0];
     expect(row?.analysis.impact).toBe("notable");
-    expect(row?.analysis.action).toBe("update_pages");
+    expect(row?.analysis.actions).toEqual([{ type: "update_pages", detail: "d" }]);
     expect(row?.analysis.image.url).toBe("https://cdn.invalid/a.png");
     expect(row?.analysis.issue.number).toBe(1);
     // The legacy column keeps the impact token so no migration is needed.
@@ -161,8 +160,10 @@ describe("PostgresStore", () => {
         impact: "major",
         summary: "s",
         keyPoints: [],
-        action: "new_compare_page",
-        actionDetail: "d",
+        actions: [
+          { type: "new_compare_page", detail: "d" },
+          { type: "consider_enhancing", feature: "Experiments", detail: "d2" },
+        ],
         posthogRefs: [{ url: "https://posthog.com/compare/y", claim: "c" }],
         openQuestions: [],
       },
@@ -175,7 +176,11 @@ describe("PostgresStore", () => {
     expect(target).toBeDefined();
     expect(target?.model).toBe("claude-opus-5");
     expect(target?.analysis.impact).toBe("major");
-    expect(target?.analysis.action).toBe("new_compare_page");
+    expect(target?.analysis.actions.map((action) => action.type)).toEqual([
+      "new_compare_page",
+      "consider_enhancing",
+    ]);
+    expect(target?.analysis.actions[1]?.feature).toBe("Experiments");
     expect(target?.analysis.posthogRefs[0]?.url).toBe("https://posthog.com/compare/y");
     // A retry re-posts the same picture and links the same issue.
     expect(target?.image).toEqual({
@@ -212,6 +217,8 @@ describe("PostgresStore", () => {
     const pending = await store.getUnpostedAnalyses(new Date("2020-01-01T00:00:00Z"), 10);
     const target = pending.find((row) => row.item.externalId === "legacy-target");
     expect(target?.analysis.impact).toBe("notable");
+    // A row written before `actions` existed reads back as a list of one.
+    expect(target?.analysis.actions).toEqual([{ type: "update_pages", detail: "d" }]);
     expect(target?.image).toBeNull();
     expect(target?.issue).toBeNull();
   });

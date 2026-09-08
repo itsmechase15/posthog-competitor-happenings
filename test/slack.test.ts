@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { FALLBACK_MODEL } from "../src/analysis/fallback.js";
-import { buildSlackMessage, ISSUE_LINK_LABEL, renderMessageText } from "../src/slack/message.js";
+import {
+  ACTION_HEADING,
+  buildSlackMessage,
+  ISSUE_LINK_LABEL,
+  renderMessageText,
+  type SlackMessage,
+} from "../src/slack/message.js";
 import type { Alert } from "../src/types.js";
 
 const base: Alert = {
@@ -21,9 +27,18 @@ const base: Alert = {
       "Set a start time, an end time, or both, per experiment or flag.",
       "Removes the manual babysitting a fixed-length test used to need.",
     ],
-    action: "consider_enhancing",
-    actionDetail:
-      "PostHog experiments start manually and stop manually; there is no end time. Adding one is a small change to the experiment form.",
+    actions: [
+      {
+        type: "consider_enhancing",
+        feature: "Experiments",
+        detail:
+          "PostHog experiments start manually and stop manually; there is no end time. Adding one is a small change to the experiment form.",
+      },
+      {
+        type: "update_pages",
+        detail: "The Amplitude compare page says neither tool schedules experiment stops.",
+      },
+    ],
     posthogRefs: [
       {
         url: "https://posthog.com/compare/best-amplitude-alternatives",
@@ -130,14 +145,53 @@ describe("buildSlackMessage", () => {
     ]);
   });
 
-  it("gives the recommended action exactly one sentence of detail", () => {
-    const action = (blocks.find((block) =>
-      (block.text?.text as string | undefined)?.startsWith("*Recommended action*"),
+  const actionBlock = (message: SlackMessage): string =>
+    ((message.blocks as Array<Record<string, any>>).find((block) =>
+      (block.text?.text as string | undefined)?.startsWith(`*${ACTION_HEADING}*`),
     )?.text?.text ?? "") as string;
-    expect(action).toBe(
-      "*Recommended action*\nConsider enhancing — PostHog experiments start manually and stop manually; there is no end time.",
+
+  it("bullets every recommended action, one sentence of detail each", () => {
+    expect(actionBlock(message)).toBe(
+      [
+        "*Recommended action(s)*",
+        "\u2022 Consider enhancing Experiments \u2013 PostHog experiments start manually and stop manually; there is no end time.",
+        "\u2022 Update pages \u2013 The Amplitude compare page says neither tool schedules experiment stops.",
+      ].join("\n"),
     );
-    expect(action).not.toContain("small change to the experiment form");
+    expect(actionBlock(message)).not.toContain("small change to the experiment form");
+  });
+
+  it("joins the action and its detail with a spaced en dash, never an em dash", () => {
+    expect(actionBlock(message)).toContain(" \u2013 ");
+    expect(rendered).not.toContain("\u2014");
+    expect(actionBlock(message)).not.toContain(" - ");
+  });
+
+  it("names the feature to enhance, so the line is not just 'Consider enhancing'", () => {
+    expect(actionBlock(message)).toContain("Consider enhancing Experiments \u2013");
+  });
+
+  it("falls back to the bare label when a stored action names no feature", () => {
+    const bare = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        actions: [{ type: "consider_enhancing", detail: "PostHog has an adjacent gap." }],
+      },
+    });
+    expect(actionBlock(bare)).toContain("\u2022 Consider enhancing \u2013 PostHog has an adjacent gap.");
+  });
+
+  it("rewrites an em dash a model slipped into its own copy", () => {
+    const slipped = buildSlackMessage({
+      ...base,
+      analysis: {
+        ...base.analysis,
+        summary: "Amplitude ships scheduled stops\u2014on experiments and flags.",
+      },
+    });
+    expect(JSON.stringify(slipped)).not.toContain("\u2014");
+    expect(JSON.stringify(slipped)).toContain("scheduled stops \u2013 on experiments and flags");
   });
 
   it("links the GitHub issue for the detail it no longer carries", () => {
@@ -170,7 +224,7 @@ describe("buildSlackMessage", () => {
       "*What you need to KNOW*",
       "*Impact*  :large_orange_circle: Notable",
       "*More detail*",
-      "*Recommended action*",
+      `*${ACTION_HEADING}*`,
       `*<https://github.com/itsmechase15/posthog-competitor-happenings/issues/7|${ISSUE_LINK_LABEL}>*`,
       "footer",
     ]);
@@ -188,7 +242,9 @@ describe("buildSlackMessage", () => {
       issue: null,
       issueNote: "GitHub issue not created — skipped (dry run)",
     });
-    expect(JSON.stringify(message)).toContain("GitHub issue not created");
+    expect(JSON.stringify(message)).toContain(
+      "GitHub issue not created \u2013 skipped (dry run)",
+    );
   });
 
   it("keeps source and analyzer in a small footer, with a link to the source", () => {

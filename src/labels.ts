@@ -1,4 +1,4 @@
-import type { Action, Impact, SourceId } from "./types.js";
+import type { Action, Impact, RecommendedAction, SourceId } from "./types.js";
 
 /**
  * Everything user-facing says "impact", never "severity". The old word only
@@ -24,6 +24,17 @@ export const ACTION_LABEL: Record<Action, string> = {
   consider_building: "Consider building",
   consider_enhancing: "Consider enhancing",
 };
+
+/**
+ * What the reader sees before the dash. "Consider enhancing" on its own names
+ * nothing, so the feature becomes part of the label: "Consider enhancing
+ * Experiments". The other three actions read fine without one.
+ */
+export function actionLabel(action: RecommendedAction): string {
+  const label = ACTION_LABEL[action.type];
+  if (action.type !== "consider_enhancing") return label;
+  return action.feature ? `${label} ${action.feature}` : label;
+}
 
 export const SOURCE_LABEL: Record<SourceId, string> = {
   changelog: "changelog",

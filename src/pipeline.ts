@@ -16,7 +16,7 @@ import {
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
 import type { Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
-import { daysAgo, normalizeUrl } from "./util/text.js";
+import { daysAgo, normalizeUrl, SPACED_EN_DASH } from "./util/text.js";
 
 const log = createLogger("pipeline");
 
@@ -69,7 +69,7 @@ async function prepareAlert(
     image,
     issue,
     ...(issue === null && config.dryRun
-      ? { issueNote: `GitHub issue not created — ${issues.description}` }
+      ? { issueNote: `GitHub issue not created${SPACED_EN_DASH}${issues.description}` }
       : {}),
   };
 }

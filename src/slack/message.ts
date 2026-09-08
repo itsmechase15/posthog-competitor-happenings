@@ -1,8 +1,14 @@
 import { FALLBACK_MODEL } from "../analysis/fallback.js";
 import { COMPETITORS } from "../config.js";
-import { ACTION_LABEL, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
-import type { Alert } from "../types.js";
-import { firstSentence, sentences, truncate } from "../util/text.js";
+import { actionLabel, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
+import type { Alert, RecommendedAction } from "../types.js";
+import {
+  firstSentence,
+  sanitizeCopy,
+  sentences,
+  SPACED_EN_DASH,
+  truncate,
+} from "../util/text.js";
 
 export interface SlackMessage {
   text: string;
@@ -14,16 +20,23 @@ export const ISSUE_LINK_LABEL = "Access GitHub issue for more information";
 /** The one sentence lives under this heading; the bullets under the next one. */
 export const KNOW_HEADING = "What you need to KNOW";
 export const DETAIL_HEADING = "More detail";
+/** Plural in the heading, because an alert often needs a page fix and a feature gap. */
+export const ACTION_HEADING = "Recommended action(s)";
 
 /** Short enough that nothing in the message wraps into a wall of text. */
 const MAX_LEAD_CHARS = 240;
 const MAX_POINT_CHARS = 160;
 const MAX_POINTS = 4;
 const MAX_ACTION_CHARS = 220;
+const MAX_ACTIONS = 3;
 
-/** Slack's mrkdwn treats these as control characters inside text nodes. */
+/**
+ * Slack's mrkdwn treats these as control characters inside text nodes. Every
+ * string routed through here is also punctuated the way PostHog writes, which
+ * is the last gate before a message goes out.
+ */
 function escape(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return sanitizeCopy(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function link(url: string, label: string): string {
@@ -55,6 +68,16 @@ export function detailPoints(alert: Alert): string[] {
     .map((point) => truncate(point.trim(), MAX_POINT_CHARS))
     .filter(Boolean)
     .slice(0, MAX_POINTS);
+}
+
+/**
+ * One action, as Slack shows it: what to do, then one sentence on why. The
+ * label carries the PostHog feature for "Consider enhancing", so the line
+ * still names something concrete when read on its own.
+ */
+export function actionLine(action: RecommendedAction): string {
+  const detail = escape(firstSentence(action.detail, MAX_ACTION_CHARS));
+  return `${escape(actionLabel(action))}${SPACED_EN_DASH}${detail}`;
 }
 
 /**
@@ -97,7 +120,11 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
     // Always first, always present: the picture is what makes the alert
     // readable at a glance in a busy channel. alt_text is plain text, so it is
     // the one string here that must not be mrkdwn-escaped.
-    { type: "image", image_url: image.url, alt_text: truncate(image.altText || lead, 300) },
+    {
+      type: "image",
+      image_url: image.url,
+      alt_text: sanitizeCopy(truncate(image.altText || lead, 300)),
+    },
     // The heading carries the whole sentence, so there is no unlabelled line
     // above it competing to be read first.
     section(`*${KNOW_HEADING}*\n${escape(lead)}`),
@@ -112,13 +139,14 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
     );
   }
 
-  blocks.push(
-    section(
-      `*Recommended action*\n${ACTION_LABEL[analysis.action]} — ${escape(
-        firstSentence(analysis.actionDetail, MAX_ACTION_CHARS),
-      )}`,
-    ),
-  );
+  const actions = analysis.actions.slice(0, MAX_ACTIONS);
+  if (actions.length > 0) {
+    blocks.push(
+      section(
+        `*${ACTION_HEADING}*\n${actions.map((action) => `• ${actionLine(action)}`).join("\n")}`,
+      ),
+    );
+  }
 
   if (issue) {
     blocks.push(section(`*${link(issue.url, ISSUE_LINK_LABEL)}*`));
@@ -129,7 +157,7 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   const footer = [
     `${competitor.label} · ${SOURCE_LABEL[item.source]}`,
     model === FALLBACK_MODEL
-      ? "not model-analyzed (CURSOR_API_KEY unset) — the summary is lifted from the source"
+      ? `not model-analyzed (CURSOR_API_KEY unset)${SPACED_EN_DASH}the summary is lifted from the source`
       : `analyzed with ${model}`,
   ].join(" · ");
 
@@ -140,5 +168,7 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
     ],
   });
 
-  return { text: truncate(lead, 220), blocks };
+  // The notification preview is plain text, not mrkdwn, so it needs the
+  // punctuation pass that escape() gives everything else.
+  return { text: sanitizeCopy(truncate(lead, 220)), blocks };
 }

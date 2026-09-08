@@ -1,6 +1,12 @@
 import { COMPETITORS } from "../config.js";
-import type { Analysis, Impact, PostHogClaim, StoredItem } from "../types.js";
-import { firstSentence, sentences, truncate } from "../util/text.js";
+import type {
+  Analysis,
+  Impact,
+  PostHogClaim,
+  RecommendedAction,
+  StoredItem,
+} from "../types.js";
+import { firstSentence, sentences, SPACED_EN_DASH, truncate } from "../util/text.js";
 
 export const FALLBACK_MODEL = "fallback-heuristic";
 
@@ -65,8 +71,8 @@ function pointsFrom(lead: string, item: StoredItem): string[] {
 
 /**
  * Deterministic stand-in used when `CURSOR_API_KEY` is unset. It never invents
- * product facts — it restates the source and points at the pages we already
- * indexed — so a dry run is honest about being unanalyzed.
+ * product facts. It restates the source and points at the pages we already
+ * indexed, so a dry run is honest about being unanalyzed.
  */
 export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Analysis {
   const competitor = COMPETITORS[item.competitor];
@@ -83,10 +89,6 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
     .slice(0, 2)
     .map((claim) => ({ url: claim.url, claim: truncate(claim.paragraph, 240) }));
 
-  const detail = refs[0]
-    ? `No model analysis ran, so this is unassessed. Closest indexed PostHog page is ${refs[0].url} — check whether it still describes ${competitor.label} accurately after this change.`
-    : `No model analysis ran, so this is unassessed. No indexed PostHog.com page mentions ${competitor.label} in a way that covers this, which is itself the gap worth checking.`;
-
   const summary = lead
     ? `${competitor.label}: ${firstSentence(lead, 240)}`
     : `${competitor.label} published "${item.title}".`;
@@ -95,9 +97,28 @@ export function heuristicAnalysis(item: StoredItem, claims: PostHogClaim[]): Ana
     impact: impactOf(haystack),
     summary,
     keyPoints: pointsFrom(lead, item),
-    action: refs.length > 0 ? "update_pages" : "consider_enhancing",
-    actionDetail: detail,
+    actions: [fallbackAction(competitor.label, refs[0]?.url)],
     posthogRefs: refs,
     openQuestions: [],
+  };
+}
+
+/**
+ * The heuristic knows no PostHog product facts, so it never recommends
+ * enhancing anything: that action has to name the feature to enhance, and
+ * guessing one would be an invented fact. It points at page coverage instead,
+ * which is the one thing the indexed claims actually tell us.
+ */
+function fallbackAction(label: string, closestPage: string | undefined): RecommendedAction {
+  const preamble = "No model analysis ran, so this is unassessed.";
+  if (closestPage) {
+    return {
+      type: "update_pages",
+      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether it still describes ${label} accurately after this change.`,
+    };
+  }
+  return {
+    type: "new_compare_page",
+    detail: `${preamble} No indexed PostHog.com page mentions ${label} in a way that covers this, which is itself the gap worth checking.`,
   };
 }
