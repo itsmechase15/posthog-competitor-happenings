@@ -6,4 +6,7 @@
 # retrigger 2026-09-08 now that a recommend is checked against the PostHog docs:
 # this one should read as a gap in Experiments next to scheduled flag changes,
 # not as "PostHog cannot schedule anything"
+# retrigger 2026-09-08 again: the last attempt reached the model, read the docs,
+# and then lost the reply to a blank "feature" field, so Slack got the heuristic
+# summary instead of the recommend
 https://amplitude.com/releases/schedule-experiment-stop
