@@ -51,6 +51,7 @@ Rules:
   - new_compare_page: this deserves a comparison page PostHog does not have.
   - consider_building: PostHog has nothing like this.
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
+- The other three action types take no "feature". Leave the key out rather than sending it empty.
 - "detail" explains the gap: what the competitor now does, what PostHog does or does not do, and the specific next step. Never generic "why this matters" copy.
 - Open "detail" with one short sentence, under 150 characters, that stands up alone: Slack shows that sentence and nothing else, on a single line under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - "posthog_refs" cites indexed PostHog URLs from the context below. Only cite URLs given to you. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.

@@ -123,6 +123,71 @@ describe("parseAnalysis", () => {
     expect(analysis.openQuestions).toEqual([]);
   });
 
+  it("reads an empty feature as no feature, instead of losing the whole analysis", () => {
+    // What a real reply did: the right answer for update_pages is no feature,
+    // and the model wrote "feature": "" rather than leaving the key out.
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          { type: "update_pages", detail: "The compare page is stale.", feature: "" },
+          { type: "consider_enhancing", detail: "A real gap.", feature: "Experiments" },
+        ],
+      }),
+    );
+    expect(analysis.actions).toEqual([
+      { type: "update_pages", detail: "The compare page is stale." },
+      { type: "consider_enhancing", detail: "A real gap.", feature: "Experiments" },
+    ]);
+  });
+
+  it("drops an action whose detail came back empty, and keeps the rest", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          { type: "update_pages", detail: "   " },
+          { type: "consider_building", detail: "A real gap." },
+        ],
+      }),
+    );
+    expect(analysis.actions).toEqual([{ type: "consider_building", detail: "A real gap." }]);
+  });
+
+  it("drops blank key points and open questions rather than failing on them", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({ ...valid, key_points: ["A point.", "", "  "], open_questions: [""] }),
+    );
+    expect(analysis.keyPoints).toEqual(["A point."]);
+    expect(analysis.openQuestions).toEqual([]);
+  });
+
+  it("drops a citation with no page or no claim, and keeps the usable ones", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        posthog_refs: [
+          { url: "", claim: "Nowhere to read this." },
+          { url: "https://posthog.com/docs/experiments", claim: "" },
+          { url: "https://posthog.com/docs/experiments", claim: "Experiments stop by hand." },
+        ],
+      }),
+    );
+    expect(analysis.posthogRefs).toEqual([
+      { url: "https://posthog.com/docs/experiments", claim: "Experiments stop by hand." },
+    ]);
+  });
+
+  it("reads an empty suggested edit as none", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        posthog_refs: [{ url: "u", claim: "c", suggested_edit: "" }],
+      }),
+    );
+    expect(analysis.posthogRefs[0]?.suggestedEdit).toBeUndefined();
+  });
+
   it("rejects an action outside the allowed set", () => {
     expect(() =>
       parseAnalysis(JSON.stringify({ ...valid, actions: [{ type: "do_nothing", detail: "d" }] })),
