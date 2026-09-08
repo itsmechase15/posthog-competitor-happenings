@@ -37,10 +37,41 @@ stop meets [scheduled flag
 changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes) and
 [manual experiment
 lifecycle](https://posthog.com/docs/experiments/managing-lifecycle), so the
-honest line is "PostHog schedules flag changes, but an experiment still has to
-be stopped by hand", not "PostHog cannot schedule anything". When the docs in
-context do not settle it, the action keeps a lower impact and the doubt goes in
-`open_questions` instead of becoming an invented gap.
+honest gap is that experiments stop by hand, not that "PostHog cannot schedule
+anything". When the docs in context do not settle it, the action keeps a lower
+impact and the doubt goes in `open_questions` instead of becoming an invented
+gap.
+
+## Lead an action with the work
+
+Slack shows the first sentence of an action and nothing else, under the bold
+action title. That sentence is the recommendation, so it says what to do.
+
+For `consider_enhancing` and `consider_building`, name the change first and the
+gap second:
+
+- Good: "Add a scheduled end time on experiments so a test can stop on its own
+  – flags already schedule changes, experiments stop by hand."
+- Bad: "PostHog schedules flag changes, but an experiment still has to be
+  stopped by hand."
+
+The bad line is true, and as evidence it belongs in the issue. As the only line
+a reader sees, it says what PostHog does not do and leaves them to work out
+what is being asked for.
+
+For `update_pages` and `new_compare_page`, name the page and the update:
+
+- Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can
+  schedule an experiment stop and PostHog stops by hand."
+- Bad: "The compare page is out of date."
+
+The bad line names no page, so nobody can open it. `posthog_refs` carries the
+URL and the suggested edit, but Slack does not show refs.
+
+[`enforceActionLead`](../src/analysis/lead.ts) is the backstop. When a product
+action opens with the gap it puts the ask in front of it, and when a page
+action opens without naming a page it leads with the cited page and its
+suggested edit. It only reorders what the model already wrote.
 
 ## Only ask for a page edit when the page is wrong
 
@@ -82,6 +113,9 @@ That is their sales copy, so it never settles what PostHog ships. The docs do.
 - [`src/competitor/compare.ts`](../src/competitor/compare.ts) reads the
   competitors' own comparison pages, so a claim that PostHog does not do
   something can be answered rather than guessed at.
+- [`enforceActionLead`](../src/analysis/lead.ts) makes every action open with
+  the work it asks for, because that sentence is the whole recommendation in
+  Slack.
 - [`verifyAgainstDocs`](../src/analysis/verify.ts) reconciles the reply with
   those docs: a `consider_building` the docs contradict becomes
   `consider_enhancing` against the product that already exists, and a gap claim

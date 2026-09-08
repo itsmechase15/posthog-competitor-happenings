@@ -14,6 +14,7 @@ import type {
 } from "../types.js";
 import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
+import { enforceActionLead } from "./lead.js";
 import { buildAnalysisPrompt } from "./prompt.js";
 import { parseAnalysis } from "./schema.js";
 import { verifyAgainstDocs } from "./verify.js";
@@ -124,7 +125,9 @@ export function createAnalyzer(config: Config): Analyzer {
  * or does not do; and the competitor's own comparison pages, which are where a
  * claim that PostHog cannot do something turns up. Every verdict is then
  * reconciled with the docs, so an action cannot claim a gap the docs
- * contradict. A failed analysis drops that item and leaves the rest alone.
+ * contradict, and each action is made to open with the work it asks for,
+ * because that sentence is all Slack shows. A failed analysis drops that item
+ * and leaves the rest alone.
  */
 export type { Analyzer };
 
@@ -170,8 +173,13 @@ export async function analyzeItems(
         await analyzer.analyze(item, claims, docs, compareClaims),
         docs,
       );
-      for (const note of verified.notes) log.warn(`corrected ${item.url}: ${note}`);
-      const analysis = verified.analysis;
+      // The docs pass can retype an action and name its feature, so the
+      // sentence Slack shows is shaped after it, not before.
+      const led = enforceActionLead(verified.analysis);
+      for (const note of [...verified.notes, ...led.notes]) {
+        log.warn(`corrected ${item.url}: ${note}`);
+      }
+      const analysis = led.analysis;
       analyzed.push({ item, analysis, model: analyzer.model });
       const actions = analysis.actions.map((action) => action.type).join(", ");
       log.info(

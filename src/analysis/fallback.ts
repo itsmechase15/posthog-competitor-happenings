@@ -7,7 +7,13 @@ import type {
   RecommendedAction,
   StoredItem,
 } from "../types.js";
-import { firstSentence, sentences, SPACED_EN_DASH, truncate } from "../util/text.js";
+import {
+  firstSentence,
+  pageNameFromUrl,
+  sentences,
+  SPACED_EN_DASH,
+  truncate,
+} from "../util/text.js";
 
 export const FALLBACK_MODEL = "fallback-heuristic";
 
@@ -119,13 +125,17 @@ export function heuristicAnalysis(
  * enhancing anything: that action has to name the feature to enhance, and
  * guessing one would be an invented fact. It points at page coverage instead,
  * which is the one thing the indexed claims actually tell us.
+ *
+ * Slack shows the first sentence and nothing else, so that sentence names the
+ * page and the job. That the run was unassessed is the second sentence, where
+ * it belongs.
  */
 function fallbackAction(
   label: string,
   closestPage: string | undefined,
   closestDoc: string | undefined,
 ): RecommendedAction {
-  const preamble = "No model analysis ran, so this is unassessed.";
+  const caveat = "No model analysis ran, so this is unassessed.";
   const docHint = closestDoc
     ? ` What PostHog ships in this area is documented at ${closestDoc}; read it before treating anything here as a gap.`
     : "";
@@ -133,11 +143,11 @@ function fallbackAction(
   if (closestPage) {
     return {
       type: "update_pages",
-      detail: `${preamble} Closest indexed PostHog page is ${closestPage}${SPACED_EN_DASH}check whether this change makes anything it says about ${label} wrong, and edit it only if it does.${docHint}`,
+      detail: `On ${pageNameFromUrl(closestPage)}, check whether this makes anything it says about ${label} wrong, and edit it only if it does. ${caveat} The page is ${closestPage}.${docHint}`,
     };
   }
   return {
     type: "new_compare_page",
-    detail: `${preamble} No indexed PostHog.com page mentions ${label} in a way that covers this, which is itself the gap worth checking.${docHint}`,
+    detail: `Consider a PostHog vs ${label} page for this${SPACED_EN_DASH}no indexed PostHog.com page mentions ${label} in a way that covers it. ${caveat}${docHint}`,
   };
 }
