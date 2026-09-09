@@ -500,7 +500,7 @@ describe("buildAnalysisPrompt", () => {
   it("lists PostHog's small teams and what each one owns", () => {
     expect(withRefs).toContain("## PostHog small teams, from https://posthog.com/teams");
     expect(withRefs).toContain("- Experiments \u2013 owns Experiments");
-    expect(withRefs).toContain("- Ingestion \u2013 owns Ingestion, Managed reverse proxy");
+    expect(withRefs).toContain("- Ingestion \u2013 owns Ingestion, Reverse proxy");
     // A team that owns nothing routing cares about still has to be listed, so
     // the model can name it rather than reaching for a department.
     expect(withRefs).toContain("- Growth");

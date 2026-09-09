@@ -18,18 +18,23 @@ import type { RecommendedAction } from "./types.js";
  * one about routing events through a customer's own domain is for Ingestion.
  * "Product and Engineering" was the old answer and it named nobody.
  *
- * Four things get a say, strongest first:
+ * The model chooses, and everything else is the fallback for when it did not.
+ * It is the only reader with the whole signal in front of it, and the prompt
+ * gives it every team name and what each one owns, so a list it wrote wins
+ * outright once each name has been found in the catalog. A team that is not on
+ * /teams is dropped rather than mapped to something near it, which is why the
+ * fallback has to be good: a reply that names only departments falls all the
+ * way through it.
  *
- * 1. What the model suggested, once every name has been found in the catalog.
- *    A team that is not on /teams is dropped rather than mapped to something
- *    near it.
- * 2. Who owns the feature the action names, and the products its own words are
- *    about. This is the route that matters: the app already knows which
- *    PostHog product a signal is about, and the catalog says who builds it.
- * 3. The team vocabulary in the action's own text, for a signal that names no
- *    feature we recognize.
- * 4. A default, used only when the three above found nothing at all, so an
- *    issue never lands with nobody's name on it.
+ * Falling through, strongest first:
+ *
+ * 1. Who owns the feature the action names, and the products its own words are
+ *    about. The app already knows which PostHog product a signal is about, and
+ *    the catalog says who builds it.
+ * 2. The team vocabulary in the action's own text, for a signal that names no
+ *    product we recognize.
+ * 3. A default, used only when both of those found nothing at all, so an issue
+ *    never lands with nobody's name on it.
  */
 
 /**
@@ -86,12 +91,11 @@ function defaultTeams(action: RecommendedAction): PostHogTeam[] {
  * more than three, and every one of them a team with a page on posthog.com.
  */
 export function relatedTeams(action: RecommendedAction): PostHogTeam[] {
-  const ranked = new Set([
-    ...suggestedTeams(action),
-    ...featureOwners(action),
-    ...matchTeams(actionText(action), MAX_TEAMS),
-  ]);
-  const teams = ranked.size > 0 ? [...ranked] : defaultTeams(action);
+  const suggested = suggestedTeams(action);
+  if (suggested.length > 0) return [...new Set(suggested)].slice(0, MAX_TEAMS);
+
+  const derived = new Set([...featureOwners(action), ...matchTeams(actionText(action), MAX_TEAMS)]);
+  const teams = derived.size > 0 ? [...derived] : defaultTeams(action);
   return teams.slice(0, MAX_TEAMS);
 }
 

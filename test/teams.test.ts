@@ -108,6 +108,18 @@ describe("relatedTeams", () => {
     ).toEqual(["editorial", "marketing"]);
   });
 
+  it("lets a suggestion stand alone, rather than padding it with keyword matches", () => {
+    expect(
+      slugs(
+        action({
+          teams: ["Experiments"],
+          feature: "Experiments",
+          detail: "Add a scheduled end time on experiments – flags already schedule changes.",
+        }),
+      ),
+    ).toEqual(["experiments"]);
+  });
+
   it("throws away a suggested team that is not on posthog.com/teams", () => {
     const teams = slugs(
       action({ teams: ["Product", "Engineering"], feature: "Experiments" }),

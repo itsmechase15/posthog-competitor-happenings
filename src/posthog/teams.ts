@@ -63,7 +63,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
       "ai agent trace",
       "eval",
     ],
-    ownsFeatures: ["LLM analytics"],
+    ownsFeatures: ["LLM analytics", "AI observability"],
   },
   {
     name: "AI Research",
@@ -195,7 +195,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
       "saved query",
       "sql view",
     ],
-    ownsFeatures: ["Data modeling", "Materialized views"],
+    ownsFeatures: ["Data modeling", "Materialized views", "Endpoints"],
   },
   {
     name: "Data Tools",
@@ -326,7 +326,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
       "rate limit",
       "deduplication",
     ],
-    ownsFeatures: ["Ingestion", "Managed reverse proxy"],
+    ownsFeatures: ["Ingestion", "Reverse proxy", "Managed reverse proxy"],
   },
   {
     name: "Managed Warehouse",
@@ -442,7 +442,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
       "screen recording",
       "console log capture",
     ],
-    ownsFeatures: ["Session replay", "Heatmaps"],
+    ownsFeatures: ["Session replay", "Replay Vision", "Heatmaps"],
   },
   {
     name: "New Business Sales",
@@ -473,6 +473,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
     slug: "support",
     url: teamUrl("support"),
     keywords: ["support request", "help request", "customer question"],
+    ownsFeatures: ["Support"],
   },
   {
     name: "Surveys",
@@ -551,7 +552,7 @@ export const POSTHOG_TEAMS: PostHogTeam[] = [
       "email send",
       "transformation",
     ],
-    ownsFeatures: ["Data pipelines", "Destinations", "Workflows", "Messaging"],
+    ownsFeatures: ["Workflows", "CDP", "Data pipelines", "Destinations", "Messaging"],
   },
   {
     name: "YouTube",

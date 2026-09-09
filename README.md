@@ -109,12 +109,13 @@ Every issue has a `## Related team(s)` line under the recommended action, naming
 
 [`src/posthog/teams.ts`](./src/posthog/teams.ts) is the catalog: every team on [posthog.com/teams](https://posthog.com/teams), with its slug, the features its page says it owns, the vocabulary of its work, and its spirit animal. The animal is a real field on the team's page, rendered there as "🦆 Duck" under a **Spirit animal** heading, and only some teams have picked one. A team that has not gets no emoji rather than an invented one, so an emoji in an issue is always the team's own. Refreshing the list means reading /teams again; nothing in it is inferred from this app's own product list.
 
-[`src/teams.ts`](./src/teams.ts) does the routing. Four things get a say, strongest first:
+[`src/teams.ts`](./src/teams.ts) does the routing. **The model chooses.** The prompt gives it every team name and what each one owns and asks each action for one to three, and a list it wrote wins outright once each name has been found in the catalog – it is the only reader with the whole signal in front of it. `Product`, `Engineering`, and `Platform` are thrown away rather than mapped to something near them, which is why the fallback has to be good: a reply that names only departments falls all the way through it.
 
-1. **What the model suggested.** The prompt gives it every team name and what each one owns, and asks for one to three. Every name is then looked up in the catalog, so `Product`, `Engineering`, and `Platform` are thrown away rather than mapped to something near them.
-2. **Who owns the feature.** The team whose page says it owns the feature the action names, plus the owners of the PostHog products the action's own words match. This is the route that carries most alerts: the app already works out which product a signal is about, and the catalog says who builds it.
-3. **Team vocabulary** in the action's feature and detail, for a signal that names no product we recognize. A reverse proxy on a customer's own domain finds Ingestion this way.
-4. **A default**, and only when the first three found nothing: Marketing for page work, Product Analytics for product work.
+Falling through, strongest first:
+
+1. **Who owns the feature.** The team whose page says it owns the feature the action names, plus the owners of the PostHog products the action's own words match. The app already works out which product a signal is about, and the catalog says who builds it – 18 of the 21 entries in [`src/posthog/products.ts`](./src/posthog/products.ts) have an owner, including `Reverse proxy` to Ingestion and `Notebooks` to Data Tools.
+2. **Team vocabulary** in the action's feature and detail, for a signal that names no product we recognize.
+3. **A default**, and only when both of those found nothing: Marketing for page work, Product Analytics for product work.
 
 There is always at least one team and never more than three, and the `team:<slug>` labels stay machine-friendly (`team:marketing`, `team:feature-flags`) while the issue body reads as the name plus the animal.
 
