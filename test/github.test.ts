@@ -151,7 +151,7 @@ describe("buildIssueDraft", () => {
   it("carries the detail Slack no longer shows", () => {
     for (const fragment of [
       "## What you need to know\nAmplitude experiments can now be scheduled to stop on their own.",
-      "## Impact\nNotable",
+      "## Impact\n- [ ] Minor\n- [x] Notable\n- [ ] Major",
       "## More detail\n- Set a start time, an end time, or both.",
       "## Recommended action",
       "**Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
@@ -161,6 +161,20 @@ describe("buildIssueDraft", () => {
       "https://fixture.invalid/releases/schedule-experiment-stop",
     ]) {
       expect(draft.body).toContain(fragment);
+    }
+  });
+
+  it("shows the whole impact scale with only this alert's level checked", () => {
+    for (const [impact, expected] of [
+      ["minor", "## Impact\n- [x] Minor\n- [ ] Notable\n- [ ] Major"],
+      ["major", "## Impact\n- [ ] Minor\n- [ ] Notable\n- [x] Major"],
+    ] as const) {
+      const body = buildIssueBody(
+        { ...analyzed, analysis: { ...analyzed.analysis, impact } },
+        image,
+        pageAction,
+      );
+      expect(body).toContain(expected);
     }
   });
 
