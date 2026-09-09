@@ -20,4 +20,7 @@
 # retrigger 2026-09-08 now that the detail line has room for a whole
 # lead-with-the-work sentence: the last post cut both of them mid-word at 150
 # characters ("experimen…", "ships tod…")
+# retrigger 2026-09-09 to confirm the topic guard holds on a second run: the
+# alert should lead Experiments with the scheduled end time and stay free of an
+# update_pages about basic A/B testing or holdouts
 https://amplitude.com/releases/schedule-experiment-stop
