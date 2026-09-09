@@ -67,6 +67,15 @@ const actionToken = z.enum(ACTIONS);
 const detail = optionalText(900);
 const feature = optionalText(120);
 
+/** Small team names, blanks dropped. Validated against the catalog later. */
+const teamNames = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "")
+      : value,
+  z.array(z.string().min(1)).max(5).optional(),
+);
+
 /** One entry of `actions`, in whichever casing the model reached for. */
 const actionSchema = z.object({
   type: actionToken.optional(),
@@ -77,6 +86,9 @@ const actionSchema = z.object({
   feature,
   posthog_feature: feature,
   posthogFeature: feature,
+  teams: teamNames,
+  posthog_teams: teamNames,
+  posthogTeams: teamNames,
 });
 
 export const analysisSchema = z.object({
@@ -112,10 +124,12 @@ function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | nul
   if (!type || !detail) return null;
 
   const feature = parsed.feature ?? parsed.posthog_feature ?? parsed.posthogFeature;
+  const teams = parsed.teams ?? parsed.posthog_teams ?? parsed.posthogTeams;
   return {
     type,
     detail: clean(detail),
     ...(feature ? { feature: clean(feature) } : {}),
+    ...(teams && teams.length > 0 ? { teams: teams.map((team) => team.trim()) } : {}),
   };
 }
 

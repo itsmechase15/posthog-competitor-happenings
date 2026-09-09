@@ -138,6 +138,7 @@ describe("buildIssueDraft", () => {
       "owner:marketing",
       "team:marketing",
     ]);
+
     expect(buildIssueDraft(analyzed, image, productAction).labels).toEqual([
       "competitor-happenings",
       "amplitude",
@@ -145,7 +146,7 @@ describe("buildIssueDraft", () => {
       "impact:notable",
       "action:consider-enhancing",
       "owner:product",
-      "team:product",
+      "team:experiments",
       "product:experiments",
     ]);
   });
@@ -169,21 +170,31 @@ describe("buildIssueDraft", () => {
     expect(proxy.labels).toContain("platform:reverse-proxy");
   });
 
-  it("names the related teams in the body, so the issue says who it is for", () => {
-    expect(draft.body).toContain("## Related team(s)\nMarketing");
+  it("names the small teams in the body, with the spirit animal each one picked", () => {
+    expect(draft.body).toContain("## Related team(s)\nMarketing \u{1F986}");
     expect(buildIssueDraft(analyzed, image, productAction).body).toContain(
-      "## Related team(s)\nProduct",
+      "## Related team(s)\nExperiments",
     );
   });
 
-  it("adds engineering to an action about the plumbing, and labels it too", () => {
+  it("names the team that owns the plumbing, not a department", () => {
     const sdk = buildIssueDraft(analyzed, image, {
       type: "consider_building",
       detail: "Ship an SDK option that routes ingestion through a domain the customer owns.",
     });
-    expect(sdk.body).toContain("## Related team(s)\nProduct, Engineering");
-    expect(sdk.labels).toContain("team:product");
-    expect(sdk.labels).toContain("team:engineering");
+    expect(sdk.body).toContain("## Related team(s)\nIngestion, Client Libraries");
+    expect(sdk.labels).toContain("team:ingestion");
+    expect(sdk.labels).toContain("team:client-libraries");
+    expect(sdk.labels).not.toContain("team:engineering");
+  });
+
+  it("takes the teams the model suggested when they are real small teams", () => {
+    const suggested = buildIssueDraft(analyzed, image, {
+      ...productAction,
+      teams: ["Experiments", "Feature Flags"],
+    });
+    expect(suggested.body).toContain("## Related team(s)\nExperiments, Feature Flags \u{1F9AB}");
+    expect(suggested.labels).toContain("team:feature-flags");
   });
 
   it("carries the detail Slack no longer shows", () => {

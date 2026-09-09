@@ -59,8 +59,9 @@ function isPageAction(action: RecommendedAction): boolean {
 /**
  * Labels for one action's issue. Beyond the alert's own labels, the action
  * type and the owner are what a marketing or product filter actually queries,
- * the `team:` labels say who else the work touches, and the product label is
- * added whenever the action names one we recognize.
+ * the `team:` labels name the small teams the work is for by their /teams
+ * slug, and the product label is added whenever the action names one we
+ * recognize.
  */
 export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction): string[] {
   const { item, analysis } = alert;
@@ -76,7 +77,7 @@ export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction)
     `impact:${analysis.impact}`,
     `action:${labelSlug(action.type)}`,
     `owner:${actionOwner(action)}`,
-    ...relatedTeams(action).map((team) => `team:${team}`),
+    ...relatedTeams(action).map((team) => `team:${team.slug}`),
     ...(product ? [`${product.kind}:${labelSlug(product.label)}`] : []),
   ];
 }

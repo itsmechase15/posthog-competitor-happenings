@@ -1,71 +1,101 @@
 import { ACTION_OWNER } from "./labels.js";
-import type { RecommendedAction, Team } from "./types.js";
+import { productsForAction } from "./posthog/products.js";
+import {
+  findTeam,
+  matchTeams,
+  teamLabel,
+  teamsOwningFeature,
+  type PostHogTeam,
+} from "./posthog/teams.js";
+import type { RecommendedAction } from "./types.js";
 
 /**
- * Which PostHog teams an issue is for.
+ * Which PostHog small teams an issue is for.
  *
- * This is a built-in map, not a lookup: PostHog's real team list is not
- * something this app can read yet, and a specific team guessed wrong routes
- * the issue to nobody. So it stays coarse and honest – the action type decides
- * the team that owns the work, and one keyword rule adds engineering when the
- * action is plainly about how data gets in rather than what the product does.
+ * PostHog does not have a product org and an engineering org, it has small
+ * teams with their own pages, and each one owns particular features. So an
+ * action about scheduling an experiment stop is for the Experiments team, and
+ * one about routing events through a customer's own domain is for Ingestion.
+ * "Product and Engineering" was the old answer and it named nobody.
  *
- * When there is a team list to route against, this file is the one to change:
- * `relatedTeams` is the only thing the issue builder calls.
+ * Four things get a say, strongest first:
+ *
+ * 1. What the model suggested, once every name has been found in the catalog.
+ *    A team that is not on /teams is dropped rather than mapped to something
+ *    near it.
+ * 2. Who owns the feature the action names, and the products its own words are
+ *    about. This is the route that matters: the app already knows which
+ *    PostHog product a signal is about, and the catalog says who builds it.
+ * 3. The team vocabulary in the action's own text, for a signal that names no
+ *    feature we recognize.
+ * 4. A default, used only when the three above found nothing at all, so an
+ *    issue never lands with nobody's name on it.
  */
-
-/** How a team is written in an issue. The label slug is the lowercase key. */
-export const TEAM_LABEL: Record<Team, string> = {
-  marketing: "Marketing",
-  product: "Product",
-  engineering: "Engineering",
-};
 
 /**
  * Three is the cap Chase set, and it is a real one: a list of teams that long
- * is the same as naming none of them. Today nothing reaches it.
+ * is the same as naming none of them. One or two is the normal answer.
  */
 export const MAX_TEAMS = 3;
 
 /**
- * Words that make an action infrastructure work: SDKs, ingestion, hosting, the
- * plumbing a launch lands in. Matched on whole words against the action's
- * feature and detail, so "rapid" is not an API and "libraries" is not a
- * library. Anything vaguer than this belongs to the owning team alone.
+ * Where an action goes when nothing else matched, and only then. Page work
+ * belongs to Marketing, who own the compare and marketing pages. Product work
+ * with no recognizable feature goes to Product Analytics, the team whose page
+ * calls it "the OG product team" – a guess, but a named one somebody can
+ * reroute, which is more than "Product" ever was.
  */
-const ENGINEERING_PATTERNS: RegExp[] = [
-  /\bsdks?\b/,
-  /\bapis?\b/,
-  /\bingest(?:ion|ing)?\b/,
-  /\bpipelines?\b/,
-  /\bproxy\b/,
-  /\bself[-\s]host(?:ed|ing)?\b/,
-  /\binfra(?:structure)?\b/,
-  /\bwebhooks?\b/,
-  /\bdns\b/,
-  /\bcname\b/,
-];
+const DEFAULT_TEAM_NAMES: Record<"marketing" | "product", string> = {
+  marketing: "Marketing",
+  product: "Product Analytics",
+};
 
-/** Whether the action reads as plumbing rather than product or page work. */
-export function isEngineeringWork(action: RecommendedAction): boolean {
-  const text = `${action.feature ?? ""} ${action.detail}`.toLowerCase();
-  return ENGINEERING_PATTERNS.some((pattern) => pattern.test(text));
+/** The words one action is routed on: the feature it names and its detail. */
+function actionText(action: RecommendedAction): string {
+  return `${action.feature ?? ""} ${action.detail}`;
+}
+
+/** The model's own suggestions, minus anything that is not a real small team. */
+function suggestedTeams(action: RecommendedAction): PostHogTeam[] {
+  return (action.teams ?? [])
+    .map((name) => findTeam(name))
+    .filter((team): team is PostHogTeam => team !== undefined);
 }
 
 /**
- * The teams one action is for, most relevant first. Always at least one: the
- * owner of the action type – marketing for page work, product for building and
- * enhancing – so an issue never lands with nobody's name on it.
+ * The teams that own what this action is about: the feature it names first,
+ * then the owners of the PostHog products its own words match. Reusing the
+ * product matcher is the point – it is already tuned to read a signal, and the
+ * catalog turns each product it finds into the team that builds it.
  */
-export function relatedTeams(action: RecommendedAction): Team[] {
-  const teams: Team[] = [ACTION_OWNER[action.type]];
-  if (isEngineeringWork(action)) teams.push("engineering");
+function featureOwners(action: RecommendedAction): PostHogTeam[] {
+  const features = [
+    ...(action.feature ? [action.feature] : []),
+    ...productsForAction(action).map((product) => product.label),
+  ];
+  return features.flatMap((feature) => teamsOwningFeature(feature));
+}
+
+function defaultTeams(action: RecommendedAction): PostHogTeam[] {
+  const team = findTeam(DEFAULT_TEAM_NAMES[ACTION_OWNER[action.type]]);
+  return team ? [team] : [];
+}
+
+/**
+ * The teams one action is for, most involved first. Always at least one, never
+ * more than three, and every one of them a team with a page on posthog.com.
+ */
+export function relatedTeams(action: RecommendedAction): PostHogTeam[] {
+  const ranked = new Set([
+    ...suggestedTeams(action),
+    ...featureOwners(action),
+    ...matchTeams(actionText(action), MAX_TEAMS),
+  ]);
+  const teams = ranked.size > 0 ? [...ranked] : defaultTeams(action);
   return teams.slice(0, MAX_TEAMS);
 }
 
-/** The teams as an issue reads them: "Marketing, Engineering". */
+/** The teams as an issue reads them: "Experiments, Feature Flags 🦫". */
 export function relatedTeamsLabel(action: RecommendedAction): string {
-  return relatedTeams(action)
-    .map((team) => TEAM_LABEL[team])
-    .join(", ");
+  return relatedTeams(action).map(teamLabel).join(", ");
 }

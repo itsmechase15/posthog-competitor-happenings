@@ -101,17 +101,22 @@ A product issue – `consider_enhancing` or `consider_building` – ends with **
 
 `update_pages` and `new_compare_page` never target a docs page. Marketing writes compare pages, product marketing pages, blog posts, and pricing, and `isMarketingTarget` in [`src/posthog/pages.ts`](./src/posthog/pages.ts) is the whole rule. It is enforced three times over: a page action whose only suggested edits are docs pages is dropped, the sentence Slack shows never opens on a docs URL, and the pages-to-update list holds only pages someone would edit. The docs still go into the analysis context, and product issues still cite them.
 
-An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<team>` per related team, and `product:<feature>` when the action names a PostHog product the catalog in [`src/posthog/products.ts`](./src/posthog/products.ts) recognizes – `platform:<surface>` for a surface like the reverse proxy that sits under the products rather than beside them. A feature name the catalog does not know gets no label at all, because a repo full of one-off labels nobody queries is worse than none. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<slug>` per related small team, and `product:<feature>` when the action names a PostHog product the catalog in [`src/posthog/products.ts`](./src/posthog/products.ts) recognizes – `platform:<surface>` for a surface like the reverse proxy that sits under the products rather than beside them. A feature name the catalog does not know gets no label at all, because a repo full of one-off labels nobody queries is worse than none. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
 
 ### Related team(s)
 
-Every issue has a `## Related team(s)` line under the recommended action, saying who the work is for. [`src/teams.ts`](./src/teams.ts) is the whole map, and it is deliberately coarse:
+Every issue has a `## Related team(s)` line under the recommended action, naming the PostHog small teams the work is for: `Experiments`, `Ingestion, Client Libraries`, `Marketing 🦆, Growth 🦦`. Not "Product and Engineering" – PostHog is organized into small teams that each own particular features, so a department names nobody.
 
-- Page work – `update_pages` and `new_compare_page` – is **Marketing**.
-- Building and enhancing – `consider_building` and `consider_enhancing` – is **Product**.
-- **Engineering** is added on top when the action is plainly about the plumbing: SDKs, APIs, ingestion, pipelines, proxies, webhooks, self-hosting, DNS. It is a whole-word keyword match on the action's feature and detail, so "rapid" is not an API.
+[`src/posthog/teams.ts`](./src/posthog/teams.ts) is the catalog: every team on [posthog.com/teams](https://posthog.com/teams), with its slug, the features its page says it owns, the vocabulary of its work, and its spirit animal. The animal is a real field on the team's page, rendered there as "🦆 Duck" under a **Spirit animal** heading, and only some teams have picked one. A team that has not gets no emoji rather than an invented one, so an emoji in an issue is always the team's own. Refreshing the list means reading /teams again; nothing in it is inferred from this app's own product list.
 
-There is always at least one team and never more than three. It stays this coarse on purpose: PostHog's real team list is not something this app can read yet, and a specific team guessed wrong routes the issue to nobody. When there is a list to route against, `relatedTeams` in [`src/teams.ts`](./src/teams.ts) is the only function the issue builder calls, so that is the one place to change.
+[`src/teams.ts`](./src/teams.ts) does the routing. Four things get a say, strongest first:
+
+1. **What the model suggested.** The prompt gives it every team name and what each one owns, and asks for one to three. Every name is then looked up in the catalog, so `Product`, `Engineering`, and `Platform` are thrown away rather than mapped to something near them.
+2. **Who owns the feature.** The team whose page says it owns the feature the action names, plus the owners of the PostHog products the action's own words match. This is the route that carries most alerts: the app already works out which product a signal is about, and the catalog says who builds it.
+3. **Team vocabulary** in the action's feature and detail, for a signal that names no product we recognize. A reverse proxy on a customer's own domain finds Ingestion this way.
+4. **A default**, and only when the first three found nothing: Marketing for page work, Product Analytics for product work.
+
+There is always at least one team and never more than three, and the `team:<slug>` labels stay machine-friendly (`team:marketing`, `team:feature-flags`) while the issue body reads as the name plus the animal.
 
 Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: that action's block goes out without a link, and the other actions keep theirs.
 
