@@ -33,4 +33,7 @@
 # 2026-09-09 back to Amplitude for the first post carrying the alert break:
 # the message should open with a divider and an "Amplitude · ..." header above
 # the image, and each issue should name its related team(s).
-https://amplitude.com/releases/schedule-experiment-stop
+# 2026-09-09 and one Mixpanel changelog item straight after, so the divider and
+# header can be read where they matter: two alerts in a row that Slack would
+# otherwise collapse into one another.
+https://docs.mixpanel.com/changelogs
