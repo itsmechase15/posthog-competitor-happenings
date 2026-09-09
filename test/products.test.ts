@@ -48,6 +48,74 @@ describe("POSTHOG_PRODUCTS", () => {
     );
     expect(CANONICAL_DOC_URLS).toContain("https://posthog.com/docs/experiments/managing-lifecycle");
   });
+
+  it("carries every tool named on platform.md", () => {
+    const labels = POSTHOG_PRODUCTS.map((product) => product.label);
+    for (const tool of [
+      "Product analytics",
+      "Web analytics",
+      "Session replay",
+      "Feature flags",
+      "Experiments",
+      "Error tracking",
+      "Surveys",
+      "AI observability",
+      "Logs",
+      "Data warehouse",
+      "CDP",
+      "Endpoints",
+      "Workflows",
+      "PostHog AI",
+      "Support",
+      "Customer analytics",
+      "Replay Vision",
+    ]) {
+      expect(labels).toContain(tool);
+    }
+  });
+
+  it("still answers to the names those tools used to have", () => {
+    expect(findPostHogProduct("LLM analytics")?.label).toBe("AI observability");
+    expect(findPostHogProduct("Data pipelines")?.label).toBe("CDP");
+    expect(findPostHogProduct("Max AI")?.label).toBe("PostHog AI");
+  });
+
+  it("marks the surfaces that sit under the tools rather than beside them", () => {
+    expect(findPostHogProduct("Reverse proxy")?.kind).toBe("platform");
+    expect(findPostHogProduct("Experiments")?.kind).toBe("product");
+  });
+});
+
+describe("the reverse proxy, which is the surface #44 got wrong", () => {
+  const firstPartyDomains =
+    "First-Party Domains: send Mixpanel events through a subdomain you own, so ad blockers and tracking protection stop dropping them. Set a CNAME on your custom domain and Mixpanel handles the TLS certificate.";
+
+  it("puts the proxy docs in front of the model for a first-party-domain launch", () => {
+    const urls = docUrlsForText(firstPartyDomains);
+    expect(urls).toContain("https://posthog.com/docs/advanced/proxy");
+    expect(urls).toContain("https://posthog.com/docs/advanced/proxy/managed-reverse-proxy");
+  });
+
+  it("reads the launch as being about the reverse proxy", () => {
+    expect(matchProducts(firstPartyDomains)[0]?.label).toBe("Reverse proxy");
+  });
+
+  it("resolves the surface however a model names it", () => {
+    for (const written of [
+      "Reverse proxy",
+      "Managed reverse proxy",
+      "First-party domains",
+      "PostHog managed reverse proxy",
+    ]) {
+      expect(findProductByName(written)?.label).toBe("Reverse proxy");
+    }
+  });
+
+  it("maps the proxy docs back to it, so an issue can name the pages", () => {
+    expect(productForDocUrl("https://posthog.com/docs/advanced/proxy")?.label).toBe(
+      "Reverse proxy",
+    );
+  });
 });
 
 describe("findPostHogProduct", () => {

@@ -15,10 +15,22 @@ import { truncate } from "../util/text.js";
  * and the ones after it answer the questions competitors keep shipping
  * against: scheduling, lifecycle, rollout, and statistics. Every URL here is
  * one that has been opened and checked.
+ *
+ * The list tracks the Tools section of https://posthog.com/platform.md, plus
+ * the platform surfaces a competitor can ship against without there being a
+ * tool to name – the reverse proxy is the one that keeps coming up. A surface
+ * missing from here is a recommendation with nothing to check it against, and
+ * that is how "PostHog has no managed reverse proxy" gets shipped.
  */
 export interface PostHogProduct {
   /** PostHog's own casing, which is sentence case: "Feature flags", not "Feature Flags". */
   label: string;
+  /**
+   * A tool from platform.md, or a platform surface that sits under all of
+   * them. Only the tools are products someone owns a roadmap for, so the two
+   * are labelled differently on an issue.
+   */
+  kind: "product" | "platform";
   /**
    * The product marketing page, for an action title that links the product it
    * names. Left off where PostHog has no such page: a feature with no URL
@@ -37,6 +49,7 @@ export interface PostHogProduct {
 export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   {
     label: "Experiments",
+    kind: "product",
     url: "https://posthog.com/experiments",
     aliases: ["experiment", "a/b testing", "ab testing"],
     keywords: [
@@ -53,11 +66,12 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
       "https://posthog.com/docs/experiments",
       "https://posthog.com/docs/experiments/managing-lifecycle",
       "https://posthog.com/docs/experiments/holdouts",
-      "https://posthog.com/docs/experiments/statistics",
+      "https://posthog.com/docs/experiments/statistics-bayesian",
     ],
   },
   {
     label: "Feature flags",
+    kind: "product",
     url: "https://posthog.com/feature-flags",
     aliases: ["feature flag", "feature gates", "feature gating"],
     keywords: [
@@ -73,12 +87,12 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     docs: [
       "https://posthog.com/docs/feature-flags",
       "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
-      "https://posthog.com/docs/feature-flags/rollout-strategies",
       "https://posthog.com/docs/feature-flags/creating-feature-flags",
     ],
   },
   {
     label: "Product analytics",
+    kind: "product",
     url: "https://posthog.com/product-analytics",
     aliases: ["analytics", "insights", "dashboards"],
     keywords: [
@@ -102,12 +116,14 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   },
   {
     label: "Web analytics",
+    kind: "product",
     url: "https://posthog.com/web-analytics",
     keywords: ["web analytics", "pageview", "bounce rate", "utm", "referrer", "web vitals"],
     docs: ["https://posthog.com/docs/web-analytics"],
   },
   {
     label: "Session replay",
+    kind: "product",
     url: "https://posthog.com/session-replay",
     aliases: ["session recording", "session recordings", "replays"],
     keywords: ["session replay", "session recording", "replay", "heatmap", "screen recording"],
@@ -117,7 +133,22 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     ],
   },
   {
+    label: "Replay Vision",
+    kind: "product",
+    url: "https://posthog.com/replay-vision",
+    aliases: ["vision", "replay vision scanner"],
+    keywords: [
+      "replay vision",
+      "watch recordings at scale",
+      "vision scanner",
+      "session observation",
+      "agent watches recordings",
+    ],
+    docs: ["https://posthog.com/docs/replay-vision"],
+  },
+  {
     label: "Surveys",
+    kind: "product",
     url: "https://posthog.com/surveys",
     aliases: ["survey"],
     keywords: ["survey", "nps", "csat", "feedback widget", "in-app poll"],
@@ -125,6 +156,7 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   },
   {
     label: "Error tracking",
+    kind: "product",
     url: "https://posthog.com/error-tracking",
     aliases: ["exception tracking", "issue tracking"],
     keywords: ["error tracking", "exception", "stack trace", "crash report", "issue tracking"],
@@ -132,15 +164,17 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   },
   {
     label: "Data warehouse",
-    url: "https://posthog.com/data-stack",
-    aliases: ["warehouse", "data stack"],
+    kind: "product",
+    url: "https://posthog.com/context-warehouse",
+    aliases: ["warehouse", "data stack", "context warehouse"],
     keywords: ["data warehouse", "warehouse", "snowflake", "bigquery", "redshift", "external data"],
     docs: ["https://posthog.com/docs/data-warehouse"],
   },
   {
-    label: "Data pipelines",
+    label: "CDP",
+    kind: "product",
     url: "https://posthog.com/cdp",
-    aliases: ["cdp", "pipelines", "destinations"],
+    aliases: ["data pipelines", "pipelines", "destinations", "customer data platform"],
     keywords: [
       "pipeline",
       "destination",
@@ -154,25 +188,84 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
     docs: ["https://posthog.com/docs/cdp", "https://posthog.com/docs/cdp/destinations"],
   },
   {
-    label: "LLM analytics",
-    url: "https://posthog.com/ai-observability",
-    aliases: ["ai observability", "llm observability", "llm analytics"],
-    keywords: ["llm", "prompt", "token usage", "ai observability", "generation", "trace", "agent"],
-    docs: ["https://posthog.com/docs/llm-analytics", "https://posthog.com/docs/ai-engineering"],
+    label: "Endpoints",
+    kind: "product",
+    url: "https://posthog.com/endpoints",
+    aliases: ["endpoint", "query endpoints"],
+    // Not a bare "endpoint": every SDK announcement has an ingestion endpoint
+    // in it, and this product is the one that serves saved queries out.
+    keywords: [
+      "query endpoint",
+      "analytics endpoint for your app",
+      "query api",
+      "data api",
+      "materialized query",
+    ],
+    docs: ["https://posthog.com/docs/endpoints"],
   },
   {
-    label: "Max AI",
-    aliases: ["max"],
+    label: "Workflows",
+    kind: "product",
+    url: "https://posthog.com/workflows",
+    aliases: ["workflow", "hog flows"],
+    keywords: [
+      "workflow",
+      "automated action",
+      "no-code automation",
+      "journey builder",
+      "drip campaign",
+    ],
+    docs: ["https://posthog.com/docs/workflows"],
+  },
+  {
+    label: "AI observability",
+    kind: "product",
+    url: "https://posthog.com/ai-observability",
+    aliases: ["llm analytics", "llm observability", "ai analytics"],
+    keywords: ["llm", "prompt", "token usage", "ai observability", "generation", "trace", "agent"],
+    docs: [
+      "https://posthog.com/docs/ai-observability",
+      "https://posthog.com/docs/ai-engineering",
+    ],
+  },
+  {
+    label: "PostHog AI",
+    kind: "product",
+    url: "https://posthog.com/ai",
+    aliases: ["max ai", "max"],
     keywords: ["ai assistant", "copilot", "natural language query", "ask ai", "chat with your data"],
-    docs: ["https://posthog.com/docs/max-ai"],
+    docs: ["https://posthog.com/docs/posthog-ai"],
+  },
+  {
+    label: "Customer analytics",
+    kind: "product",
+    aliases: ["account analytics", "group analytics"],
+    keywords: [
+      "customer analytics",
+      "account-level",
+      "usage metric",
+      "customer journey",
+      "account health",
+    ],
+    docs: ["https://posthog.com/docs/customer-analytics"],
+  },
+  {
+    label: "Support",
+    kind: "product",
+    url: "https://posthog.com/support",
+    aliases: ["support inbox", "customer support"],
+    keywords: ["support ticket", "help desk", "ticket triage", "shared inbox", "support queue"],
+    docs: ["https://posthog.com/docs/support"],
   },
   {
     label: "Revenue analytics",
+    kind: "product",
     keywords: ["revenue", "mrr", "arr", "subscription", "stripe", "monetization"],
     docs: ["https://posthog.com/docs/revenue-analytics"],
   },
   {
     label: "Logs",
+    kind: "product",
     url: "https://posthog.com/logs",
     aliases: ["logging"],
     keywords: ["log", "logging", "log search", "observability"],
@@ -180,14 +273,45 @@ export const POSTHOG_PRODUCTS: PostHogProduct[] = [
   },
   {
     label: "Alerts",
+    kind: "product",
     aliases: ["alerting"],
     keywords: ["alert", "anomaly detection", "threshold", "notification", "subscribe to a report"],
     docs: ["https://posthog.com/docs/alerts", "https://posthog.com/docs/data/annotations"],
   },
   {
     label: "Notebooks",
+    kind: "product",
     keywords: ["notebook", "canvas", "shared analysis"],
     docs: ["https://posthog.com/docs/notebooks"],
+  },
+  {
+    /**
+     * Not a tool on platform.md, and the surface competitors ship against most
+     * often under a name of their own: Mixpanel calls it First-Party Domains.
+     * PostHog has run a managed reverse proxy for a while, so an alert that
+     * treats it as missing is the exact mistake this catalog exists to stop.
+     */
+    label: "Reverse proxy",
+    kind: "platform",
+    aliases: ["managed reverse proxy", "first-party domain", "first-party domains", "proxy"],
+    keywords: [
+      "reverse proxy",
+      "managed proxy",
+      "first-party domain",
+      "custom domain",
+      "tracking domain",
+      "ingestion domain",
+      "cname",
+      "ad blocker",
+      "tracking protection",
+      "subdomain",
+      "tls",
+      "proxy",
+    ],
+    docs: [
+      "https://posthog.com/docs/advanced/proxy",
+      "https://posthog.com/docs/advanced/proxy/managed-reverse-proxy",
+    ],
   },
 ];
 
@@ -237,6 +361,31 @@ export const POSTHOG_CAPABILITIES: PostHogCapability[] = [
     name: "Automation",
     keywords: ["automation", "workflow", "trigger", "no-code rule", "if this then"],
     docs: ["https://posthog.com/docs/cdp", "https://posthog.com/docs/alerts"],
+  },
+  {
+    /**
+     * Every vendor ships this under its own name – first-party domains, custom
+     * tracking domains, ad-blocker recovery – and none of them says "reverse
+     * proxy". Without the capability, a launch named that way pulls no proxy
+     * docs at all, and the recommendation is written blind.
+     */
+    name: "Ad-blocker resilience",
+    keywords: [
+      "ad blocker",
+      "ad-blocker",
+      "adblock",
+      "tracking protection",
+      "first-party domain",
+      "custom domain",
+      "tracking domain",
+      "ingestion domain",
+      "reverse proxy",
+      "cname",
+    ],
+    docs: [
+      "https://posthog.com/docs/advanced/proxy",
+      "https://posthog.com/docs/advanced/proxy/managed-reverse-proxy",
+    ],
   },
 ];
 
