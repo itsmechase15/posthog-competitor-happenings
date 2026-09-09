@@ -2,12 +2,14 @@ import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
 import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
 import { findPostHogProduct, productForDocUrl, productsForAction } from "../posthog/products.js";
-import type {
-  AnalyzedItem,
-  FeatureImage,
-  IssueRef,
-  PostHogRef,
-  RecommendedAction,
+import {
+  IMPACTS,
+  type AnalyzedItem,
+  type FeatureImage,
+  type Impact,
+  type IssueRef,
+  type PostHogRef,
+  type RecommendedAction,
 } from "../types.js";
 import { SPACED_EN_DASH, truncate } from "../util/text.js";
 
@@ -141,6 +143,17 @@ function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   return `${heading}\n${pages}`;
 }
 
+/**
+ * The whole scale as a task list, so a reader who does not carry the three
+ * levels in their head can see where this one sits. Slack keeps the single
+ * label; an issue has the room.
+ */
+function impactScale(impact: Impact): string {
+  return IMPACTS.map(
+    (level) => `- [${level === impact ? "x" : " "}] ${IMPACT_LABEL[level]}`,
+  ).join("\n");
+}
+
 function bullets(values: string[], empty: string): string {
   if (values.length === 0) return `_${empty}_`;
   return values.map((value) => `- ${value}`).join("\n");
@@ -165,7 +178,7 @@ export function buildIssueBody(
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     `## What you need to know\n${analysis.summary}`,
-    `## Impact\n${IMPACT_LABEL[analysis.impact]}`,
+    `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     pagesSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
