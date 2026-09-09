@@ -150,6 +150,25 @@ describe("buildIssueDraft", () => {
     ]);
   });
 
+  it("mints no product label for a feature the catalog does not know", () => {
+    const unknown = buildIssueDraft(analyzed, image, {
+      type: "consider_enhancing",
+      feature: "Time travel",
+      detail: "PostHog cannot replay a session backwards.",
+    });
+    expect(unknown.labels.some((label) => label.startsWith("product:"))).toBe(false);
+    expect(unknown.labels).not.toContain("product:time-travel");
+  });
+
+  it("labels a platform surface as one, because nobody owns its roadmap", () => {
+    const proxy = buildIssueDraft(analyzed, image, {
+      type: "consider_enhancing",
+      feature: "Managed reverse proxy",
+      detail: "Bring the managed proxy into onboarding.",
+    });
+    expect(proxy.labels).toContain("platform:reverse-proxy");
+  });
+
   it("names the related teams in the body, so the issue says who it is for", () => {
     expect(draft.body).toContain("## Related team(s)\nMarketing");
     expect(buildIssueDraft(analyzed, image, productAction).body).toContain(
@@ -197,11 +216,15 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("gives marketing every cited page and the edits suggested for them", () => {
+  it("gives marketing the pages it can edit and the edits suggested for them", () => {
     expect(draft.body).toContain("## PostHog pages to update");
     expect(draft.body).toContain("https://posthog.com/compare/best-amplitude-alternatives");
     expect(draft.body).toContain("**Suggested edit:** Note that Amplitude now schedules stops.");
-    expect(draft.body).toContain("https://posthog.com/docs/session-replay");
+  });
+
+  it("never sends marketing to edit a docs page, however it was cited", () => {
+    expect(draft.body).not.toContain("https://posthog.com/docs/session-replay");
+    expect(draft.body).not.toContain("https://posthog.com/docs/experiments/managing-lifecycle");
   });
 
   it("gives product only the docs that back its own action", () => {
@@ -233,6 +256,45 @@ describe("buildIssueDraft", () => {
     expect(body).toContain("## PostHog pages for context");
     expect(body).toContain("No PostHog docs page in context speaks to this action");
     expect(body).not.toContain("best-amplitude-alternatives");
+  });
+
+  it("names the docs a product action would make wrong if it shipped", () => {
+    const product = buildIssueDraft(analyzed, image, productAction).body;
+    expect(product).toContain(
+      "## Docs that would change if this ships\n- https://posthog.com/docs/experiments/managing-lifecycle",
+    );
+  });
+
+  it("reads the docs the verdict was checked against, not just the ones it cited", () => {
+    const body = buildIssueBody(
+      {
+        ...analyzed,
+        analysis: { ...analyzed.analysis, posthogRefs: [] },
+        docs: [
+          {
+            url: "https://posthog.com/docs/experiments",
+            title: "Experiments",
+            excerpt: "Experiments compare variants.",
+          },
+          {
+            url: "https://posthog.com/docs/session-replay",
+            title: "Session replay",
+            excerpt: "Recordings are captured by the web SDK.",
+          },
+        ],
+      },
+      image,
+      productAction,
+    );
+    expect(body).toContain(
+      "## Docs that would change if this ships\n- https://posthog.com/docs/experiments",
+    );
+    // Some other product's page, in context for a different action.
+    expect(body).not.toContain("- https://posthog.com/docs/session-replay");
+  });
+
+  it("leaves the section off a page action, whose whole job is already a page edit", () => {
+    expect(draft.body).not.toContain("Docs that would change if this ships");
   });
 
   it("says who owns the work in the header", () => {

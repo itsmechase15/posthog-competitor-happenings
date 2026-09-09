@@ -1,4 +1,5 @@
 import { COMPETITORS } from "../config.js";
+import { isMarketingTarget } from "../posthog/pages.js";
 import { matchCapabilities, matchProducts } from "../posthog/products.js";
 import type { Analysis, RecommendedAction, StoredItem } from "../types.js";
 import { firstSentence } from "../util/text.js";
@@ -210,6 +211,43 @@ export function enforceUpdatePagesTopic(analysis: Analysis, item: StoredItem): T
   }
 
   return { analysis: { ...analysis, actions, openQuestions }, notes };
+}
+
+/** A page action is the one that sends someone to edit posthog.com. */
+function isPageAction(action: RecommendedAction): boolean {
+  return action.type === "update_pages" || action.type === "new_compare_page";
+}
+
+/**
+ * Drop page actions whose only suggested edits are docs pages.
+ *
+ * The docs are what an action gets checked against, so a model that reads
+ * them and then asks for one to be edited has turned its evidence into the
+ * job. There is nothing to salvage: the page it wanted changed is not a page
+ * marketing owns, and picking a different page for it would be inventing the
+ * edit. An action with at least one marketing page behind it is left alone,
+ * and so is one that suggested no edit at all, which says nothing about where
+ * it points.
+ */
+export function enforcePageTargets(analysis: Analysis): TopicGuard {
+  if (!analysis.actions.some(isPageAction)) return { analysis, notes: [] };
+
+  const edits = analysis.posthogRefs.filter((ref) => ref.suggestedEdit);
+  if (edits.length === 0 || edits.some((ref) => isMarketingTarget(ref.url))) {
+    return { analysis, notes: [] };
+  }
+
+  const notes = analysis.actions
+    .filter(isPageAction)
+    .map(
+      (action) =>
+        `dropped a ${action.type} action whose only suggested edits were docs pages (${edits
+          .map((ref) => ref.url)
+          .join(", ")}): "${firstSentence(action.detail, 120)}"`,
+    );
+
+  const actions = analysis.actions.filter((action) => !isPageAction(action));
+  return { analysis: { ...analysis, actions }, notes };
 }
 
 /**

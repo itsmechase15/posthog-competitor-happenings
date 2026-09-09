@@ -83,6 +83,7 @@ Check the docs before you recommend anything. Every action below is a claim abou
 - consider_building is only for a capability with no PostHog product behind it at all. If any docs page in context covers the area, the action is consider_enhancing and "feature" names that product.
 - When the docs in context do not settle whether PostHog does this, do not guess. Say so in the summary, keep impact lower, and put the unanswered question in "open_questions". update_pages is not the safe fallback for an unverified gap: it has its own bar below.
 - Cite the docs URL you relied on in "posthog_refs" whenever an action says what PostHog does or does not do. Prefer a docs URL over a compare URL for that.
+- A docs page is evidence for what PostHog ships, never a page to edit: update_pages and new_compare_page point at a PostHog marketing, product marketing, or compare page, and a "suggested_edit" on a /docs/ URL is always the wrong answer.
 
 When update_pages is allowed. PostHog's marketing, product marketing, and compare pages are only worth editing when at least one of these is true, so recommend update_pages only then, and say in "detail" which one it is:
   1. A PostHog page is now wrong or misleading because of this launch. It says the competitor cannot do something they now do, or it claims a parity or an advantage this launch breaks.

@@ -6,6 +6,7 @@ import {
   docExcerpt,
   focusTerms,
   gatherDocsContext,
+  topUpDocsForActions,
 } from "../src/posthog/docs.js";
 import type { PostHogPage, StoredItem } from "../src/types.js";
 
@@ -173,5 +174,72 @@ describe("gatherDocsContext", () => {
     await expect(
       gatherDocsContext(config, store, item, { maxUrls: 1, maxFetches: 1 }),
     ).resolves.toEqual([]);
+  });
+});
+
+describe("topUpDocsForActions", () => {
+  const enhanceProxy = {
+    type: "consider_enhancing" as const,
+    feature: "Managed reverse proxy",
+    detail: "Offer a managed proxy on a domain the customer owns.",
+  };
+
+  it("reads the docs for a product the verdict named but the signal never matched", async () => {
+    const store = new MemoryStore();
+    await store.upsertPage({
+      url: "https://posthog.com/docs/advanced/proxy",
+      title: "Deploy a reverse proxy",
+      text: "A reverse proxy routes events through your own domain, which ad blockers have not cataloged. PostHog's managed reverse proxy handles the certificate for you.",
+      mentions: [],
+      fetchedAt: new Date(),
+    });
+    const spy = stubHtml("<html><body><p>should not be fetched</p></body></html>");
+
+    const docs = await topUpDocsForActions(config, store, item, [enhanceProxy], []);
+
+    expect(docs.map((doc) => doc.url)).toEqual(["https://posthog.com/docs/advanced/proxy"]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("fetches that page when the index has never seen it", async () => {
+    const store = new MemoryStore();
+    const spy = stubHtml(
+      "<html><head><title>Deploy a reverse proxy</title></head><body><main><p>PostHog runs a managed reverse proxy on a subdomain you own.</p></main></body></html>",
+    );
+
+    const docs = await topUpDocsForActions(config, store, item, [enhanceProxy], []);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(docs[0]?.excerpt).toContain("managed reverse proxy");
+  });
+
+  it("looks nothing up for a product whose docs are already in context", async () => {
+    const store = new MemoryStore();
+    const spy = stubHtml("<html><body><p>should not be fetched</p></body></html>");
+    const inContext = [
+      {
+        url: "https://posthog.com/docs/experiments/managing-lifecycle",
+        title: "Managing the experiment lifecycle",
+        excerpt: "You stop an experiment by hand.",
+      },
+    ];
+
+    const docs = await topUpDocsForActions(
+      config,
+      store,
+      item,
+      [{ type: "consider_enhancing", feature: "Experiments", detail: "Add an end time." }],
+      inContext,
+    );
+
+    expect(docs).toEqual(inContext);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("costs an excerpt rather than the verdict when the fetch fails", async () => {
+    const store = new MemoryStore();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response("nope", { status: 404 }))));
+
+    await expect(topUpDocsForActions(config, store, item, [enhanceProxy], [])).resolves.toEqual([]);
   });
 });

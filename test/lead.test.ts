@@ -115,6 +115,53 @@ describe("enforceActionLead", () => {
     );
   });
 
+  it("never opens a page action on a docs URL, which is evidence not a target", () => {
+    const { analysis, notes } = enforceActionLead(
+      withAction(
+        { type: "update_pages", detail: "The compare page is out of date." },
+        {
+          posthogRefs: [
+            {
+              url: "https://posthog.com/docs/experiments/managing-lifecycle",
+              claim: "Experiments stop by hand.",
+              suggestedEdit: "Mention scheduled stops.",
+            },
+            {
+              url: "https://posthog.com/compare/best-amplitude-alternatives",
+              claim: "Both tools require manual experiment management.",
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(slackLine(analysis)).toBe(
+      "On the best amplitude alternatives page: The compare page is out of date.",
+    );
+    expect(notes[0]).toContain("https://posthog.com/compare/best-amplitude-alternatives");
+  });
+
+  it("leaves a page action alone when the only page cited is a docs page", () => {
+    const detail = "The compare page is out of date.";
+    const { analysis, notes } = enforceActionLead(
+      withAction(
+        { type: "update_pages", detail },
+        {
+          posthogRefs: [
+            {
+              url: "https://posthog.com/docs/experiments/managing-lifecycle",
+              claim: "Experiments stop by hand.",
+              suggestedEdit: "Mention scheduled stops.",
+            },
+          ],
+        },
+      ),
+    );
+
+    expect(analysis.actions[0]?.detail).toBe(detail);
+    expect(notes).toEqual([]);
+  });
+
   it("leaves a page action alone when there is no page to name it with", () => {
     const detail = "The compare page is out of date.";
     const { analysis, notes } = enforceActionLead(

@@ -28,6 +28,17 @@ plus the lifecycle, scheduling, and rollout pages competitors keep shipping
 against. Not a crawl of posthog.com – the docs for the products a signal names,
 capped per run.
 
+That catalog tracks the Tools section of
+[posthog.com/platform.md](https://posthog.com/platform.md), plus the platform
+surfaces that sit under all of them and still get shipped against by name:
+[Advanced / proxy](https://posthog.com/docs/advanced/proxy) is the one that
+keeps coming up, because Mixpanel calls it First-Party Domains and nobody calls
+it a reverse proxy. A surface missing from the catalog is a recommendation with
+nothing to check it against, which is how "PostHog has no managed reverse
+proxy" gets shipped when PostHog has run one for years. Renamed products keep
+their old names as aliases, so a model writing "LLM analytics" still lands on
+AI observability.
+
 ### Verify before recommending
 Every recommendation is a claim about what PostHog ships, so it is checked
 against the product docs first. Before any consider enhancing / consider
@@ -76,6 +87,19 @@ model replies, so a contradicted "PostHog has nothing like this" cannot ship.
   `enforceUpdatePagesTopic` in [`src/analysis/relevance.ts`](./src/analysis/relevance.ts)
   drops a page action whose detail and suggested edit never touch the launch's
   own vocabulary, which can leave an alert with no action, and that is fine
+- Update pages and new compare page only ever target a page marketing writes:
+  a compare page, a product marketing page, a blog post, pricing. Never a
+  `/docs/` page. The docs are the evidence an action is checked against, and a
+  model that asks for one to be edited has turned its own evidence into the
+  job. `isMarketingTarget` in [`src/posthog/pages.ts`](./src/posthog/pages.ts)
+  is the rule, enforced when the page action is judged, when its Slack sentence
+  is shaped, and when the issue lists the pages to update. The claims indexer
+  still reads the docs, and product issues still cite them: reading a page and
+  editing it are not the same permission
+- A consider enhancing or consider building issue also carries **Docs that would
+  change if this ships** – the docs pages that action was verified against, read
+  as the pages someone has to rewrite the day PostHog does this. Nothing new is
+  fetched for it
 - For reason 3, the competitor's own comparison pages about PostHog go into the
   analysis context: `comparePages` in [`src/config.ts`](./src/config.ts), read
   once per competitor per run by [`src/competitor/compare.ts`](./src/competitor/compare.ts).

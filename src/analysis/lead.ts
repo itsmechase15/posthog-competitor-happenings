@@ -1,3 +1,4 @@
+import { isMarketingTarget } from "../posthog/pages.js";
 import { productsForAction } from "../posthog/products.js";
 import type { Analysis, PostHogRef, RecommendedAction } from "../types.js";
 import { firstSentence, pageNameFromUrl, titleFromUrl } from "../util/text.js";
@@ -45,16 +46,24 @@ function slugWords(url: string): string[] {
  */
 function namesCitedPage(lead: string, refs: PostHogRef[]): boolean {
   const lower = lead.toLowerCase();
-  return refs.some(
-    (ref) =>
-      lower.includes(ref.url.toLowerCase()) ||
-      slugWords(ref.url).some((word) => lower.includes(word)),
-  );
+  return refs
+    .filter((ref) => isMarketingTarget(ref.url))
+    .some(
+      (ref) =>
+        lower.includes(ref.url.toLowerCase()) ||
+        slugWords(ref.url).some((word) => lower.includes(word)),
+    );
 }
 
-/** The page an action is about: the one it suggests an edit for, else the first cited. */
+/**
+ * The page an action is about: the one it suggests an edit for, else the first
+ * cited. Only pages someone would actually edit are candidates, so the
+ * sentence Slack shows never opens on a docs URL – a docs page is the evidence
+ * behind an action, not somewhere to send marketing.
+ */
 function pageToName(refs: PostHogRef[]): PostHogRef | undefined {
-  return refs.find((ref) => ref.suggestedEdit) ?? refs[0];
+  const editable = refs.filter((ref) => isMarketingTarget(ref.url));
+  return editable.find((ref) => ref.suggestedEdit) ?? editable[0];
 }
 
 function productLead(action: RecommendedAction): string {
