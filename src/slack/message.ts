@@ -1,7 +1,8 @@
 import { FALLBACK_MODEL } from "../analysis/fallback.js";
 import { COMPETITORS } from "../config.js";
 import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
-import type { ActionIssue, Alert, IssueRef, RecommendedAction } from "../types.js";
+import { entryUrl } from "../sources/link.js";
+import type { ActionIssue, Alert, IssueRef, RecommendedAction, SourceId } from "../types.js";
 import {
   firstSentence,
   sanitizeCopy,
@@ -101,6 +102,31 @@ export function leadSentence(alert: Alert): string {
 }
 
 /**
+ * What the link next to the KNOW sentence is called: the thing you land on,
+ * not the source it came through. A newsletter has no entry: the URL is a
+ * thread in our own inbox, which nobody else can open, so it is left out
+ * rather than linked to a page that answers 404 for the reader.
+ */
+const KNOW_LINK_LABEL: Partial<Record<SourceId, string>> = {
+  changelog: "changelog",
+  blog: "post",
+  x: "tweet",
+};
+
+/**
+ * The source link that sits with the KNOW sentence. The footer links the
+ * source too, but the footer is the last line of the message: this is the one
+ * you can hit as soon as you have read what happened, without going through
+ * the GitHub issue to find out where the change was announced.
+ */
+export function knowSourceLink(alert: Alert): string | null {
+  const label = KNOW_LINK_LABEL[alert.item.source];
+  if (!label) return null;
+  const url = entryUrl(alert.item);
+  return /^https?:\/\//i.test(url) ? link(url, label) : null;
+}
+
+/**
  * The bullets that elaborate on the one sentence, never repeat it. Analyses
  * written before key points existed fall back to the rest of their summary.
  */
@@ -181,6 +207,7 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   const { item, analysis, model, image, issueNote } = alert;
   const competitor = COMPETITORS[item.competitor];
   const lead = leadSentence(alert);
+  const sourceLink = knowSourceLink(alert);
   const points = detailPoints(alert);
 
   const blocks: unknown[] = [
@@ -195,8 +222,10 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
       alt_text: sanitizeCopy(truncate(image.altText || lead, 300)),
     },
     // The heading carries the whole sentence, so there is no unlabelled line
-    // above it competing to be read first.
-    section(`*${KNOW_HEADING}*\n${escape(lead)}`),
+    // above it competing to be read first. The source hangs off the end of the
+    // sentence in parentheses, where it reads as a place to go rather than as
+    // part of what happened.
+    section(`*${KNOW_HEADING}*\n${escape(lead)}${sourceLink ? ` (${sourceLink})` : ""}`),
     section(`*Impact*  ${IMPACT_EMOJI[analysis.impact]} ${IMPACT_LABEL[analysis.impact]}`),
   ];
 
@@ -233,7 +262,7 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   blocks.push({
     type: "context",
     elements: [
-      { type: "mrkdwn", text: `${escape(footer)} · ${link(item.url, "source")}` },
+      { type: "mrkdwn", text: `${escape(footer)} · ${link(entryUrl(item), "source")}` },
     ],
   });
 

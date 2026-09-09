@@ -11,8 +11,8 @@ See [PLAN.md](./PLAN.md) for scope, phasing, and the handoff plan.
 Every alert has the same parts, in this order:
 
 1. **A divider and a header**, always first: `Amplitude · Schedule experiment stop`. Slack collapses consecutive messages from the same bot, so without a break the second alert of a morning reads as more of the first one. The line and the title say where one ends and the next starts. Both blocks are built by `alertBreakBlocks` in [`src/slack/message.ts`](./src/slack/message.ts), and nothing else depends on them, so the break can come back out in one edit.
-2. **A feature image**, first under the break. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page. An alert is never posted without one.
-3. **What you need to KNOW** – the heading carries the one sentence on what changed. There is no unlabeled line above it competing to be read first.
+2. **A feature image**, first under the break. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page – of the entry itself when a changelog puts every release on one page.
+3. **What you need to KNOW** – the heading carries the one sentence on what changed, and the source hangs off the end of it as a linked `changelog`, `post`, or `tweet`. The footer links the source too, but that is the last line of the message: this one is where you can open the change as soon as you have read what happened, without going through the issue to find it. A newsletter gets no link, because the only URL it has is a thread in our own inbox.
 4. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
 5. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
 6. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line, exactly one short sentence below, and a link to that action's own GitHub issue. That sentence leads with the work: "Consider enhancing" opens with the change to make and "Update pages" opens with which page and what it should say, because it is the only line the reader gets. [`docs/writing.md`](./docs/writing.md) has the good and bad shapes. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
@@ -121,10 +121,18 @@ An alert always opens with a picture, tried in this order:
 
 1. Whatever the source attached – an RSS `enclosure` or `media:content`, an image embedded in the entry body, or a launch tweet's photo (or a video's preview frame).
 2. The feature page's own `og:image` / `twitter:image`, then in-content screenshots. Logos, icons, sprites, tracking pixels, tiny images, and SVGs are filtered out, and a site-wide brand card like `amplitude-default-seo.png` is pushed behind a real screenshot rather than used as the feature image.
-3. A screenshot of the feature page, rendered by the service in `SCREENSHOT_URL_TEMPLATE`. This is how the "screenshot the page" step happens without shipping a browser into the daily job, and Slack needs a public URL anyway.
+3. A screenshot of the feature page, rendered by a service in `SCREENSHOT_URL_TEMPLATE`. This is how the "screenshot the page" step happens without shipping a browser into the daily job, and Slack needs a public URL anyway.
 4. A generated card naming the competitor and the feature. Never pretty, but the message always has a valid image block.
 
 Every candidate is checked with a `HEAD` request first, so a 404 or an HTML error page never reaches Slack as an image.
+
+### Entries that share a page
+
+Mixpanel's changelog is one page with an `#anchor` per release, and its RSS points every entry at that page. Step 2 is skipped for those: the page's `og:image` is a Mintlify card that reads "Changelogs" whatever shipped, and the pictures on the page belong to the other releases. So an anchored entry goes straight to a screenshot of its own anchor, and when that fails it takes the generated card, which at least names the feature.
+
+Keeping the anchor takes some care. `normalizeUrl` strips fragments so one page dedupes to one URL, so [`src/sources/rss.ts`](./src/sources/rss.ts) keeps the anchored link in `raw.entryUrl` and [`entryUrl`](./src/sources/link.ts) is what the image, the KNOW link, the footer, and the issue's source line all read. A raw `#` never survives a request – it is a fragment of the screenshot URL, not part of the page being screenshotted – so a renderer only sees it through the `{encodedUrl}` placeholder. `--url https://docs.mixpanel.com/changelogs#2026-08-27` matches on the anchor first for the same reason: without it, every Mixpanel entry answers to the same URL and a forced post takes whichever one the feed listed first.
+
+`SCREENSHOT_URL_TEMPLATE` takes a comma-separated list, tried in order. It defaults to microlink then thum.io: microlink is the one that honors an anchor, and thum.io has no daily quota, so it stands behind it for a day microlink turns us down.
 
 ## Environment
 
@@ -134,7 +142,7 @@ Every candidate is checked with a `HEAD` request first, so a 404 or an HTML erro
 | `CURSOR_API_KEY` | for analysis | – | Cursor SDK key. Unset falls back to the labeled heuristic |
 | `GITHUB_TOKEN` | for issues | – | Set automatically in Actions. Unset skips issue creation |
 | `GITHUB_REPOSITORY` | no | `itsmechase15/posthog-competitor-happenings` | `owner/repo` the issues are filed against |
-| `SCREENSHOT_URL_TEMPLATE` | no | thum.io renderer | URL template whose `{url}` becomes the page to screenshot |
+| `SCREENSHOT_URL_TEMPLATE` | no | microlink, then thum.io | Comma-separated renderer templates, tried in order. `{url}` or `{encodedUrl}` becomes the page to screenshot |
 | `SLACK_BOT_TOKEN` | for posting | – | Bot token with `chat:write`. Preferred over the webhook |
 | `SLACK_CHANNEL_ID` | no | `C0C07A1DM09` | Channel the bot posts to. Ignored by the webhook path |
 | `SLACK_WEBHOOK_URL` | no | – | Incoming webhook, used only when there is no bot token |
