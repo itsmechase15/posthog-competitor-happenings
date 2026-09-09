@@ -1,88 +1,107 @@
 # posthog-competitor-happenings
 
-Daily Slack alerts when Mixpanel or Amplitude ships something, with what PostHog should do about it.
+This bot posts to `#posthog-competitor-happenings` when Mixpanel or Amplitude
+ships something.
 
-One run, every morning around 7am PT: read the competitors' changelogs, blogs, X accounts and newsletters, keep only what is genuinely new, ask a model what PostHog should do about each one, open a GitHub issue per recommended action, and post a short Slack message that links each of them. Nothing gets posted twice, and nothing gets posted as raw JSON.
+It reads both competitors' changelogs, their blogs, their X accounts, and a
+newsletter inbox. One run, every morning around 7am PT. Anything new goes to
+Opus with PostHog's own docs in front of it, and comes back as one to three
+recommended actions: enhance a PostHog product, build one, or fix a page that
+is now wrong.
 
-**Why:** competitor launches are easy to miss and expensive to miss. A compare page that says Amplitude cannot do something they shipped last week is worse than no compare page, and nobody finds that by reading changelogs on a Tuesday. This reads them every day and turns each one into work someone can pick up.
+Each action opens its own GitHub issue, and the Slack message links it. Nothing
+is posted twice, and nothing is posted as raw JSON.
 
-**New here?** [Setup](#setup) is the checklist. Coding agents should read [AGENTS.md](./AGENTS.md) first, which is the same checklist with the rules about handling keys. [PLAN.md](./PLAN.md) has the scope and phasing.
+Competitor launches are easy to miss and expensive to miss. A compare page that
+says Amplitude cannot do something they shipped last week is worse than no
+compare page, and nobody finds that by reading changelogs on a Tuesday.
 
-## Contents
+Each alert reads:
 
-- [What a message looks like](#what-a-message-looks-like)
-- [How a day runs](#how-a-day-runs)
-- [Where the signals come from](#where-the-signals-come-from)
-- [How a recommendation is made](#how-a-recommendation-is-made)
-- [Delivery: Slack and GitHub issues](#delivery-slack-and-github-issues)
-- [Setup](#setup)
-- [Try it without any secrets](#try-it-without-any-secrets)
-- [Commands](#commands)
-- [The workflows](#the-workflows)
-- [Environment reference](#environment-reference)
-- [Data model](#data-model)
-- [Test plan](#test-plan)
-- [Handoff to PostHog](#handoff-to-posthog)
+```
+──────────────────────────────
+Amplitude · Schedule experiment stop
 
-## What a message looks like
+[ a screenshot of the feature page ]
+
+What you need to KNOW
+Amplitude: You can now schedule when an experiment or flag stops, not just
+when it starts. (changelog)
+
+Impact  🔵 Minor
+
+More detail
+• Set a start time, an end time, or both.
+
+Recommended action(s)
+
+Consider enhancing Experiments
+Add a scheduled stop time to Experiments so a test ends on its own.
+Access GitHub issue #41
+
+Update pages
+Update the Amplitude compare page, which says scheduling is start-only.
+Access GitHub issue #42
+
+Amplitude · changelog · analyzed with claude-opus-5 · source
+```
+
+[`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a real
+rendered message, with the exact `chat.postMessage` payload under it.
+
+## What a Slack alert contains
 
 Every alert has the same parts, in this order:
 
-1. **A divider and a header**, always first: `Amplitude · Schedule experiment stop`. Slack collapses consecutive messages from the same bot, so without a break the second alert of a morning reads as more of the first one. The line and the title say where one ends and the next starts. Both blocks are built by `alertBreakBlocks` in [`src/slack/message.ts`](./src/slack/message.ts), and nothing else depends on them, so the break can come back out in one edit.
-2. **A feature image**, first under the break. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page – of the entry itself when a changelog puts every release on one page.
-3. **What you need to KNOW** – the heading carries the one sentence on what changed, and the source hangs off the end of it as a linked `changelog`, `post`, or `tweet`. The footer links the source too, but that is the last line of the message: this one is where you can open the change as soon as you have read what happened, without going through the issue to find it. A newsletter gets no link, because the only URL it has is a thread in our own inbox.
-4. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
-5. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
-6. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line, exactly one short sentence below, and a link to that action's own GitHub issue. That sentence leads with the work: "Consider enhancing" opens with the change to make and "Update pages" opens with which page and what it should say, because it is the only line the reader gets. [`docs/writing.md`](./docs/writing.md) has the good and bad shapes. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
-7. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
+1. **A divider and a header.** `Amplitude · Schedule experiment stop`. Slack
+   collapses consecutive messages from the same bot, so without a break the
+   second alert of a morning reads as more of the first one. `alertBreakBlocks`
+   in [`src/slack/message.ts`](./src/slack/message.ts) builds both blocks, and
+   nothing else depends on them.
+2. **A feature image**, first under the break. See [The pictures](#the-pictures).
+3. **What you need to KNOW.** One sentence on what changed, with the source
+   hanging off the end as a linked `changelog`, `post`, or `tweet`. The footer
+   links the source too, but that is the last line. This one lets you open the
+   change as soon as you have read what happened. A newsletter gets no link,
+   because its only URL is a thread in our own inbox.
+4. **Impact.** `minor`, `notable`, or `major`. A label, not a gate. Every new
+   item gets a message.
+5. **More detail.** Two to four short bullets under their own heading, so it
+   never reads as a second summary.
+6. **Recommended action(s).** Each action is its own block: a bold title, one
+   short sentence, and a link to that action's issue. The sentence leads with
+   the work, because it is the only line the reader gets. "Consider enhancing"
+   names the PostHog feature and links its product page when
+   [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL.
+7. **A footer.** Competitor, source, the model that analyzed it, and the link.
 
-There is no single issue link for the whole alert. Three actions means three issues and three links, one under each action, because the work lands on different desks: marketing owns the page actions, product owns building and enhancing.
+There is no single issue link for the whole alert. Three actions means three
+issues and three links. The work lands on different desks.
 
-PostHog page citations, suggested edits, and open questions are deliberately not in Slack. They are in the issue, which is where someone actually does the work. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a real rendered example.
+Page citations, suggested edits, and open questions are deliberately not in
+Slack. They are in the issue, which is where someone does the work.
 
-The copy follows PostHog's [docs style guide](https://posthog.com/handbook/wizard-and-docs/docs-style-guide) and [tone of voice](https://posthog.com/handbook/brand/tone), which are standing constraints on anything this bot posts. [`docs/writing.md`](./docs/writing.md) has the short version and says where each rule is enforced. The one to know: dashes are en dashes with a space either side, never em dashes.
+The copy follows PostHog's
+[docs style guide](https://posthog.com/handbook/wizard-and-docs/docs-style-guide)
+and [tone of voice](https://posthog.com/handbook/brand/tone).
+[`docs/writing.md`](./docs/writing.md) is the short version and says where each
+rule is enforced. The one to know: dashes are en dashes with a space either
+side, never em dashes.
 
-## How a day runs
+## How a recommendation is decided
 
-GitHub Actions runs [`.github/workflows/daily.yml`](./.github/workflows/daily.yml) on a cron. One job, about twenty minutes, and it does this:
+A launch is easy to summarize. Saying what PostHog should do about it is the
+part that can be wrong, and a wrong one wastes somebody's afternoon.
 
-1. **Refresh the PostHog.com index.** Read `posthog.com`'s sitemap, keep the marketing and docs pages worth citing, and fetch a budgeted slice of them. The canonical product docs in [`src/posthog/products.ts`](./src/posthog/products.ts) are added by hand and sorted first, because they are what a recommendation gets checked against. That catalog tracks the Tools section of [posthog.com/platform.md](https://posthog.com/platform.md), plus the platform surfaces that sit under all of them and still get shipped against by name – [Advanced / proxy](https://posthog.com/docs/advanced/proxy) most of all, because Mixpanel calls it First-Party Domains and nobody calls it a reverse proxy. A surface the catalog does not carry is a recommendation with nothing to check it against. Pages that name Mixpanel or Amplitude have their competitor-mentioning paragraphs stored as `claims`, tagged with the section heading they came from. Half the budget refreshes pages we already know, half reaches ones we have never read, so the comparison pages stay current without starving the tail.
-2. **Collect candidates.** Changelog RSS for both competitors, blog posts discovered by diffing each sitemap, the last ten posts from each X account, and newsletters from the AgentMail inbox. A source that is unconfigured or throwing is logged and skipped – one broken feed never takes down the run.
-3. **Keep only what is new.** Dedupe against `items` on `(competitor, source, external_id)`. Sitemaps bump `lastmod` on site-wide re-renders, so blog novelty is decided by URL, not by date.
-4. **Fill in the body.** A sitemap only gives a URL, so new blog items get their article fetched for a real title and body before analysis.
-5. **Analyze against the docs.** Each new item goes to `claude-opus-5` through the Cursor SDK, with PostHog's own docs in front of it. [How a recommendation is made](#how-a-recommendation-is-made) is the detail.
-6. **Illustrate and file.** Find the feature image, then open one GitHub issue per recommended action, each carrying the long detail for its own job. Both are stored alongside the verdict, so a retry re-posts the same picture and links the same issues instead of opening a second set.
-7. **Post.** One Block Kit message per item to `#posthog-competitor-happenings`, then `analyses.slack_posted_at` is stamped so a retry cannot double-post. A post that fails is left unstamped, and the next run picks it up again for up to three days – an item is only ever deduped once, so without that a Slack blip would lose the message for good.
+Each new item goes to `claude-opus-5` through the Cursor SDK with three kinds
+of context: the claims indexed from PostHog's own pages, which find stale
+marketing copy; the canonical docs for the products the signal touches, which
+are the only evidence for what PostHog ships; and the competitor's own compare
+page about PostHog, read fresh once per competitor per run.
 
-Impact is a label, not a gate. Every new item gets a message; `minor`, `notable`, and `major` just set expectations before you read it.
-
-Two caps keep a bad morning from becoming a flood: `MAX_ITEMS_PER_SOURCE` (8) on what one competitor and source can contribute, and `MAX_ITEMS_PER_RUN` (12) on Slack messages from one run.
-
-## Where the signals come from
-
-Four sources, all in [`src/sources/`](./src/sources), all optional except the first two.
-
-**Changelogs.** The RSS feeds at [docs.mixpanel.com/changelogs](https://docs.mixpanel.com/changelogs/rss.xml) and [amplitude.com/releases](https://amplitude.com/releases/feed.xml). No key, no account. This is the source that carries most days.
-
-**Blogs.** Each competitor's sitemap, diffed run over run, filtered to `/blog/` paths. New URLs get their article fetched for a title and body. No key.
-
-**X.** The last ten posts from `@mixpanel` and `@Amplitude_HQ`, which is where a launch often lands before the changelog catches up, and where the launch image usually is. Needs `X_BEARER_TOKEN`, an app bearer token from [developer.x.com](https://developer.x.com). Unset, the source is skipped with a log line and the run carries on.
-
-**Newsletters.** Product update emails go to an [AgentMail](https://agentmail.to) inbox that exists only for this. Mail is read over the API, not IMAP, so the daily job needs nothing but a key.
-
-To set it up:
-
-1. Create an inbox in the AgentMail dashboard. You get an address like `name@agentmail.to`. Historically this ran on `chasemccaskill@agentmail.to`.
-2. Copy an API key from the same dashboard into `AGENTMAIL_API_KEY`, and the address into the `AGENTMAIL_INBOX_ID` variable.
-3. Subscribe that address to both competitors' product update lists: Mixpanel's and Amplitude's blog and product newsletters, from the signup forms on their own sites. Then open the inbox and click through the confirmation mail, since most of them double opt-in.
-
-Each run asks the API for up to 50 messages newer than `LOOKBACK_DAYS`, and keeps only the ones whose subject, preview, or sender names a competitor – `routeMessage` in [`src/sources/agentmail.ts`](./src/sources/agentmail.ts). Anything else in that inbox is ignored rather than alerted on, so signup confirmations and the rest of the noise cost nothing. A newsletter item links back to its own thread in AgentMail, which is why it is the one source whose KNOW line carries no public link.
-
-## How a recommendation is made
-
-Each new item goes to `claude-opus-5` through the Cursor SDK with three kinds of context: the claims indexed for that competitor, which find stale marketing copy; the canonical docs for the products the signal touches, which are the only evidence for what PostHog actually ships; and the competitor's own comparison page about PostHog, read fresh once per competitor per run, which is where a claim that PostHog cannot do something turns up.
-
-The reply is parsed into a fixed shape – impact, a one-sentence summary, key points, one to three actions, citations limited to URLs the model was actually given, and any open questions – and then three guards run over it.
+The reply is parsed into a fixed shape – impact, one sentence, key points, one
+to three actions, citations limited to URLs the model was given, and any open
+questions. Then three guards run over it.
 
 **Actions come in four types**, and the type decides who owns the issue:
 
@@ -93,150 +112,378 @@ The reply is parsed into a fixed shape – impact, a one-sentence summary, key p
 | `update_pages` | A PostHog page is now wrong, understated, or unanswered | Marketing |
 | `new_compare_page` | There is no page covering this comparison at all | Marketing |
 
-**A gap has to be shown in the docs.** An action may only say PostHog cannot do something when a docs excerpt in front of the model shows that gap, and `verifyAgainstDocs` re-checks the reply: a `consider_building` the docs contradict becomes `consider_enhancing` against the product that already exists, and a gap claim with no docs page behind it gets one, or an open question saying it was never verified. When the reply names a product the signal's own words never matched, that product's overview page is read too – at most a couple of pages – so an action is never verified against nothing.
+**A gap has to be shown in the docs.** An action may only say PostHog cannot do
+something when a docs excerpt in front of the model shows that gap.
+`verifyAgainstDocs` in [`src/analysis/verify.ts`](./src/analysis/verify.ts)
+re-checks the reply. A `consider_building` the docs contradict becomes a
+`consider_enhancing` against the product that already exists. A gap claim with
+no docs page behind it gets one, or an open question saying it was never
+verified. When the reply names a product the signal's own words never matched,
+that product's overview page is read too, so an action is never verified
+against nothing.
 
-**A page edit has to be about the launch that found it.** `update_pages` is for a page that is wrong or misleading, one that understates a capability the docs confirm, or one that leaves a competitor's claim about PostHog unanswered. "Customers might ask" and "the page could be stronger" are not reasons. It also has to be about *this* launch: a signal about scheduling an experiment stop does not get to send someone off to answer an old "basic A/B testing" claim on the same page, so `enforceUpdatePagesTopic` drops a page action whose words never touch the launch's own vocabulary, even when that leaves the alert with no action at all.
+**A page edit has to be about the launch that found it.** "Customers might ask"
+and "the page could be stronger" are not reasons. `enforceUpdatePagesTopic`
+drops a page action whose words never touch the launch's own vocabulary, even
+when that leaves the alert with no action at all. A signal about scheduling an
+experiment stop does not get to send someone off to answer an old "basic A/B
+testing" claim on the same page.
 
-**Page actions never target a docs page.** Marketing writes compare pages, product marketing pages, blog posts, and pricing, and `isMarketingTarget` in [`src/posthog/pages.ts`](./src/posthog/pages.ts) is the whole rule. It is enforced three times over: a page action whose only suggested edits are docs pages is dropped, the sentence Slack shows never opens on a docs URL, and the pages-to-update list holds only pages someone would edit. The docs still go into the analysis context, and product issues still cite them. Reading a page and editing it are not the same permission.
+**Page actions never target a docs page.** Marketing writes compare pages,
+product marketing pages, blog posts, and pricing. `isMarketingTarget` in
+[`src/posthog/pages.ts`](./src/posthog/pages.ts) is the whole rule, enforced
+three times over: a page action whose only suggested edits are docs pages is
+dropped, the sentence Slack shows never opens on a docs URL, and the
+pages-to-update list holds only pages someone would edit. The docs still go
+into the analysis context, and product issues still cite them. Reading a page
+and editing it are not the same permission.
 
-Last, `enforceActionLead` makes each surviving action open with the work it asks for rather than the gap behind it, because that sentence is the whole recommendation in Slack. [`docs/writing.md`](./docs/writing.md) is the long version of all of this, including where each rule lives.
+Last, `enforceActionLead` makes each surviving action open with the work rather
+than the gap behind it.
 
-With no `CURSOR_API_KEY`, analysis falls back to restating the source. Those messages are labeled "not model-analyzed" so nobody mistakes one for a recommendation.
+**Without `CURSOR_API_KEY` the bot still posts.** Analysis falls back to
+restating the source, and those messages are labeled "not model-analyzed" so
+nobody mistakes one for a recommendation.
 
-## Delivery: Slack and GitHub issues
+## Where the signals come from
 
-### Slack
+Four sources, all in [`src/sources/`](./src/sources). The first two need no key.
 
-Messages land in the private `#posthog-competitor-happenings` channel, id `C0C07A1DM09`. There are two ways to get them there, and the app picks the first one that is configured:
+**Changelogs.** The RSS feeds at
+[docs.mixpanel.com/changelogs](https://docs.mixpanel.com/changelogs/rss.xml) and
+[amplitude.com/releases](https://amplitude.com/releases/feed.xml). This is the
+source that carries most days.
 
-1. **Bot token (preferred).** Set `SLACK_BOT_TOKEN` and the app calls `chat.postMessage` against `SLACK_CHANNEL_ID`. This is the path the daily runner should use. It targets a private channel by id, and when Slack refuses a message it says why – `chat.postMessage` answers HTTP 200 with `{"ok": false, "error": "..."}`, which the app checks and surfaces rather than treating as success.
+**Blogs.** Each competitor's sitemap, diffed run over run, filtered to `/blog/`
+paths. A new URL gets its article fetched for a title and a body. Sitemaps bump
+`lastmod` on site-wide re-renders, so blog novelty is decided by URL, not date.
 
-   The app needs a bot user with `chat:write`, invited to the channel with `/invite @your-app`. Without the invite you get `not_in_channel`; without the scope you get `missing_scope`, which is fixed in api.slack.com → OAuth & Permissions by adding the scope, reinstalling the app to the workspace, and copying the new `xoxb-` token into `SLACK_BOT_TOKEN`. Reinstalling issues a new token, so the secret has to be updated too.
+**X.** The last ten posts from `@mixpanel` and `@Amplitude_HQ`, which is where a
+launch often lands before the changelog catches up, and where the launch image
+usually is. Needs `X_BEARER_TOKEN`. Unset, the source is skipped with a log
+line and the run carries on.
 
-   `npm run run -- --check-slack` answers both questions before anything is posted: it prints the bot, the workspace, and the scopes the token actually carries. The forced post runs it first, so a token that cannot deliver fails before a GitHub issue is opened for a message nobody will see.
+**Newsletters.** Product update emails go to an [AgentMail](https://agentmail.to)
+inbox that exists only for this. Mail is read over the API, not IMAP, so the
+daily job needs nothing but a key. Each run asks for up to 50 messages newer
+than `LOOKBACK_DAYS` and keeps only the ones whose subject, preview, or sender
+names a competitor – `routeMessage` in
+[`src/sources/agentmail.ts`](./src/sources/agentmail.ts). Signup confirmations
+and the rest of the noise cost nothing.
 
-2. **Incoming webhook (fallback).** Set `SLACK_WEBHOOK_URL` instead if creating a Slack app is more trouble than it is worth. The channel is fixed at the webhook, so `SLACK_CHANNEL_ID` is ignored.
+A source that is unconfigured or throwing is logged and skipped. One broken
+feed never takes down the run.
 
-With neither set, the app prints the payloads and says so. Every run logs which path it chose, so a missing secret shows up in the first few lines of the job rather than as silence.
+## The issues
 
-The image is attached as a Block Kit `image` block pointing at a public URL, so no extra Slack scope is needed – `chat:write` is still the whole requirement.
+Each recommended action gets its own issue in this repo, opened before the
+Slack message goes out so every action has something to link.
 
-**A note on the Slack MCP plugin.** Posting to this channel was first proven interactively through the Slack MCP plugin connected in Cursor. That is a fine way to test by hand, but the daily GitHub Actions run deliberately does not depend on it – MCP needs a connected client session, and a scheduled runner has none. The bot token is the equivalent capability in a form a cron job can use.
+An issue is titled `Competitor: feature – Action` and carries what Slack no
+longer does: that action in full, the summary and key points, the impact, open
+questions, source links, and the feature image. Impact is written as the whole
+scale, a task list of `Minor`, `Notable`, `Major` with this alert's level
+checked, so a reader sees where it sits without holding the scale in their
+head.
 
-### GitHub issues
+Marketing's issues get the PostHog pages to update as url + claim today +
+suggested edit. Product's get only the docs that back the action they are being
+asked to take: no suggested edits, no compare-page copy, and no docs page for a
+product some other action in the same alert named. Nothing lists the sibling
+actions, because each one is its own issue.
 
-Each recommended action gets its own issue in this repo, opened before the Slack message goes out so every action has something to link. An alert that says "enhance Experiments, enhance feature flags, and fix the compare page" is three issues, because that is three pieces of work for two teams.
+A product issue ends with **Docs that would change if this ships**. Those are
+the same pages the issue already cites as evidence, read the other way round:
+today they say what PostHog does, and the day PostHog does this instead,
+someone has to rewrite them. Nothing new is fetched to build the list.
 
-Each issue is scoped to its own action and titled `Competitor: feature – Action`. It carries what Slack no longer does: that action in full, the summary and key points, the impact, open questions, source links, and the feature image. Impact is written as the whole scale – a task list of `Minor`, `Notable`, `Major` with this alert's level checked – so a reader sees where it sits without holding the scale in their head. Slack keeps the single label. Marketing's issues get the PostHog pages to update as url + claim today + suggested edit. Product's get only the docs that back the action they are being asked to take: no suggested edits, no compare-page copy, and no docs page for a product some other action in the same alert named. Nothing lists the sibling actions, because each one is its own issue.
+Labels: `competitor-happenings`, the competitor, `source:<source>`,
+`impact:<level>`, `action:<action>`, `owner:marketing|product`, one
+`team:<slug>` per related team, and `product:<feature>` when the action names a
+product the catalog recognizes. A feature name the catalog does not know gets
+no label, because a repo full of one-off labels nobody queries is worse than
+none. A label the repo has never seen makes GitHub answer 422, so the app
+retries once without labels rather than losing the issue.
 
-A product issue – `consider_enhancing` or `consider_building` – ends with **Docs that would change if this ships**, listing the docs pages that action was checked against. They are the same pages the issue already cites as evidence, read the other way round: today they say what PostHog does, and the day PostHog does this instead, someone has to rewrite them. Nothing new is fetched to build the list. Page actions have no use for it, because editing a page is already the job they describe.
-
-An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<slug>` per related small team, and `product:<feature>` when the action names a PostHog product the catalog in [`src/posthog/products.ts`](./src/posthog/products.ts) recognizes – `platform:<surface>` for a surface like the reverse proxy that sits under the products rather than beside them. A feature name the catalog does not know gets no label at all, because a repo full of one-off labels nobody queries is worse than none. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
-
-Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret, and no repo settings to change beyond leaving issues switched on. Issues are filed against `GITHUB_REPOSITORY`, which Actions sets to whichever repo is running, so a fork files its own. Locally, set a PAT with repo scope as `GITHUB_TOKEN` or `GH_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: that action's block goes out without a link, and the other actions keep theirs.
+Inside Actions the built-in `GITHUB_TOKEN` is enough, with `issues: write`. No
+new secret. A failed issue never fails the run: that action's block goes out
+without a link, and the other actions keep theirs.
 
 ### Related team(s)
 
-Every issue has a `## Related team(s)` line under the recommended action, naming the PostHog small teams the work is for: `Experiments`, `Ingestion, Client Libraries`, `Marketing 🦆, Growth 🦦`. Not "Product and Engineering" – PostHog is organized into small teams that each own particular features, so a department names nobody.
+Every issue names the PostHog small teams the work is for: `Experiments`,
+`Ingestion, Client Libraries`, `Marketing 🦆, Growth 🦦`. Not "Product and
+Engineering". PostHog is organized into small teams that each own particular
+features, so a department names nobody.
 
-[`src/posthog/teams.ts`](./src/posthog/teams.ts) is the catalog: every team on [posthog.com/teams](https://posthog.com/teams), with its slug, the features its page says it owns, the vocabulary of its work, and its spirit animal. The animal is a real field on the team's page, rendered there as "🦆 Duck" under a **Spirit animal** heading, and only some teams have picked one. A team that has not gets no emoji rather than an invented one, so an emoji in an issue is always the team's own. Refreshing the list means reading /teams again; nothing in it is inferred from this app's own product list.
+[`src/posthog/teams.ts`](./src/posthog/teams.ts) is the catalog: every team on
+[posthog.com/teams](https://posthog.com/teams), with its slug, the features its
+page says it owns, the vocabulary of its work, and its spirit animal. The
+animal is a real field on the team's page, and only some teams have picked one.
+A team that has not gets no emoji rather than an invented one.
 
-[`src/teams.ts`](./src/teams.ts) does the routing. **The model chooses.** The prompt gives it every team name and what each one owns and asks each action for one to three, and a list it wrote wins outright once each name has been found in the catalog – it is the only reader with the whole signal in front of it. `Product`, `Engineering`, and `Platform` are thrown away rather than mapped to something near them, which is why the fallback has to be good: a reply that names only departments falls all the way through it.
+[`src/teams.ts`](./src/teams.ts) does the routing, and **the model chooses.**
+The prompt gives it every team name and what each one owns, and a list it wrote
+wins outright once each name is found in the catalog. `Product`, `Engineering`,
+and `Platform` are thrown away rather than mapped to something near them, which
+is why the fallback has to be good. Falling through, strongest first:
 
-Falling through, strongest first:
+1. **Who owns the feature.** The team whose page says it owns the feature the
+   action names, plus the owners of the products the action's words match. 18
+   of the 21 entries in [`src/posthog/products.ts`](./src/posthog/products.ts)
+   carry an owner.
+2. **Team vocabulary** in the action's feature and detail, for a signal that
+   names no product we recognize.
+3. **A default**, and only when both found nothing: Marketing for page work,
+   Product Analytics for product work.
 
-1. **Who owns the feature.** The team whose page says it owns the feature the action names, plus the owners of the PostHog products the action's own words match. The app already works out which product a signal is about, and the catalog says who builds it – 18 of the 21 entries in [`src/posthog/products.ts`](./src/posthog/products.ts) have an owner, including `Reverse proxy` to Ingestion and `Notebooks` to Data Tools.
-2. **Team vocabulary** in the action's feature and detail, for a signal that names no product we recognize.
-3. **A default**, and only when both of those found nothing: Marketing for page work, Product Analytics for product work.
+There is always at least one team and never more than three.
 
-There is always at least one team and never more than three, and the `team:<slug>` labels stay machine-friendly (`team:marketing`, `team:feature-flags`) while the issue body reads as the name plus the animal.
+## The pictures
+
+An alert always opens with a picture, tried in this order:
+
+1. Whatever the source attached – an RSS `enclosure` or `media:content`, an
+   image in the entry body, or a launch tweet's photo.
+2. The feature page's own `og:image` / `twitter:image`, then in-content
+   screenshots. Logos, icons, sprites, tracking pixels, tiny images, and SVGs
+   are filtered out. A site-wide brand card like `amplitude-default-seo.png` is
+   pushed behind a real screenshot rather than used as the feature image.
+3. A screenshot of the feature page, rendered by a service in
+   `SCREENSHOT_URL_TEMPLATE`. This is how "screenshot the page" happens without
+   shipping a browser into the daily job, and Slack needs a public URL anyway.
+4. A generated card naming the competitor and the feature. Never pretty, but
+   the message always has a valid image block.
+
+Every candidate gets a `HEAD` request first, so a 404 or an HTML error page
+never reaches Slack as an image. The image is a Block Kit `image` block
+pointing at a public URL, so `chat:write` is still the whole Slack scope.
+
+Mixpanel's changelog is one page with an `#anchor` per release, and its RSS
+points every entry at that page. Step 2 is skipped for those: the page's
+`og:image` is a Mintlify card that reads "Changelogs" whatever shipped, and the
+pictures on the page belong to the other releases. So an anchored entry goes
+straight to a screenshot of its own anchor.
+
+Keeping the anchor takes some care. `normalizeUrl` strips fragments so one page
+dedupes to one URL, so [`src/sources/rss.ts`](./src/sources/rss.ts) keeps the
+anchored link in `raw.entryUrl`, and [`entryUrl`](./src/sources/link.ts) is
+what the image, the KNOW link, the footer, and the issue all read. A raw `#`
+never survives a request, so a renderer only sees it through the `{encodedUrl}`
+placeholder. `SCREENSHOT_URL_TEMPLATE` defaults to microlink then thum.io:
+microlink honors an anchor, and thum.io has no daily quota, so it stands behind
+it for a day microlink turns us down.
+
+## How it works
+
+[`.github/workflows/daily.yml`](./.github/workflows/daily.yml) runs the bot
+every morning. One run does 7 steps:
+
+1. **Refresh the PostHog.com index.** Read the sitemap, keep the marketing and
+   docs pages worth citing, and fetch a budgeted slice of them. The canonical
+   product docs in [`src/posthog/products.ts`](./src/posthog/products.ts) are
+   added by hand and sorted first, because they are what a recommendation gets
+   checked against. Pages that name Mixpanel or Amplitude have their
+   competitor-mentioning paragraphs stored as `claims`. Half the budget
+   refreshes pages we know, half reaches pages we have never read.
+2. **Collect candidates** from the four sources.
+3. **Keep only what is new.** Dedupe against `items` on
+   `(competitor, source, external_id)`.
+4. **Fill in the body.** A sitemap only gives a URL, so a new blog item gets its
+   article fetched for a real title and body before analysis.
+5. **Analyze against the docs.** See
+   [How a recommendation is decided](#how-a-recommendation-is-decided).
+6. **Illustrate and file.** Find the feature image, then open one GitHub issue
+   per recommended action. Both are stored alongside the verdict, so a retry
+   re-posts the same picture and links the same issues instead of opening a
+   second set.
+7. **Post.** One Block Kit message per item, then `analyses.slack_posted_at` is
+   stamped so a retry cannot double-post. A post that fails is left unstamped
+   and the next run picks it up again for up to three days. An item is only
+   ever deduped once, so without that a Slack blip would lose the message for
+   good.
+
+GitHub's cron only speaks UTC, so the workflow is scheduled at both 14:00 and
+15:00 UTC and the job exits early on whichever one is not 07:00 in
+`America/Los_Angeles` that day.
+
+Two caps keep a bad morning from becoming a flood: `MAX_ITEMS_PER_SOURCE` (8)
+on what one competitor and source can contribute, and `MAX_ITEMS_PER_RUN` (12)
+on Slack messages from one run.
+
+The first run for each competitor and source records that source's existing
+backlog without alerting, then exits. This is correct. Switching on a new
+source would otherwise fire its whole archive at Slack at once. The run after
+that one posts as normal.
+
+## Files
+
+| Path | Purpose |
+| --- | --- |
+| `src/index.ts` | The CLI. One cycle, `--url`, `--check-slack`, `--out`. |
+| `src/pipeline.ts` | The run order. It calls the other modules. |
+| `src/config.ts` | Every environment variable, read once. |
+| `src/sources/` | Changelog RSS, blog sitemaps, X, and AgentMail. |
+| `src/posthog/` | The posthog.com index, the product catalog, the team catalog. |
+| `src/analysis/` | The prompt, the reply schema, and the three guards. |
+| `src/teams.ts` | Routes an action to PostHog's small teams. |
+| `src/media/image.ts` | The feature image chain. |
+| `src/github/issue.ts` | One issue draft per action, with its labels. |
+| `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
+| `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
+| `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
+| `migrations/001_init.sql` | The four tables. |
+| `docs/writing.md` | The copy rules, and where each one is enforced. |
+| `AGENTS.md` | Notes for a coding agent, including the rules about keys. |
+| `.env.example` | The shape of every variable. Never a value. |
+| `test/` | Unit tests and synthetic fixtures. |
 
 ## Setup
 
-Ten minutes, most of it in other people's dashboards. `npm run check-env -- --strict` names everything you have not done yet, at any point.
+Ten minutes, most of it in other people's dashboards. `npm run check-env --
+--strict` names everything you have not done yet, at any point, and says where
+each value comes from. Run it whenever you are lost.
 
-1. **Fork or clone**, then `npm install`.
-2. **Database.** A Postgres. Supabase is what production uses. Apply [`migrations/001_init.sql`](./migrations/001_init.sql) to create the four tables, then take the connection string from Project Settings → Database → Connection string → **Session pooler**.
-3. **Slack app.** api.slack.com/apps → create an app → OAuth & Permissions → add the `chat:write` bot scope → install to the workspace → copy the `xoxb-` token. In Slack, invite it to the channel with `/invite @your-app`, and copy the channel id from View channel details.
-4. **Cursor API key.** cursor.com/dashboard → Integrations → API Keys.
-5. **X bearer token**, optional. developer.x.com → your app → Keys and tokens.
-6. **AgentMail inbox**, optional. [Newsletters](#where-the-signals-come-from) above has the steps.
-7. **Add the secrets** under Settings → Secrets and variables → Actions. The table below is the complete list.
-8. **Check it.** Actions → **Check secrets** → Run workflow. It names anything missing and asks Slack whether the bot token can post, without posting.
-9. **First real run.** Actions → **Daily competitor happenings** → Run workflow. The first run for each competitor and source records that source's existing backlog without alerting, then exits. That is deliberate: switching on a new source would otherwise fire its entire archive at Slack at once. Run it a second time, or wait for tomorrow's cron, and only things that appeared since get a message.
-
-### The secrets
-
-All of these go in **Settings → Secrets and variables → Actions → Secrets**:
+Add these under **Settings → Secrets and variables → Actions → Secrets**:
 
 | Secret | Needed for | Where the value comes from |
 | --- | --- | --- |
-| `DATABASE_URL` | Everything. The daily run refuses to start without it | Supabase → Project Settings → Database → Session pooler URI |
+| `DATABASE_URL` | Everything. The daily run refuses to start without it | Supabase → Project Settings → Database → Connection string → Session pooler |
 | `CURSOR_API_KEY` | The Opus analysis. Without it, alerts restate the source | cursor.com/dashboard → Integrations → API Keys |
 | `SLACK_BOT_TOKEN` | Posting. `xoxb-`, with `chat:write`, invited to the channel | api.slack.com/apps → OAuth & Permissions |
 | `X_BEARER_TOKEN` | The X source. Unset skips it | developer.x.com → Keys and tokens → Bearer Token |
 | `AGENTMAIL_API_KEY` | The newsletter source. Unset skips it | agentmail.to → dashboard → API keys |
 | `SLACK_WEBHOOK_URL` | Optional fallback delivery, only read when there is no bot token | api.slack.com/apps → Incoming Webhooks |
 
-And these are **Variables**, not secrets, because none of them is a credential:
+And these under **Variables**, because neither is a credential:
 
 | Variable | Default | What it is |
 | --- | --- | --- |
 | `SLACK_CHANNEL_ID` | `C0C07A1DM09` | The channel the bot posts to |
 | `AGENTMAIL_INBOX_ID` | `chasemccaskill@agentmail.to` | The inbox newsletters are read from. Also accepted as a secret, since it is easy to store as one |
 
-`GITHUB_TOKEN` is on neither list. Actions provides it, and the workflows grant it `issues: write`, which is all the permission issue creation needs.
+`GITHUB_TOKEN` is on neither list. Actions provides it, and the workflows grant
+it `issues: write`, which is all issue creation needs.
 
-`DATABASE_URL` has to be the **pooler** string. Supabase's direct host (`db.<ref>.supabase.co`) resolves to IPv6 only, and GitHub Actions runners have no IPv6 route, so a direct URI fails on the runner with `connect ENETUNREACH` while working fine from a dual-stack laptop. `check-env` catches that one by sight, before a run spends twenty minutes finding out.
+### Create the Slack app
+
+Slack does not let an automated job create an app, so a person with workspace
+permissions does this once:
+
+1. Go to <https://api.slack.com/apps> and select **Create New App**.
+2. **OAuth & Permissions** → add the `chat:write` bot scope.
+3. **Install to Workspace**, then copy the **Bot User OAuth Token** (`xoxb-...`)
+   into `SLACK_BOT_TOKEN`.
+4. In Slack, invite the app to the channel: `/invite @your-app`. Every post
+   fails with `not_in_channel` if you skip this step.
+5. Open the channel → **View channel details** → copy the `C0…` id into the
+   `SLACK_CHANNEL_ID` variable.
+
+A missing scope answers `missing_scope`. Fix it by adding the scope,
+reinstalling the app, and copying the new token into the secret. Reinstalling
+issues a new token, so the secret has to be updated too.
+
+An incoming webhook works as a fallback, and `SLACK_WEBHOOK_URL` is read only
+when there is no bot token. It is worse: the channel is fixed at the webhook,
+so `SLACK_CHANNEL_ID` is ignored, and a webhook cannot tell you why Slack
+refused a message. `chat.postMessage` answers HTTP 200 with
+`{"ok": false, "error": "..."}`, which the app checks and surfaces.
+
+### Create the AgentMail inbox
+
+The newsletters need an address of their own, because a personal inbox cannot
+be read by a cron job.
+
+1. Create an inbox in the [AgentMail](https://agentmail.to) dashboard. You get
+   an address like `name@agentmail.to`.
+2. Copy an API key from the same dashboard into `AGENTMAIL_API_KEY`, and the
+   address into the `AGENTMAIL_INBOX_ID` variable.
+3. Subscribe that address to both competitors' product update lists, from the
+   signup forms on their own sites.
+4. Open the inbox and click through the confirmation mail. Most of them double
+   opt-in, and an unconfirmed subscription is a source that never delivers.
+
+### The database has to be the pooler URI
+
+Supabase's direct host (`db.<ref>.supabase.co`) resolves to IPv6 only, and
+GitHub Actions runners have no IPv6 route. A direct URI therefore works fine
+from a dual-stack laptop and fails on every scheduled run with
+`connect ENETUNREACH`. Take the **Session pooler** string instead. `check-env`
+catches that one by sight, before a run spends twenty minutes finding out.
+
+Apply [`migrations/001_init.sql`](./migrations/001_init.sql) to create the four
+tables.
 
 ### Keys live in Actions, never in the repo
 
-The daily job reads GitHub Actions secrets. That is the only place a value belongs. Nothing here reads a checked-in key, `.env` is in `.gitignore`, and `.env.example` carries the shape of each variable and where to get it, never a value.
+The daily job reads Actions secrets. That is the only place a value belongs.
+Nothing here reads a checked-in key, `.env` is in `.gitignore`, and
+`.env.example` carries the shape of each variable and where to get it, never a
+value.
 
-For a local run, copy `.env.example` to `.env` and fill it in. On the command line, `gh secret set DATABASE_URL` prompts for the value without echoing it, which beats pasting it anywhere it can be scrolled back to.
+For a local run, copy `.env.example` to `.env` and fill it in. On the command
+line, `gh secret set DATABASE_URL` prompts for the value without echoing it,
+which beats pasting it anywhere it can be scrolled back to.
 
-If you are setting this up with a coding agent, [AGENTS.md](./AGENTS.md) and [`.cursor/rules/setup-secrets.mdc`](./.cursor/rules/setup-secrets.mdc) tell it to run `check-env`, prompt you for each missing value, and put them in Actions – not to ask you to paste them into a chat, and not to write one into a file. A secret that reaches an agent's context is a secret to rotate.
+If you are setting this up with a coding agent, [AGENTS.md](./AGENTS.md) and
+[`.cursor/rules/setup-secrets.mdc`](./.cursor/rules/setup-secrets.mdc) tell it
+to run `check-env`, prompt you for each missing value, and put them in Actions.
+Not to ask you to paste them into a chat, and not to write one into a file. A
+secret that reaches an agent's context is a secret to rotate.
 
-## Try it without any secrets
+## Turn it on, in this order
 
-```bash
-npm install
-DRY_RUN=true FORCE_ANALYZE=true POSTHOG_MAX_PAGES=10 MAX_ITEMS_PER_RUN=2 npm run run
-```
+1. Create the Slack app, install it, and copy the bot token.
+2. Invite the app to the channel, and copy the channel id.
+3. Create the database, apply the migration, and take the pooler URI.
+4. Add the secrets and the two variables.
+5. **Merge this to main.** GitHub lists a `workflow_dispatch` workflow only
+   when the file is on the default branch, and a schedule only runs there. You
+   cannot test the bot from a branch.
+6. Open the **Actions** tab. Run **Check secrets**, with `strict` ticked. It
+   names anything missing, then asks Slack what the bot token can actually do.
+   It posts nothing.
+7. Run **Daily competitor happenings** with `dry_run` ticked. The bot reads the
+   live feeds and prints the payloads it would have sent.
+8. Run **Force post one item** with a URL from a live changelog. See below for
+   why this step exists.
+9. Run **Daily competitor happenings** for real. It records each source's
+   backlog and posts nothing. Run it a second time, or wait for tomorrow's
+   cron, and only things that appeared since get a message.
 
-That hits the live changelogs and sitemaps, indexes a few PostHog.com pages, and prints the Slack payloads it would have sent. Nothing is written and nothing is posted.
+## Prove the Slack path with a forced post
 
-Two things degrade gracefully in that mode, and both say so in the log:
+The bot stays quiet until a competitor ships, which can take days. The first
+real alert would therefore also be the first test of the Slack path. A wrong
+channel id, a missing scope, or an app that was never invited would sit
+unnoticed until then.
 
-- With no `DATABASE_URL`, the run uses an in-memory store. Every item looks new, which is why `FORCE_ANALYZE=true` is needed to get past the first-run guard.
-- With no `CURSOR_API_KEY`, analysis falls back to restating the source instead of assessing it.
+[`force-post.yml`](./.github/workflows/force-post.yml) closes that gap. It
+pushes one named announcement through the whole pipeline, ignoring the dedupe
+table and the first-run seed guard, and it runs `--check-slack` first, so a
+token that cannot deliver fails before a GitHub issue is opened for a message
+nobody will see.
 
-A dry run never opens an issue, so the message says why the issue links are missing instead of pretending there are some. That note only ever appears in a dry run.
+Two ways in:
 
-## Commands
+- Actions → **Force post one item** → **Run workflow**, with a `force_url`.
+- Put the URL in [`.github/force-post-url.txt`](./.github/force-post-url.txt)
+  and merge it to main. Changing the file is itself the trigger, which leaves a
+  record of every forced post in the git history.
 
-| Command | What it does |
-| --- | --- |
-| `npm run check-env` | Name every required variable that is missing, and where its value comes from. `-- --strict` includes the optional sources |
-| `npm run run` | One full cycle via `tsx`, no build step |
-| `npm run run -- --url <url>` | Push one named item through the whole pipeline, ignoring dedupe and the seed guard. Add `--out <path>` to save the message |
-| `npm run run -- --check-slack` | Ask Slack what `SLACK_BOT_TOKEN` is and which scopes it carries, and exit non-zero if it cannot post |
-| `npm run build` | Compile to `dist/` |
-| `npm start` | One full cycle from `dist/` |
-| `npm run typecheck` | Type-check `src/` and `test/` |
-| `npm test` | Unit tests for the parsers, analysis contract, setup checks, and Slack formatting |
+The item still has to exist in a live feed. This mode selects from what the
+fetchers returned, so it cannot manufacture an announcement.
 
-### Verifying one specific item
+`DATABASE_URL` is optional for the forced post alone. Without it the run uses
+the in-memory store, so the message still goes out but nothing is recorded and
+the item stays eligible for a normal alert later. The daily run refuses to
+start without a database and fails on one it cannot reach, because carrying on
+there would re-alert the whole backlog tomorrow.
 
-To see exactly what a given announcement produces, without waiting for a cron run or fighting the dedupe table:
+A dry run cannot do this job. A dry run posts nothing to Slack at all.
 
-```bash
-npm run run -- \
-  --url https://amplitude.com/releases/schedule-experiment-stop \
-  --out artifacts/slack-test-message.md
-```
-
-The item still has to exist in a live feed – this mode selects from what the fetchers actually returned, so it cannot manufacture an announcement. Everything else gives way: an item already in the dedupe table is re-posted under its existing row, a PostHog crawl that fails costs citations rather than the message, and a model that refuses falls back to the labeled heuristic. It writes both the rendered message and the exact `chat.postMessage` payload. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is a checked-in example produced this way.
+Both workflows share one concurrency group, so a forced post can never race the
+daily run.
 
 ## The workflows
 
@@ -244,20 +491,22 @@ The item still has to exist in a live feed – this mode selects from what the f
 | --- | --- | --- |
 | [`daily.yml`](./.github/workflows/daily.yml) | Cron, or Run workflow with a dry-run checkbox | The full cycle |
 | [`force-post.yml`](./.github/workflows/force-post.yml) | Run workflow with a URL, or a commit to `.github/force-post-url.txt` | One named item, straight to Slack |
-| [`check-secrets.yml`](./.github/workflows/check-secrets.yml) | Run workflow | Names missing secrets and checks the Slack token. Posts nothing |
+| [`check-secrets.yml`](./.github/workflows/check-secrets.yml) | Run workflow | Names missing secrets and asks Slack what the token can do. Posts nothing |
 | [`ci.yml`](./.github/workflows/ci.yml) | Push and pull request | Typecheck, tests, build |
 
-**Daily.** GitHub's cron only speaks UTC, so the workflow is scheduled at both 14:00 and 15:00 UTC and the job exits early on whichever one is not 07:00 in `America/Los_Angeles` that day. Before the pipeline it runs `check-env`, so a secret that expired or was never set fails in the first few seconds, naming the variable, rather than twenty minutes in as a database timeout.
+Both `daily.yml` and `force-post.yml` run `check-env` before the pipeline. A
+secret that expired or was never set fails in the first few seconds, naming the
+variable, rather than twenty minutes in as a database timeout.
 
-**Force post.** For proving delivery without waiting for tomorrow. It runs `--url`, so the dedupe table and the seed guard do not apply. Either run it from the Actions tab with a `force_url`, or put the URL in [`.github/force-post-url.txt`](./.github/force-post-url.txt) and merge that to main – changing the file is itself the trigger, which keeps a record of every forced post in the git history. Both it and the daily run share one concurrency group, so a forced post can never race the daily run.
+Run **Check secrets** after a fork, and any time an alert stops arriving. It
+reports which secrets are set, never their values.
 
-`DATABASE_URL` is optional for the forced post alone: without it the run uses the in-memory store, so the message still goes out but nothing is recorded and the item stays eligible for a normal alert later. The same applies when the database is set but unreachable – the forced post falls back and logs that it left no dedupe trace, rather than dropping a message it had already analyzed. The daily run does neither: it refuses to start without a database and fails on one it cannot reach, because carrying on there would re-alert the whole backlog tomorrow.
+## Configuration
 
-**Check secrets.** Run it after a fork, or any time an alert stops arriving. It reports which secrets are set, never their values, and then asks Slack what the bot token can actually do.
-
-## Environment reference
-
-Every variable, what it defaults to, and what it is for. [`src/setup/requirements.ts`](./src/setup/requirements.ts) is the machine-readable version of the top of this table, and it is what `check-env` reads.
+Every variable, what it defaults to, and what it is for.
+[`src/setup/requirements.ts`](./src/setup/requirements.ts) is the
+machine-readable version of the top of this table, and it is what `check-env`
+reads. A variable missing from it is a variable nobody is told about.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
@@ -272,72 +521,137 @@ Every variable, what it defaults to, and what it is for. [`src/setup/requirement
 | `GITHUB_TOKEN` | for issues | – | Set automatically in Actions. `GH_TOKEN` is read as a fallback. Unset skips issue creation |
 | `GITHUB_REPOSITORY` | no | `itsmechase15/posthog-competitor-happenings` | `owner/repo` the issues are filed against. Actions sets it to the running repo |
 | `SCREENSHOT_URL_TEMPLATE` | no | microlink, then thum.io | Comma-separated renderer templates, tried in order. `{url}` or `{encodedUrl}` becomes the page to screenshot |
-| `DRY_RUN` | no | `false` | Print Slack payloads, skip every database write |
-| `FORCE_ANALYZE` | no | `false` | Analyze the first-run backlog instead of recording it. Rejected unless `DRY_RUN=true` |
-| `CURSOR_MODEL` | no | `claude-opus-5` | Model id passed to the Cursor SDK |
-| `CURSOR_RUNTIME` | no | `local` | `local` runs the agent in-process; `cloud` uses a no-repo cloud agent |
-| `LOOKBACK_DAYS` | no | `7` | Items older than this are ignored |
-| `MAX_ITEMS_PER_RUN` | no | `12` | Hard cap on Slack messages from one run |
-| `MAX_ITEMS_PER_SOURCE` | no | `8` | Hard cap on new items accepted from one competitor + source |
-| `POSTHOG_MAX_PAGES` | no | `60` | PostHog.com pages fetched per run |
-| `POSTHOG_REFRESH_DAYS` | no | `14` | How stale an indexed page gets before it is re-read |
-| `SKIP_POSTHOG_INDEX` | no | `false` | Skip the crawl for a faster local run |
-| `HTTP_TIMEOUT_MS` | no | `20000` | Per-request timeout |
-| `USER_AGENT` | no | `posthog-competitor-happenings/0.1` | Sent on every outbound request |
-| `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 
-## Feature images
+And the tuning, which is right by default:
 
-An alert always opens with a picture, tried in this order:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DRY_RUN` | `false` | Print Slack payloads, skip every database write |
+| `FORCE_ANALYZE` | `false` | Analyze the first-run backlog instead of recording it. Rejected unless `DRY_RUN=true` |
+| `CURSOR_MODEL` | `claude-opus-5` | Model id passed to the Cursor SDK |
+| `CURSOR_RUNTIME` | `local` | `local` runs the agent in-process; `cloud` uses a no-repo cloud agent |
+| `LOOKBACK_DAYS` | `7` | Items older than this are ignored |
+| `MAX_ITEMS_PER_RUN` | `12` | Hard cap on Slack messages from one run |
+| `MAX_ITEMS_PER_SOURCE` | `8` | Hard cap on new items from one competitor + source |
+| `POSTHOG_MAX_PAGES` | `60` | PostHog.com pages fetched per run |
+| `POSTHOG_REFRESH_DAYS` | `14` | How stale an indexed page gets before it is re-read |
+| `SKIP_POSTHOG_INDEX` | `false` | Skip the crawl for a faster local run |
+| `HTTP_TIMEOUT_MS` | `20000` | Per-request timeout |
+| `USER_AGENT` | `posthog-competitor-happenings/0.1` | Sent on every outbound request |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 
-1. Whatever the source attached – an RSS `enclosure` or `media:content`, an image embedded in the entry body, or a launch tweet's photo (or a video's preview frame).
-2. The feature page's own `og:image` / `twitter:image`, then in-content screenshots. Logos, icons, sprites, tracking pixels, tiny images, and SVGs are filtered out, and a site-wide brand card like `amplitude-default-seo.png` is pushed behind a real screenshot rather than used as the feature image.
-3. A screenshot of the feature page, rendered by a service in `SCREENSHOT_URL_TEMPLATE`. This is how the "screenshot the page" step happens without shipping a browser into the daily job, and Slack needs a public URL anyway.
-4. A generated card naming the competitor and the feature. Never pretty, but the message always has a valid image block.
+## State
 
-Every candidate is checked with a `HEAD` request first, so a 404 or an HTML error page never reaches Slack as an image.
+The bot keeps what it has seen in Postgres. Four tables, defined in
+[`migrations/001_init.sql`](./migrations/001_init.sql):
 
-### Entries that share a page
+- `items` – one row per competitor signal, unique on
+  `(competitor, source, external_id)`. This is the dedupe key.
+- `analyses` – one row per analyzed item, with the verdict as `jsonb`, the
+  feature image, and one issue per action, in action order.
+- `pages` – the PostHog.com pages we have read, and which competitors they
+  mention.
+- `claims` – the individual competitor-mentioning paragraphs we can cite.
 
-Mixpanel's changelog is one page with an `#anchor` per release, and its RSS points every entry at that page. Step 2 is skipped for those: the page's `og:image` is a Mintlify card that reads "Changelogs" whatever shipped, and the pictures on the page belong to the other releases. So an anchored entry goes straight to a screenshot of its own anchor, and when that fails it takes the generated card, which at least names the feature.
+An item is only ever deduped once, which is why a failed post is retried for
+three days rather than dropped.
 
-Keeping the anchor takes some care. `normalizeUrl` strips fragments so one page dedupes to one URL, so [`src/sources/rss.ts`](./src/sources/rss.ts) keeps the anchored link in `raw.entryUrl` and [`entryUrl`](./src/sources/link.ts) is what the image, the KNOW link, the footer, and the issue's source line all read. A raw `#` never survives a request – it is a fragment of the screenshot URL, not part of the page being screenshotted – so a renderer only sees it through the `{encodedUrl}` placeholder. `--url https://docs.mixpanel.com/changelogs#2026-08-27` matches on the anchor first for the same reason: without it, every Mixpanel entry answers to the same URL and a forced post takes whichever one the feed listed first.
+The rename from severity to impact needed no migration. The canonical verdict
+lives in the `analysis` jsonb; the legacy `analyses.severity` column keeps
+getting the impact token so its `NOT NULL` still holds, and nothing reads it
+back. Rows written before the rename, and any on the short-lived
+`low | medium | high` scale, are mapped back onto `minor | notable | major` on
+the way out.
 
-`SCREENSHOT_URL_TEMPLATE` takes a comma-separated list, tried in order. It defaults to microlink then thum.io: microlink is the one that honors an anchor, and thum.io has no daily quota, so it stands behind it for a day microlink turns us down.
+## Run it on your machine
 
-## Data model
+The bot needs Node 22.13 or later. No secrets, no database:
 
-Four tables, defined in [`migrations/001_init.sql`](./migrations/001_init.sql):
+```sh
+npm install
+DRY_RUN=true FORCE_ANALYZE=true POSTHOG_MAX_PAGES=10 MAX_ITEMS_PER_RUN=2 npm run run
+```
 
-- `items` – one row per competitor signal, unique on `(competitor, source, external_id)`
-- `analyses` – one row per analyzed item, with the structured verdict as `jsonb`, plus the feature image and one issue per action, in action order. A row written before the split carries a single `issue`, which is read back as the first action's
-- `pages` – the PostHog.com pages we have read, and which competitors they mention
-- `claims` – the individual competitor-mentioning paragraphs we can cite
+That hits the live changelogs and sitemaps, indexes a few PostHog.com pages,
+and prints the Slack payloads it would have sent. Nothing is written and
+nothing is posted.
 
-The rename from severity to impact needed no migration. The canonical verdict, impact included, lives in the `analysis` jsonb; the legacy `analyses.severity` column keeps getting the impact token so its `NOT NULL` still holds, and nothing reads it back. Rows written before the rename, and any written on the short-lived `low | medium | high` scale, are mapped back onto `minor | notable | major` on the way out.
+Two things degrade in that mode, and both say so in the log. With no
+`DATABASE_URL` the run uses an in-memory store, so every item looks new, which
+is why `FORCE_ANALYZE=true` is needed to get past the first-run guard. With no
+`CURSOR_API_KEY` analysis falls back to restating the source. A dry run never
+opens an issue, so the message says why the issue links are missing instead of
+pretending there are some.
+
+To see what one specific announcement produces:
+
+```sh
+npm run run -- \
+  --url https://amplitude.com/releases/schedule-experiment-stop \
+  --out artifacts/slack-test-message.md
+```
+
+That writes both the rendered message and the exact `chat.postMessage` payload.
+
+| Command | What it does |
+| --- | --- |
+| `npm run check-env` | Name every required variable that is missing, and where its value comes from. `-- --strict` includes the optional sources |
+| `npm run run` | One full cycle via `tsx`, no build step |
+| `npm run run -- --url <url>` | Push one named item through the whole pipeline, ignoring dedupe and the seed guard |
+| `npm run run -- --check-slack` | Ask Slack what `SLACK_BOT_TOKEN` is and which scopes it carries. Exits non-zero if it cannot post |
+| `npm run build` | Compile to `dist/` |
+| `npm start` | One full cycle from `dist/` |
+| `npm run typecheck` | Type-check `src/` and `test/` |
+| `npm test` | The unit tests |
 
 ## Test plan
 
-`npm test` covers the parsers against fixture feeds and sitemaps, the analysis response contract (including malformed, camelCase, and pre-rename model output), image extraction and every fallback in the chain, one issue draft per action with its labels and owner, claim extraction from both PostHog's pages and the competitors' compare pages, the relevance guard that keeps a page edit on the launch that found it, dedupe behavior, the setup check that names a missing secret, and the Slack message shape – image first, the one-sentence KNOW, the impact scale, the separate detail bullets, and one stacked block per recommended action with its punctuation and its own issue link. The fixtures under `test/fixtures/` are synthetic and marked as such – they exercise the shapes real feeds use, and are not copies of real competitor announcements.
+`npm test` covers the parsers against fixture feeds and sitemaps, the analysis
+response contract (including malformed, camelCase, and pre-rename model
+output), image extraction and every fallback in the chain, one issue draft per
+action with its labels and owner, claim extraction from PostHog's pages and the
+competitors' compare pages, the relevance guard that keeps a page edit on the
+launch that found it, team routing, dedupe behavior, the setup check that names
+a missing secret, and the Slack message shape. The fixtures under
+`test/fixtures/` are synthetic and marked as such. They exercise the shapes
+real feeds use, and are not copies of real competitor announcements.
 
-Beyond the unit tests, the three checks worth running against the real thing:
+Beyond the unit tests, three checks are worth running against the real thing:
 
-1. `npm run check-env -- --strict` on a fresh clone names every variable, and passes once the secrets are in.
-2. The dry run in [Try it without any secrets](#try-it-without-any-secrets) renders a full message from live feeds without posting.
-3. A forced post puts one known announcement in the channel end to end, issues and all. [`artifacts/slack-test-message.md`](./artifacts/slack-test-message.md) is the message that produced.
+1. `npm run check-env -- --strict` on a fresh clone names every variable, and
+   passes once the secrets are in.
+2. The dry run above renders a full message from live feeds without posting.
+3. A forced post puts one known announcement in the channel end to end, issues
+   and all.
 
 ## Handoff to PostHog
 
-This repo is the whole system: the code, the workflows, and the secrets checklist. It runs on its own Actions cron and needs nothing from PostHog's infrastructure, so adopting it is a fork, six secrets, and a channel id.
+This repo is the whole system: the code, the workflows, and the secrets
+checklist. It runs on its own Actions cron and needs nothing from PostHog's
+infrastructure, so adopting it is a fork, six secrets, and a channel id.
 
-To take it further inside PostHog, open an issue on [PostHog/marketing](https://github.com/PostHog/marketing) pointing at this repo. That repo is the planning hub rather than a deploy target, so the issue is where the conversation lives, not the code. Something like:
+To take it further inside PostHog, open an issue on
+[PostHog/marketing](https://github.com/PostHog/marketing) pointing at this
+repo. That repo is the planning hub rather than a deploy target, so the issue
+is where the conversation lives, not the code. Something like:
 
 > **Competitor happenings bot: daily Mixpanel and Amplitude alerts**
 >
-> A bot that reads Mixpanel's and Amplitude's changelogs, blogs, X accounts, and newsletters every morning, checks anything new against PostHog's own docs, and posts one Slack alert per launch with what we should do about it – enhance a product, build one, or fix a page that is now wrong. Each recommended action opens its own GitHub issue, labeled by owner and team, so the work lands on a desk rather than in a channel.
+> A bot that reads Mixpanel's and Amplitude's changelogs, blogs, X accounts,
+> and newsletters every morning, checks anything new against PostHog's own
+> docs, and posts one Slack alert per launch with what we should do about it –
+> enhance a product, build one, or fix a page that is now wrong. Each
+> recommended action opens its own GitHub issue, labeled by owner and team, so
+> the work lands on a desk rather than in a channel.
 >
-> Running today in [itsmechase15/posthog-competitor-happenings](https://github.com/itsmechase15/posthog-competitor-happenings). Setup is a fork, six Actions secrets, and a Slack channel id – the README has the checklist, and a Check secrets workflow that tells you what is missing.
+> Running today in
+> [itsmechase15/posthog-competitor-happenings](https://github.com/itsmechase15/posthog-competitor-happenings).
+> Setup is a fork, six Actions secrets, and a Slack channel id. The README has
+> the checklist, and a Check secrets workflow that tells you what is missing.
 >
-> Worth deciding: which channel it should post to, and whether the issues belong here or stay in the bot's own repo.
+> Worth deciding: which channel it should post to, and whether the issues
+> belong here or stay in the bot's own repo.
 
-One thing on the roadmap and deliberately not built: replying to a Slack alert to edit its recommended actions.
+[PLAN.md](./PLAN.md) has the scope and phasing. One thing on the roadmap and
+deliberately not built: replying to a Slack alert to edit its recommended
+actions.
