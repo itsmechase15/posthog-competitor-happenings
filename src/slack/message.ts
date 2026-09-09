@@ -17,6 +17,35 @@ export interface SlackMessage {
 
 export const ISSUE_LINK_LABEL = "Access GitHub issue";
 
+/** Slack truncates a header block past this, so the title is cut first. */
+const MAX_HEADER_CHARS = 150;
+
+/**
+ * The line at the very top of an alert: which competitor, and what they
+ * shipped. Slack headers are plain text, so this is sanitized but not escaped.
+ */
+export function alertHeaderText(alert: Alert): string {
+  const competitor = COMPETITORS[alert.item.competitor].label;
+  return sanitizeCopy(truncate(`${competitor} · ${alert.item.title}`, MAX_HEADER_CHARS));
+}
+
+/**
+ * The visual break every alert opens with. Slack collapses consecutive
+ * messages from the same bot, so without this a second alert reads as more of
+ * the first one: a picture appears under the previous message's footer with
+ * nothing saying a new item started. The divider draws the line and the header
+ * names what is below it.
+ *
+ * Both blocks are built here, and nothing else depends on them, so taking the
+ * break back out is deleting this function and its call.
+ */
+export function alertBreakBlocks(alert: Alert): unknown[] {
+  return [
+    { type: "divider" },
+    { type: "header", text: { type: "plain_text", text: alertHeaderText(alert), emoji: true } },
+  ];
+}
+
 /**
  * The link under one action. Every action has an issue of its own, so the
  * number is part of the label: three links reading "Access GitHub issue" would
@@ -128,7 +157,11 @@ export function renderMessageText(message: SlackMessage): string {
     alt_text?: string;
     elements?: Array<{ text?: string }>;
   }>) {
-    if (block.type === "image" && block.image_url) {
+    if (block.type === "divider") {
+      parts.push("---");
+    } else if (block.type === "header" && block.text?.text) {
+      parts.push(`*${block.text.text}*`);
+    } else if (block.type === "image" && block.image_url) {
       parts.push(`![${block.alt_text ?? ""}](${block.image_url})`);
     } else if (block.type === "section" && block.text?.text) {
       parts.push(block.text.text);
@@ -151,9 +184,11 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   const points = detailPoints(alert);
 
   const blocks: unknown[] = [
-    // Always first, always present: the picture is what makes the alert
-    // readable at a glance in a busy channel. alt_text is plain text, so it is
-    // the one string here that must not be mrkdwn-escaped.
+    // The break between this alert and whatever Slack collapsed it into.
+    ...alertBreakBlocks(alert),
+    // First after the break, always present: the picture is what makes the
+    // alert readable at a glance in a busy channel. alt_text is plain text, so
+    // it is the one string here that must not be mrkdwn-escaped.
     {
       type: "image",
       image_url: image.url,

@@ -86,8 +86,26 @@ describe("buildSlackMessage", () => {
   const blocks = message.blocks as Array<Record<string, any>>;
   const rendered = JSON.stringify(message);
 
-  it("opens with the feature image, before any text", () => {
-    expect(blocks[0]).toEqual({
+  it("opens with a divider and a header, so a collapsed run of alerts still breaks", () => {
+    expect(blocks[0]).toEqual({ type: "divider" });
+    expect(blocks[1]).toEqual({
+      type: "header",
+      text: { type: "plain_text", text: "Amplitude · Schedule experiment stop", emoji: true },
+    });
+  });
+
+  it("cuts a long title rather than letting Slack truncate the header", () => {
+    const long = buildSlackMessage({
+      ...alert,
+      item: { ...alert.item, title: "Schedule experiment stop ".repeat(12) },
+    });
+    const header = (long.blocks as Array<Record<string, any>>)[1]?.text?.text as string;
+    expect(header.length).toBeLessThanOrEqual(150);
+    expect(header.startsWith("Amplitude · Schedule experiment stop")).toBe(true);
+  });
+
+  it("shows the feature image first under the break, before any prose", () => {
+    expect(blocks[2]).toEqual({
       type: "image",
       image_url: "https://fixture.invalid/images/schedule-stop.png",
       alt_text: "Amplitude: Schedule experiment stop",
@@ -95,7 +113,7 @@ describe("buildSlackMessage", () => {
   });
 
   it("puts the one-sentence summary under the KNOW heading, not on an unlabelled line", () => {
-    const first = blocks[1]?.text?.text as string;
+    const first = blocks[3]?.text?.text as string;
     expect(first).toBe(
       "*What you need to KNOW*\nAmplitude experiments can now be scheduled to stop on their own.",
     );
@@ -103,7 +121,7 @@ describe("buildSlackMessage", () => {
   });
 
   it("puts impact directly under the KNOW sentence", () => {
-    expect(blocks[2]?.text?.text).toBe("*Impact*  :large_orange_circle: Notable");
+    expect(blocks[4]?.text?.text).toBe("*Impact*  :large_orange_circle: Notable");
   });
 
   it("uses that same sentence as the notification text", () => {
@@ -119,7 +137,7 @@ describe("buildSlackMessage", () => {
   });
 
   it("keeps the elaborating bullets under their own heading, below impact", () => {
-    const detail = blocks[3]?.text?.text as string;
+    const detail = blocks[5]?.text?.text as string;
     expect(detail).toContain("*More detail*");
     expect(detail).toContain("• Set a start time, an end time, or both");
     expect(detail).not.toContain(base.analysis.summary);
@@ -395,20 +413,26 @@ describe("buildSlackMessage", () => {
     expect(rendered).not.toContain("Does the schedule apply");
   });
 
-  it("stays short: one image, a handful of sections, one footer", () => {
-    // Five fixed blocks plus one per action, and an alert carries at most three.
-    expect(blocks.length).toBeLessThanOrEqual(8);
+  it("stays short: a break, one image, a handful of sections, one footer", () => {
+    // Seven fixed blocks plus one per action, and an alert carries at most three.
+    expect(blocks.length).toBeLessThanOrEqual(10);
   });
 
-  it("orders the blocks image, KNOW, impact, detail, actions, footer", () => {
+  it("orders the blocks break, image, KNOW, impact, detail, actions, footer", () => {
     const headings = blocks.map((block) =>
-      block.type === "image"
-        ? "image"
-        : block.type === "context"
-          ? "footer"
-          : ((block.text?.text as string).split("\n")[0] ?? ""),
+      block.type === "divider"
+        ? "divider"
+        : block.type === "header"
+          ? "header"
+          : block.type === "image"
+            ? "image"
+            : block.type === "context"
+              ? "footer"
+              : ((block.text?.text as string).split("\n")[0] ?? ""),
     );
     expect(headings).toEqual([
+      "divider",
+      "header",
       "image",
       "*What you need to KNOW*",
       "*Impact*  :large_orange_circle: Notable",
@@ -460,7 +484,7 @@ describe("buildSlackMessage", () => {
 
   it("renders to readable text for logs and artifacts", () => {
     const text = renderMessageText(message);
-    expect(text.startsWith("![Amplitude: Schedule experiment stop](https://fixture.invalid/")).toBe(
+    expect(text.startsWith("---\n\n*Amplitude · Schedule experiment stop*\n\n![Amplitude")).toBe(
       true,
     );
     expect(text).toContain("*What you need to KNOW*");
