@@ -86,6 +86,34 @@ describe("parseAnalysis", () => {
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
   });
 
+  it("keeps the small teams a reply names, in either casing", () => {
+    const snake = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          { type: "consider_enhancing", detail: "d", feature: "Experiments", teams: ["Experiments"] },
+        ],
+      }),
+    );
+    expect(snake.actions[0]?.teams).toEqual(["Experiments"]);
+
+    const camel = parseAnalysis(
+      JSON.stringify({
+        impact: "minor",
+        summary: "s",
+        actions: [{ action: "consider_building", actionDetail: "d", posthogTeams: ["Ingestion", ""] }],
+      }),
+    );
+    expect(camel.actions[0]?.teams).toEqual(["Ingestion"]);
+  });
+
+  it("leaves teams off when a reply names none", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({ impact: "minor", summary: "s", actions: [{ type: "update_pages", detail: "d", teams: [] }] }),
+    );
+    expect(analysis.actions[0]).not.toHaveProperty("teams");
+  });
+
   it("reads a legacy severity field as its impact level", () => {
     const legacy = { ...valid, severity: "major" } as Record<string, unknown>;
     delete legacy.impact;
@@ -467,6 +495,21 @@ describe("buildAnalysisPrompt", () => {
     expect(withRefs).toContain('"actions"');
     expect(withRefs).toContain("Name the PostHog feature to enhance");
     expect(withRefs).toContain("Consider enhancing Experiments");
+  });
+
+  it("lists PostHog's small teams and what each one owns", () => {
+    expect(withRefs).toContain("## PostHog small teams, from https://posthog.com/teams");
+    expect(withRefs).toContain("- Experiments \u2013 owns Experiments");
+    expect(withRefs).toContain("- Ingestion \u2013 owns Ingestion, Reverse proxy");
+    // A team that owns nothing routing cares about still has to be listed, so
+    // the model can name it rather than reaching for a department.
+    expect(withRefs).toContain("- Growth");
+  });
+
+  it("asks for teams from that list, and refuses a department", () => {
+    expect(withRefs).toContain('"teams" is 1 to 3 PostHog small teams');
+    expect(withRefs).toContain('"Product", "Engineering", "Platform", and "Core" are not teams');
+    expect(withRefs).toContain("an experiments gap is for Experiments");
   });
 
   it("asks for an action detail that opens with one short sentence", () => {

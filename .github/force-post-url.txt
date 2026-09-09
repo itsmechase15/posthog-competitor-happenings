@@ -48,4 +48,7 @@
 # than by the page every Mixpanel entry shares. The alert should open with a
 # screenshot of that entry instead of the "Changelogs" card, and the KNOW
 # sentence should end with a linked changelog pointing at the same anchor.
-https://docs.mixpanel.com/changelogs#2026-08-27
+# 2026-09-09 back to the Amplitude scheduled experiment stop for the first post
+# routed to PostHog's real small teams: the Related team(s) line on the enhance
+# issue should read Experiments, not Product.
+https://amplitude.com/releases/schedule-experiment-stop
