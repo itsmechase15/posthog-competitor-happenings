@@ -36,4 +36,12 @@
 # 2026-09-09 and one Mixpanel changelog item straight after, so the divider and
 # header can be read where they matter: two alerts in a row that Slack would
 # otherwise collapse into one another.
+# 2026-09-09 the same Mixpanel changelog item again, now that the catalog knows
+# about the reverse proxy. Today's newest entry is First-Party Domains, which is
+# the launch that got this wrong: the run should put
+# posthog.com/docs/advanced/proxy in front of the model, the alert should read
+# as a gap next to PostHog's managed reverse proxy rather than something PostHog
+# has never shipped, and the enhance issue should carry "Docs that would change
+# if this ships" listing those proxy pages. No update_pages should point at a
+# docs URL.
 https://docs.mixpanel.com/changelogs
