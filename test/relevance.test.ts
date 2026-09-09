@@ -72,6 +72,7 @@ describe("signalTopic", () => {
       "Scheduling an experiment stop is not possible in PostHog.",
       "Amplitude scheduled stops land in the compare page.",
       "The page claims nobody stops an experiment on a timer.",
+      "The page says an experiment takes no end dates.",
     ]) {
       expect(tiesToTopic(text, topic)).toBe(true);
     }

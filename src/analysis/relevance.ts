@@ -33,19 +33,14 @@ const GENERIC_WORDS = [
   "can", "cannot", "could", "will", "would", "should", "must", "may", "might",
   "now", "new", "also", "just", "only", "still", "already", "yet", "not", "no",
   "all", "any", "one", "two", "more", "most", "some", "each", "every", "both",
-  "let", "lets", "get", "gets", "got", "make", "makes", "made", "add", "adds", "added",
-  "use", "uses", "used", "using", "say", "says", "said", "see", "sees", "need", "needs",
-  "want", "wants", "give", "gives", "take", "takes", "put", "puts", "pick", "picks",
-  "user", "users", "team", "teams", "customer", "customers", "people", "someone",
-  "product", "products", "feature", "features", "capability", "capabilities",
-  "page", "pages", "section", "sections", "line", "lines", "copy", "claim", "claims",
-  "launch", "launches", "launched", "ship", "ships", "shipped", "release", "released",
-  "announce", "announces", "announced", "available", "availability", "general",
-  "support", "supports", "supported", "way", "ways", "thing", "things", "work", "works",
-  "today", "instead", "without", "about", "because", "so", "why", "how", "same",
-  "own", "out", "off", "over", "under", "before", "after", "again", "very", "much",
-  "competitor", "competitors", "posthog", "compare", "comparison", "matrix", "row",
-  "rows", "update", "updates", "updated", "edit", "edits", "fix", "fixes",
+  "let", "get", "got", "make", "made", "add", "use", "used", "say", "see", "need",
+  "want", "give", "take", "put", "pick", "user", "team", "customer", "people",
+  "someone", "product", "feature", "capability", "page", "section", "line", "copy",
+  "claim", "launch", "ship", "release", "announce", "available", "availability",
+  "general", "support", "way", "thing", "work", "today", "instead", "without",
+  "about", "because", "so", "why", "how", "same", "own", "out", "off", "over",
+  "under", "before", "after", "again", "very", "much", "competitor", "posthog",
+  "compare", "comparison", "matrix", "row", "update", "edit", "fix",
 ];
 
 const STOPWORDS = new Set([
@@ -56,21 +51,23 @@ const STOPWORDS = new Set([
 /**
  * Fold a word to a stem crude enough to be predictable: schedule, schedules,
  * scheduled, and scheduling all have to land on the same token, and stopping
- * has to land on stop.
+ * has to land on stop. Plurals go first, so dates and date meet at date rather
+ * than parting at dat and date.
  */
 export function stem(word: string): string {
-  let stemmed = word;
-  if (stemmed.length > 4 && stemmed.endsWith("ies")) {
-    stemmed = `${stemmed.slice(0, -3)}y`;
-  }
-  for (const suffix of ["ing", "ed", "es", "s", "e"]) {
-    if (stemmed.length > 4 && stemmed.endsWith(suffix)) {
-      stemmed = stemmed.slice(0, -suffix.length);
-      break;
-    }
-  }
+  let stemmed = singular(word);
+  if (stemmed.length > 4 && stemmed.endsWith("ing")) stemmed = stemmed.slice(0, -3);
+  else if (stemmed.length > 4 && stemmed.endsWith("ed")) stemmed = stemmed.slice(0, -2);
+  if (stemmed.length > 4 && stemmed.endsWith("e")) stemmed = stemmed.slice(0, -1);
   // "stopping" and "shipped" lose a doubled consonant that "stop" never had.
   return stemmed.replace(/([bdgklmnprt])\1$/, "$1");
+}
+
+function singular(word: string): string {
+  if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (word.length > 4 && /(?:ss|s|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
+  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
 }
 
 /** Text as a space-padded run of stems, so a term can be matched whole. */
