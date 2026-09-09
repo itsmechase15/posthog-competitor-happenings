@@ -10,12 +10,13 @@ See [PLAN.md](./PLAN.md) for scope, phasing, and the handoff plan.
 
 Every alert has the same parts, in this order:
 
-1. **A feature image**, always first. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page. An alert is never posted without one.
-2. **What you need to KNOW** – the heading carries the one sentence on what changed. There is no unlabeled line above it competing to be read first.
-3. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
-4. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
-5. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line, exactly one short sentence below, and a link to that action's own GitHub issue. That sentence leads with the work: "Consider enhancing" opens with the change to make and "Update pages" opens with which page and what it should say, because it is the only line the reader gets. [`docs/writing.md`](./docs/writing.md) has the good and bad shapes. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
-6. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
+1. **A divider and a header**, always first: `Amplitude · Schedule experiment stop`. Slack collapses consecutive messages from the same bot, so without a break the second alert of a morning reads as more of the first one. The line and the title say where one ends and the next starts. Both blocks are built by `alertBreakBlocks` in [`src/slack/message.ts`](./src/slack/message.ts), and nothing else depends on them, so the break can come back out in one edit.
+2. **A feature image**, first under the break. The changelog or blog post's own image if it has one, a launch tweet's image, otherwise a screenshot of the feature page. An alert is never posted without one.
+3. **What you need to KNOW** – the heading carries the one sentence on what changed. There is no unlabeled line above it competing to be read first.
+4. **Impact** – `minor`, `notable`, or `major`, right under that sentence. A label, not a gate: everything new gets a message.
+5. **More detail** – two to four short bullets that elaborate on the sentence. Its own heading, so it never reads as a second summary.
+6. **Recommended action(s)** – a heading, then each action stacked under it: a bold title on its own line, exactly one short sentence below, and a link to that action's own GitHub issue. That sentence leads with the work: "Consider enhancing" opens with the change to make and "Update pages" opens with which page and what it should say, because it is the only line the reader gets. [`docs/writing.md`](./docs/writing.md) has the good and bad shapes. Each action is its own block, so Slack leaves space between them and none of it reads as a dense bullet list on a phone. An alert often needs two: a stale page to fix and a feature gap to close. "Consider enhancing" names the PostHog feature to enhance, because the label on its own names nothing, and links that feature to its product page when [`src/posthog/products.ts`](./src/posthog/products.ts) has a checked URL for it.
+7. **A small footer** – competitor, source, the model that analyzed it, and a link to the source.
 
 There is no single issue link for the whole alert. Three actions means three issues and three links, one under each action, because the work lands on different desks: marketing owns the page actions, product owns building and enhancing.
 
@@ -96,7 +97,17 @@ Each recommended action gets its own issue in this repo, opened before the Slack
 
 Each issue is scoped to its own action and titled `Competitor: feature – Action`. It carries what Slack no longer does: that action in full, the summary and key points, the impact, open questions, source links, and the feature image. Impact is written as the whole scale – a task list of `Minor`, `Notable`, `Major` with this alert's level checked – so a reader sees where it sits without holding the scale in their head. Slack keeps the single label. Marketing's issues get the PostHog pages to update as url + claim today + suggested edit. Product's get only the docs that back the action they are being asked to take: no suggested edits, no compare-page copy, and no docs page for a product some other action in the same alert named. Nothing lists the sibling actions, because each one is its own issue.
 
-An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, and `product:<feature>` when the action names a PostHog product. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<team>` per related team, and `product:<feature>` when the action names a PostHog product. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+
+### Related team(s)
+
+Every issue has a `## Related team(s)` line under the recommended action, saying who the work is for. [`src/teams.ts`](./src/teams.ts) is the whole map, and it is deliberately coarse:
+
+- Page work – `update_pages` and `new_compare_page` – is **Marketing**.
+- Building and enhancing – `consider_building` and `consider_enhancing` – is **Product**.
+- **Engineering** is added on top when the action is plainly about the plumbing: SDKs, APIs, ingestion, pipelines, proxies, webhooks, self-hosting, DNS. It is a whole-word keyword match on the action's feature and detail, so "rapid" is not an API.
+
+There is always at least one team and never more than three. It stays this coarse on purpose: PostHog's real team list is not something this app can read yet, and a specific team guessed wrong routes the issue to nobody. When there is a list to route against, `relatedTeams` in [`src/teams.ts`](./src/teams.ts) is the only function the issue builder calls, so that is the one place to change.
 
 Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret. Locally, set a PAT as `GITHUB_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: that action's block goes out without a link, and the other actions keep theirs.
 
