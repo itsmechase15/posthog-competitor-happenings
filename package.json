@@ -9,6 +9,7 @@
   },
   "scripts": {
     "run": "tsx src/index.ts",
+    "check-env": "tsx src/setup/check-env.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
