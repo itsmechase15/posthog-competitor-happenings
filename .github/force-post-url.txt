@@ -23,4 +23,7 @@
 # retrigger 2026-09-09 to confirm the topic guard holds on a second run: the
 # alert should lead Experiments with the scheduled end time and stay free of an
 # update_pages about basic A/B testing or holdouts
+# retrigger 2026-09-09 for the first post carrying the whole impact scale in the
+# issue body: ## Impact should list minor, notable and major, with the checked
+# box on this alert's level instead of printing that one label alone
 https://amplitude.com/releases/schedule-experiment-stop
