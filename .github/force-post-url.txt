@@ -51,4 +51,8 @@
 # 2026-09-09 back to the Amplitude scheduled experiment stop for the first post
 # routed to PostHog's real small teams: the Related team(s) line on the enhance
 # issue should read Experiments, not Product.
-https://amplitude.com/releases/schedule-experiment-stop
+# 2026-09-09 and Mixpanel's First-Party Domains straight after, because it is
+# the other half of the same proof: a launch about ingestion plumbing should
+# name Ingestion, and a page edit about it should name Marketing, where the old
+# map could only ever have said "Product, Engineering".
+https://docs.mixpanel.com/changelogs#2026-08-27
