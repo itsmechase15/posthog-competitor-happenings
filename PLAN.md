@@ -67,6 +67,15 @@ model replies, so a contradicted "PostHog has nothing like this" cannot ship.
   "Customers might ask", a missing feature-matrix row, and "the page could be
   stronger" are not reasons. When no page is wrong, understated, or
   contradicted, update pages is left out and the other actions carry the alert
+- Update pages also has to be about the competitor product update in the signal
+  that found it. A launch is not a licence to fix the rest of the page it
+  touches: a signal about scheduling an experiment stop does not get to ask
+  someone to answer an old "basic A/B testing" claim, quote new pricing, or add
+  a holdouts row. Same page, different topic. A small launch often needs no page
+  edit at all, and a notable impact is not a reason for one –
+  `enforceUpdatePagesTopic` in [`src/analysis/relevance.ts`](./src/analysis/relevance.ts)
+  drops a page action whose detail and suggested edit never touch the launch's
+  own vocabulary, which can leave an alert with no action, and that is fine
 - For reason 3, the competitor's own comparison pages about PostHog go into the
   analysis context: `comparePages` in [`src/config.ts`](./src/config.ts), read
   once per competitor per run by [`src/competitor/compare.ts`](./src/competitor/compare.ts).
