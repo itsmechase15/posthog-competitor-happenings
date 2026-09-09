@@ -104,7 +104,7 @@ async function listCandidateUrls(config: Config): Promise<string[]> {
   // they are the pages analysis reads to check a gap claim, so they are in the
   // index whether or not posthog.com lists them today.
   const urls = [...CANONICAL_DOC_URLS, ...parseSitemap(xml).entries.map((entry) => entry.url)]
-    .map(normalizeUrl)
+    .map((url) => normalizeUrl(url))
     .filter(isIndexCandidate);
   return [...new Set(urls)].sort(
     (a, b) => candidatePriority(a) - candidatePriority(b) || a.localeCompare(b),

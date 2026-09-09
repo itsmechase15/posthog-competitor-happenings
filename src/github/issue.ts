@@ -4,6 +4,7 @@ import { createLogger } from "../log.js";
 import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
 import { isDocsUrl, isMarketingTarget } from "../posthog/pages.js";
 import { findProductByName, productForDocUrl, productsForAction } from "../posthog/products.js";
+import { entryUrl } from "../sources/link.js";
 import { relatedTeams, relatedTeamsLabel } from "../teams.js";
 import {
   IMPACTS,
@@ -224,7 +225,7 @@ export function buildIssueBody(
     pagesSection(alert, action),
     docsThatWouldChangeSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
-    `## Sources\n- [${competitor.label} ${item.source}](${item.url})${
+    `## Sources\n- [${competitor.label} ${item.source}](${entryUrl(item)})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""
     }`,
     `---\nOpened by posthog-competitor-happenings. Analyzed with \`${model}\`.`,

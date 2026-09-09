@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { COMPETITORS } from "../src/config.js";
+import { entryUrl } from "../src/sources/link.js";
 import { changelogExternalId, feedEntriesToItems, parseFeed } from "../src/sources/rss.js";
 
 const xml = readFileSync(
@@ -41,6 +42,11 @@ describe("parseFeed", () => {
     expect(entries[1]?.link).toBe("https://fixture.invalid/releases/plain-title");
   });
 
+  it("drops the anchor from the link but keeps it as the entry link", () => {
+    expect(entries[0]?.link).toBe("https://fixture.invalid/changelogs");
+    expect(entries[0]?.entryLink).toBe("https://fixture.invalid/changelogs#2026-01-15");
+  });
+
   it("picks up an embedded screenshot, skipping the logo next to it", () => {
     expect(entries[0]?.image).toBe("https://fixture.invalid/img/widget-sync.png");
   });
@@ -65,6 +71,7 @@ describe("changelogExternalId", () => {
     const id = changelogExternalId({
       title: "No identity",
       link: "",
+      entryLink: "",
       guid: null,
       publishedAt: new Date("2026-01-01T00:00:00Z"),
       body: "",
@@ -87,5 +94,17 @@ describe("feedEntriesToItems", () => {
   it("carries the entry's image through for the alert", () => {
     const items = feedEntriesToItems(COMPETITORS.mixpanel, parseFeed(xml));
     expect(items[0]?.raw.image).toBe("https://fixture.invalid/img/widget-sync.png");
+  });
+
+  it("keeps the anchor an entry shares a page with the rest of the changelog", () => {
+    const items = feedEntriesToItems(COMPETITORS.mixpanel, parseFeed(xml));
+    expect(items[0]?.url).toBe("https://fixture.invalid/changelogs");
+    expect(entryUrl(items[0]!)).toBe("https://fixture.invalid/changelogs#2026-01-15");
+  });
+
+  it("leaves entryUrl out when the entry has a page of its own", () => {
+    const items = feedEntriesToItems(COMPETITORS.mixpanel, parseFeed(xml));
+    expect(items[1]?.raw.entryUrl).toBeUndefined();
+    expect(entryUrl(items[1]!)).toBe("https://fixture.invalid/releases/plain-title");
   });
 });

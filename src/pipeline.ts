@@ -15,6 +15,7 @@ import {
 } from "./slack/post.js";
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
+import { entryUrl } from "./sources/link.js";
 import type { ActionIssue, Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
 import { daysAgo, normalizeUrl, SPACED_EN_DASH } from "./util/text.js";
 
@@ -182,10 +183,16 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
 
     const { candidates } = await collectCandidates(config);
     const wanted = normalizeUrl(targetUrl);
-    const match = candidates.find(
-      (candidate) =>
-        normalizeUrl(candidate.url) === wanted || normalizeUrl(candidate.externalId) === wanted,
-    );
+    const wantedEntry = normalizeUrl(targetUrl, { keepFragment: true });
+    // The anchor first: every Mixpanel changelog entry shares one page URL, so
+    // dropping the hash would post whichever of them the feed happened to list
+    // first rather than the one that was asked for.
+    const match =
+      candidates.find((candidate) => entryUrl(candidate) === wantedEntry) ??
+      candidates.find(
+        (candidate) =>
+          normalizeUrl(candidate.url) === wanted || normalizeUrl(candidate.externalId) === wanted,
+      );
     if (!match) {
       throw new Error(
         `no live feed item matches ${targetUrl} — found ${candidates.length} candidates, none with that URL`,

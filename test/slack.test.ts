@@ -115,9 +115,52 @@ describe("buildSlackMessage", () => {
   it("puts the one-sentence summary under the KNOW heading, not on an unlabelled line", () => {
     const first = blocks[3]?.text?.text as string;
     expect(first).toBe(
-      "*What you need to KNOW*\nAmplitude experiments can now be scheduled to stop on their own.",
+      "*What you need to KNOW*\nAmplitude experiments can now be scheduled to stop on their own." +
+        " (<https://fixture.invalid/releases/schedule-experiment-stop|changelog>)",
     );
     expect(first).not.toContain("· changelog");
+  });
+
+  it("links the source from the KNOW sentence, so the change opens in one click", () => {
+    const labels: Array<[Alert["item"]["source"], string]> = [
+      ["changelog", "changelog"],
+      ["blog", "post"],
+      ["x", "tweet"],
+    ];
+    for (const [source, label] of labels) {
+      const message = buildSlackMessage({ ...base, item: { ...base.item, source } });
+      const know = (message.blocks as Array<Record<string, any>>)[3]?.text?.text as string;
+      expect(know).toContain(`(<${base.item.url}|${label}>)`);
+    }
+  });
+
+  it("links the anchored entry, not the changelog page it shares with every release", () => {
+    const message = buildSlackMessage({
+      ...base,
+      item: {
+        ...base.item,
+        url: "https://fixture.invalid/changelogs",
+        raw: { entryUrl: "https://fixture.invalid/changelogs#2026-01-15" },
+      },
+    });
+    const rendered = JSON.stringify(message);
+    expect(rendered).toContain("(<https://fixture.invalid/changelogs#2026-01-15|changelog>)");
+    expect(rendered).toContain("<https://fixture.invalid/changelogs#2026-01-15|source>");
+  });
+
+  it("invents no link for a newsletter, whose thread only we can open", () => {
+    const message = buildSlackMessage({
+      ...base,
+      item: {
+        ...base.item,
+        source: "newsletter",
+        url: "https://app.agentmail.to/inboxes/a/threads/b",
+      },
+    });
+    const know = (message.blocks as Array<Record<string, any>>)[3]?.text?.text as string;
+    expect(know).toBe(
+      "*What you need to KNOW*\nAmplitude experiments can now be scheduled to stop on their own.",
+    );
   });
 
   it("puts impact directly under the KNOW sentence", () => {

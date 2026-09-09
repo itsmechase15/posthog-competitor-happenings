@@ -78,11 +78,16 @@ export function daysAgo(days: number, now = new Date()): Date {
   return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 }
 
-/** Drop tracking params and fragments so the same page always dedupes to one URL. */
-export function normalizeUrl(raw: string): string {
+/**
+ * Drop tracking params and fragments so the same page always dedupes to one
+ * URL. `keepFragment` is for the callers that need the anchor back: a
+ * changelog whose entries are `#anchors` on one page loses which entry it was
+ * talking about the moment the hash goes.
+ */
+export function normalizeUrl(raw: string, options: { keepFragment?: boolean } = {}): string {
   try {
     const url = new URL(raw.trim());
-    url.hash = "";
+    if (!options.keepFragment) url.hash = "";
     for (const key of [...url.searchParams.keys()]) {
       if (key.toLowerCase().startsWith("utm_") || key.toLowerCase() === "ref") {
         url.searchParams.delete(key);

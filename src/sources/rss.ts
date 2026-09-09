@@ -3,6 +3,7 @@ import type { CompetitorConfig } from "../config.js";
 import { extractImageUrls, htmlToText } from "../util/html.js";
 import { collapseWhitespace, normalizeUrl, parseDate, sha1, truncate } from "../util/text.js";
 import type { CandidateItem } from "../types.js";
+import { ENTRY_URL_KEY } from "./link.js";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -34,6 +35,12 @@ function asArray<T>(value: T | T[] | undefined): T[] {
 export interface FeedEntry {
   title: string;
   link: string;
+  /**
+   * The link as the feed wrote it, anchor included. Mixpanel points every
+   * entry at a hash on one changelogs page, so this is the only thing that
+   * says which release the entry is.
+   */
+  entryLink: string;
   guid: string | null;
   publishedAt: Date | null;
   /** Full entry body as plain text, when the feed provides one. */
@@ -81,6 +88,7 @@ export function parseFeed(xml: string): FeedEntry[] {
       return {
         title: textOf(entry.title),
         link: normalizedLink,
+        entryLink: link ? normalizeUrl(link, { keepFragment: true }) : "",
         guid: textOf(guidNode) || null,
         publishedAt: parseDate(
           textOf(entry.pubDate) || textOf(entry.published) || textOf(entry.updated),
@@ -118,6 +126,10 @@ export function feedEntriesToItems(
       guid: entry.guid,
       body: truncate(entry.body, 8_000),
       image: entry.image,
+      // Only when it says something the url no longer does, i.e. an anchor.
+      ...(entry.entryLink && entry.entryLink !== entry.link
+        ? { [ENTRY_URL_KEY]: entry.entryLink }
+        : {}),
     },
   }));
 }
