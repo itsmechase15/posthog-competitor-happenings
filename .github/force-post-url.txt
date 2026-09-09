@@ -26,4 +26,8 @@
 # retrigger 2026-09-09 for the first post carrying the whole impact scale in the
 # issue body: ## Impact should list minor, notable and major, with the checked
 # box on this alert's level instead of printing that one label alone
-https://amplitude.com/releases/schedule-experiment-stop
+# 2026-09-09 switching to Mixpanel to see the impact scale on a second post.
+# Every entry in Mixpanel's changelog feed carries the same link, so this URL
+# names the feed rather than one item: it resolves to whichever entry is newest,
+# today "First-Party Domains" from 2026-08-27.
+https://docs.mixpanel.com/changelogs
