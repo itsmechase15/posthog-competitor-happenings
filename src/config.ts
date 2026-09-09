@@ -57,12 +57,21 @@ export const DEFAULT_SLACK_CHANNEL_ID = "C0C07A1DM09";
 export const DEFAULT_GITHUB_REPO = "itsmechase15/posthog-competitor-happenings";
 
 /**
- * Renders a page and returns the render as an image. Used only when a
+ * Renderers that turn a page into an image, tried in order. Used when a
  * competitor's page offers no usable picture of its own, so the alert still
  * opens with a screenshot of the feature rather than nothing.
+ *
+ * Microlink leads because it is the one that honors a fragment: a Mixpanel
+ * changelog entry is an `#anchor` on a page of entries, and a renderer that
+ * drops the hash screenshots whatever happens to be at the top instead. It
+ * only takes the hash through `{encodedUrl}` – an unencoded `#` never leaves
+ * the client. thum.io has no daily quota, so it stays behind it as the
+ * fallback for a day microlink turns down.
  */
-export const DEFAULT_SCREENSHOT_URL_TEMPLATE =
-  "https://image.thum.io/get/width/1200/crop/900/noanimate/{url}";
+export const DEFAULT_SCREENSHOT_URL_TEMPLATES = [
+  "https://api.microlink.io/?url={encodedUrl}&screenshot=true&meta=false&embed=screenshot.url",
+  "https://image.thum.io/get/width/1200/crop/900/noanimate/{url}",
+];
 
 export interface Config {
   dryRun: boolean;
@@ -77,8 +86,11 @@ export interface Config {
   githubToken: string | undefined;
   /** `owner/repo` the issues are filed against. */
   githubRepo: string;
-  /** URL template whose `{url}` is replaced with the page to screenshot. */
-  screenshotUrlTemplate: string;
+  /**
+   * URL templates whose `{url}` (or `{encodedUrl}`) is replaced with the page
+   * to screenshot, tried in order until one serves an image.
+   */
+  screenshotUrlTemplates: string[];
   cursorApiKey: string | undefined;
   cursorModel: string;
   /** "local" runs the agent on this machine; "cloud" uses a no-repo cloud agent. */
@@ -129,6 +141,17 @@ function str(name: string): string | undefined {
   return raw === undefined || raw.trim() === "" ? undefined : raw.trim();
 }
 
+/** A comma-separated variable, for the settings that accept more than one value. */
+function list(name: string): string[] | undefined {
+  const raw = str(name);
+  if (raw === undefined) return undefined;
+  const values = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
 export function loadConfig(): Config {
   const runtime = (str("CURSOR_RUNTIME") ?? "local").toLowerCase();
   if (runtime !== "local" && runtime !== "cloud") {
@@ -150,7 +173,7 @@ export function loadConfig(): Config {
     slackWebhookUrl: str("SLACK_WEBHOOK_URL"),
     githubToken: str("GITHUB_TOKEN") ?? str("GH_TOKEN"),
     githubRepo: str("GITHUB_REPOSITORY") ?? DEFAULT_GITHUB_REPO,
-    screenshotUrlTemplate: str("SCREENSHOT_URL_TEMPLATE") ?? DEFAULT_SCREENSHOT_URL_TEMPLATE,
+    screenshotUrlTemplates: list("SCREENSHOT_URL_TEMPLATE") ?? DEFAULT_SCREENSHOT_URL_TEMPLATES,
     cursorApiKey: str("CURSOR_API_KEY"),
     cursorModel: str("CURSOR_MODEL") ?? "claude-opus-5",
     cursorRuntime: runtime,

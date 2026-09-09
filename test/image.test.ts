@@ -12,7 +12,7 @@ import { extractImageUrls } from "../src/util/html.js";
 const config = {
   httpTimeoutMs: 5_000,
   userAgent: "test-agent",
-  screenshotUrlTemplate: "https://shots.invalid/{url}",
+  screenshotUrlTemplates: ["https://shots.invalid/{url}"],
 } as Config;
 
 const item: StoredItem = {
@@ -102,6 +102,12 @@ describe("screenshotUrl", () => {
     expect(screenshotUrl("https://shots.invalid/", "https://a.invalid/b")).toBe(
       "https://shots.invalid/https://a.invalid/b",
     );
+  });
+
+  it("encodes the page when the renderer asks for it, so an anchor survives", () => {
+    expect(
+      screenshotUrl("https://shots.invalid/?url={encodedUrl}", "https://a.invalid/b#c"),
+    ).toBe("https://shots.invalid/?url=https%3A%2F%2Fa.invalid%2Fb%23c");
   });
 });
 
@@ -193,6 +199,63 @@ describe("resolveFeatureImage", () => {
     stubHttp({ html: "<main><p>no pictures here</p></main>", types: { [shot]: "image/jpeg" } });
     const image = await resolveFeatureImage(config, item);
     expect(image).toMatchObject({ url: shot, origin: "screenshot" });
+  });
+
+  it("tries the next renderer when the first one will not render the page", async () => {
+    const shot = `https://backup-shots.invalid/${item.url}`;
+    stubHttp({ html: "<main><p>no pictures here</p></main>", types: { [shot]: "image/png" } });
+    const image = await resolveFeatureImage(
+      {
+        ...config,
+        screenshotUrlTemplates: [
+          "https://shots.invalid/{url}",
+          "https://backup-shots.invalid/{url}",
+        ],
+      } as Config,
+      item,
+    );
+    expect(image).toMatchObject({ url: shot, origin: "screenshot" });
+  });
+
+  /** Mixpanel's shape: every release is an anchor on one changelogs page. */
+  const anchored: StoredItem = {
+    ...item,
+    competitor: "mixpanel",
+    url: "https://fixture.invalid/changelogs",
+    raw: { entryUrl: "https://fixture.invalid/changelogs#2026-01-15" },
+  };
+
+  it("screenshots the anchored entry rather than the whole changelog page", async () => {
+    const shot = "https://shots.invalid/https://fixture.invalid/changelogs#2026-01-15";
+    const spy = stubHttp({
+      html: `<head><meta property="og:image" content="https://cdn.invalid/changelogs-card.png" /></head>`,
+      types: { [shot]: "image/png", "https://cdn.invalid/changelogs-card.png": "image/png" },
+    });
+    const image = await resolveFeatureImage(config, anchored);
+
+    expect(image).toMatchObject({ url: shot, origin: "screenshot" });
+    // The page's own card describes the page, so it is never even probed.
+    expect(spy.mock.calls.map(([url]) => url)).not.toContain(
+      "https://cdn.invalid/changelogs-card.png",
+    );
+  });
+
+  it("takes a generated card over the shared page's card when the screenshot fails", async () => {
+    stubHttp({
+      html: `<head><meta property="og:image" content="https://cdn.invalid/changelogs-card.png" /></head>`,
+      types: { "https://cdn.invalid/changelogs-card.png": "image/png" },
+    });
+    const image = await resolveFeatureImage(config, anchored);
+    expect(image).toMatchObject({ url: generatedCardUrl(anchored), origin: "generated" });
+  });
+
+  it("still uses the entry's own picture when the feed attached one", async () => {
+    stubHttp({ types: { "https://cdn.invalid/entry.png": "image/png" } });
+    const image = await resolveFeatureImage(config, {
+      ...anchored,
+      raw: { ...anchored.raw, image: "https://cdn.invalid/entry.png" },
+    });
+    expect(image).toMatchObject({ url: "https://cdn.invalid/entry.png", origin: "feed" });
   });
 
   it("never returns without an image, even when everything fails", async () => {

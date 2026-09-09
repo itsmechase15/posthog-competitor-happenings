@@ -34,7 +34,7 @@ export function parseSitemap(xml: string): ParsedSitemap {
   const children = asArray(parsed?.sitemapindex?.sitemap)
     .map(locOf)
     .filter(Boolean)
-    .map(normalizeUrl);
+    .map((url) => normalizeUrl(url));
 
   const entries = asArray(parsed?.urlset?.url)
     .map((node: unknown): SitemapEntry | null => {

@@ -1,5 +1,6 @@
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
+import { entryUrl, isAnchoredEntry } from "../sources/link.js";
 import type { CandidateItem, FeatureImage, StoredItem } from "../types.js";
 import { extractImageUrls } from "../util/html.js";
 import { fetchContentType, fetchText } from "../util/http.js";
@@ -30,8 +31,15 @@ function altTextFor(item: Pick<CandidateItem, "competitor" | "title">): string {
  * Renders the page and serves the result as an image, so the last resort is a
  * real screenshot of the competitor's feature page without shipping a browser
  * into the daily job. Swappable via `SCREENSHOT_URL_TEMPLATE`.
+ *
+ * `{encodedUrl}` is the placeholder to use when the page URL carries a
+ * fragment: a raw `#` in a URL is a fragment of the *screenshot* URL, so
+ * neither our HEAD probe nor Slack ever sends it to the renderer.
  */
 export function screenshotUrl(template: string, pageUrl: string): string {
+  if (template.includes("{encodedUrl}")) {
+    return template.replace("{encodedUrl}", encodeURIComponent(pageUrl));
+  }
   return template.includes("{url}")
     ? template.replace("{url}", pageUrl)
     : `${template}${pageUrl}`;
@@ -78,11 +86,27 @@ async function candidatesFromPage(config: Config, url: string): Promise<string[]
   }
 }
 
+/** The first renderer that gives us a picture of `pageUrl`, if any does. */
+async function firstWorkingScreenshot(config: Config, pageUrl: string): Promise<string | null> {
+  for (const template of config.screenshotUrlTemplates) {
+    const shot = screenshotUrl(template, pageUrl);
+    if (await servesAnImage(config, shot)) return shot;
+    log.debug(`${template} could not render ${pageUrl}`);
+  }
+  return null;
+}
+
 /**
  * Find the picture that goes at the top of an alert: whatever the feed or tweet
  * attached, then the page's own og:image or an in-content screenshot, then a
  * rendered screenshot of the page, and finally a generated card. The last step
  * cannot fail, because an alert without an image does not get posted.
+ *
+ * An entry that is an `#anchor` on a shared page skips the page's own images
+ * entirely. Mixpanel's changelog is one page holding every release, so its
+ * og:image is a Mintlify card reading "Changelogs" and its in-page pictures
+ * belong to other releases. Neither shows the thing that shipped, and the
+ * anchor is exactly what a renderer needs to scroll to the entry that did.
  */
 export async function resolveFeatureImage(config: Config, item: StoredItem): Promise<FeatureImage> {
   const altText = altTextFor(item);
@@ -92,7 +116,10 @@ export async function resolveFeatureImage(config: Config, item: StoredItem): Pro
     return { url: fromSource, altText, origin: item.source === "x" ? "x" : "feed" };
   }
 
-  const candidates = await candidatesFromPage(config, item.url);
+  const target = entryUrl(item);
+  const sharedPage = isAnchoredEntry(target);
+
+  const candidates = sharedPage ? [] : await candidatesFromPage(config, item.url);
   const specific = candidates.filter((url) => !isGenericPreview(url));
   const generic = candidates.filter(isGenericPreview);
 
@@ -102,10 +129,8 @@ export async function resolveFeatureImage(config: Config, item: StoredItem): Pro
     }
   }
 
-  const shot = screenshotUrl(config.screenshotUrlTemplate, item.url);
-  if (await servesAnImage(config, shot)) {
-    return { url: shot, altText, origin: "screenshot" };
-  }
+  const shot = await firstWorkingScreenshot(config, target);
+  if (shot) return { url: shot, altText, origin: "screenshot" };
 
   // A brand card is still better than a card we generated ourselves.
   for (const candidate of generic) {
@@ -114,6 +139,6 @@ export async function resolveFeatureImage(config: Config, item: StoredItem): Pro
     }
   }
 
-  log.warn(`no usable image for ${item.url} — falling back to a generated card`);
+  log.warn(`no usable image for ${target} — falling back to a generated card`);
   return { url: generatedCardUrl(item), altText, origin: "generated" };
 }
