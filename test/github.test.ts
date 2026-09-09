@@ -128,7 +128,7 @@ describe("buildIssueDrafts", () => {
 describe("buildIssueDraft", () => {
   const draft = buildIssueDraft(analyzed, image, pageAction);
 
-  it("labels competitor, source, impact, this action, its owner, and its product", () => {
+  it("labels competitor, source, impact, this action, its owner, its teams, and its product", () => {
     expect(draft.labels).toEqual([
       "competitor-happenings",
       "amplitude",
@@ -136,6 +136,7 @@ describe("buildIssueDraft", () => {
       "impact:notable",
       "action:update-pages",
       "owner:marketing",
+      "team:marketing",
     ]);
     expect(buildIssueDraft(analyzed, image, productAction).labels).toEqual([
       "competitor-happenings",
@@ -144,8 +145,26 @@ describe("buildIssueDraft", () => {
       "impact:notable",
       "action:consider-enhancing",
       "owner:product",
+      "team:product",
       "product:experiments",
     ]);
+  });
+
+  it("names the related teams in the body, so the issue says who it is for", () => {
+    expect(draft.body).toContain("## Related team(s)\nMarketing");
+    expect(buildIssueDraft(analyzed, image, productAction).body).toContain(
+      "## Related team(s)\nProduct",
+    );
+  });
+
+  it("adds engineering to an action about the plumbing, and labels it too", () => {
+    const sdk = buildIssueDraft(analyzed, image, {
+      type: "consider_building",
+      detail: "Ship an SDK option that routes ingestion through a domain the customer owns.",
+    });
+    expect(sdk.body).toContain("## Related team(s)\nProduct, Engineering");
+    expect(sdk.labels).toContain("team:product");
+    expect(sdk.labels).toContain("team:engineering");
   });
 
   it("carries the detail Slack no longer shows", () => {

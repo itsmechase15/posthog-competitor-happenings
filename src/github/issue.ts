@@ -2,6 +2,7 @@ import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
 import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
 import { findPostHogProduct, productForDocUrl, productsForAction } from "../posthog/products.js";
+import { relatedTeams, relatedTeamsLabel } from "../teams.js";
 import {
   IMPACTS,
   type AnalyzedItem,
@@ -55,7 +56,8 @@ function isPageAction(action: RecommendedAction): boolean {
 /**
  * Labels for one action's issue. Beyond the alert's own labels, the action
  * type and the owner are what a marketing or product filter actually queries,
- * and the product label is added whenever the action names one we recognize.
+ * the `team:` labels say who else the work touches, and the product label is
+ * added whenever the action names one we recognize.
  */
 export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction): string[] {
   const { item, analysis } = alert;
@@ -69,6 +71,7 @@ export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction)
     `impact:${analysis.impact}`,
     `action:${labelSlug(action.type)}`,
     `owner:${actionOwner(action)}`,
+    ...relatedTeams(action).map((team) => `team:${team}`),
     ...(productName ? [`product:${labelSlug(productName)}`] : []),
   ];
 }
@@ -177,6 +180,7 @@ export function buildIssueBody(
     `**${competitor.label}** · ${item.source} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
+    `## Related team(s)\n${relatedTeamsLabel(action)}`,
     `## What you need to know\n${analysis.summary}`,
     `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
