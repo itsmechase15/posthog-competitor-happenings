@@ -3,7 +3,7 @@ import { createCompareIndex, type CompareIndex } from "../competitor/compare.js"
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
-import { gatherDocsContext } from "../posthog/docs.js";
+import { gatherDocsContext, topUpDocsForActions } from "../posthog/docs.js";
 import type {
   Analysis,
   AnalyzedItem,
@@ -16,7 +16,7 @@ import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
 import { enforceActionLead } from "./lead.js";
 import { buildAnalysisPrompt } from "./prompt.js";
-import { enforceUpdatePagesTopic } from "./relevance.js";
+import { enforcePageTargets, enforceUpdatePagesTopic } from "./relevance.js";
 import { parseAnalysis } from "./schema.js";
 import { verifyAgainstDocs } from "./verify.js";
 
@@ -171,31 +171,52 @@ export async function analyzeItems(
     });
 
     try {
-      const verified = verifyAgainstDocs(
-        await analyzer.analyze(item, claims, docs, compareClaims),
+      const reply = await analyzer.analyze(item, claims, docs, compareClaims);
+      // A verdict often names a product one step to the side of what the
+      // signal's own words matched, and an action checked against no page at
+      // all is the one that gets what PostHog ships wrong.
+      const grounded = await topUpDocsForActions(
+        config,
+        store,
+        item,
+        reply.actions,
         docs,
-      );
-      // Page edits that are not about this launch go before the sentences are
-      // shaped, so nothing is spent on an action that is about to be dropped.
-      // The heuristic is exempt: its one action says outright that nothing was
+      ).catch((error: unknown) => {
+        log.warn(
+          `docs top-up failed for ${item.url}`,
+          error instanceof Error ? error.message : error,
+        );
+        return docs;
+      });
+      const verified = verifyAgainstDocs(reply, grounded);
+      // Page edits that are not about this launch, and page edits pointed at
+      // the docs, both go before the sentences are shaped, so nothing is spent
+      // on an action that is about to be dropped. The heuristic is exempt from
+      // the topic guard: its one action says outright that nothing was
       // assessed and asks someone to check the closest page, which is a
       // sentence about no launch in particular by design.
+      const targeted = enforcePageTargets(verified.analysis);
       const scoped =
         analyzer.model === FALLBACK_MODEL
-          ? { analysis: verified.analysis, notes: [] as string[] }
-          : enforceUpdatePagesTopic(verified.analysis, item);
+          ? { analysis: targeted.analysis, notes: [] as string[] }
+          : enforceUpdatePagesTopic(targeted.analysis, item);
       // The docs pass can retype an action and name its feature, so the
       // sentence Slack shows is shaped after it, not before.
       const led = enforceActionLead(scoped.analysis);
-      for (const note of [...verified.notes, ...scoped.notes, ...led.notes]) {
+      for (const note of [
+        ...verified.notes,
+        ...targeted.notes,
+        ...scoped.notes,
+        ...led.notes,
+      ]) {
         log.warn(`corrected ${item.url}: ${note}`);
       }
       const analysis = led.analysis;
-      analyzed.push({ item, analysis, model: analyzer.model });
+      analyzed.push({ item, analysis, model: analyzer.model, docs: grounded });
       const actions =
         analysis.actions.map((action) => action.type).join(", ") || "no action worth taking";
       log.info(
-        `analyzed ${item.competitor}/${item.source} "${item.title}" against ${docs.length} docs pages → ${actions}`,
+        `analyzed ${item.competitor}/${item.source} "${item.title}" against ${grounded.length} docs pages → ${actions}`,
       );
     } catch (error) {
       log.error(

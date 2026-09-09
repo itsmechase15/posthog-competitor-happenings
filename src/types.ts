@@ -88,6 +88,13 @@ export interface AnalyzedItem {
   item: StoredItem;
   analysis: Analysis;
   model: string;
+  /**
+   * The docs pages this verdict was checked against. Carried so an issue can
+   * name the pages that stop being true if the recommendation ships, without
+   * looking anything up a second time. Absent on an analysis replayed from the
+   * database, which is past the point where issues are opened.
+   */
+  docs?: PostHogDoc[];
 }
 
 /** Where a feature image came from, in the order we try them. */

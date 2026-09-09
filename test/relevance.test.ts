@@ -3,6 +3,7 @@ import { analyzeItems, createFallbackAnalyzer } from "../src/analysis/analyze.js
 import type { Analyzer } from "../src/analysis/analyzer.js";
 import {
   describeTopic,
+  enforcePageTargets,
   enforceUpdatePagesTopic,
   signalTopic,
   tiesToTopic,
@@ -47,6 +48,76 @@ function analysis(overrides: Partial<Analysis> = {}): Analysis {
 function types(result: { analysis: Analysis }): string[] {
   return result.analysis.actions.map((action) => action.type);
 }
+
+describe("enforcePageTargets", () => {
+  const editDocs = {
+    type: "update_pages" as const,
+    detail: "On the experiments docs, say an experiment can stop on a schedule.",
+  };
+
+  it("drops a page action that only ever wanted a docs page edited", () => {
+    const result = enforcePageTargets(
+      analysis({
+        actions: [editDocs, enhanceExperiments],
+        posthogRefs: [
+          {
+            url: "https://posthog.com/docs/experiments/managing-lifecycle",
+            claim: "Experiments are started, paused, and stopped by hand.",
+            suggestedEdit: "Mention scheduled stops.",
+          },
+        ],
+      }),
+    );
+
+    expect(types(result)).toEqual(["consider_enhancing"]);
+    expect(result.notes[0]).toContain("managing-lifecycle");
+  });
+
+  it("keeps it when one of the pages it wants edited is marketing's", () => {
+    const result = enforcePageTargets(
+      analysis({
+        actions: [editDocs],
+        posthogRefs: [
+          {
+            url: "https://posthog.com/docs/experiments/managing-lifecycle",
+            claim: "Experiments stop by hand.",
+            suggestedEdit: "Mention scheduled stops.",
+          },
+          {
+            url: "https://posthog.com/compare/best-amplitude-alternatives",
+            claim: "Both tools require manual experiment management.",
+            suggestedEdit: "Say Amplitude schedules stops.",
+          },
+        ],
+      }),
+    );
+
+    expect(types(result)).toEqual(["update_pages"]);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("says nothing about an action that suggested no edit at all", () => {
+    const result = enforcePageTargets(
+      analysis({
+        actions: [editDocs],
+        posthogRefs: [
+          {
+            url: "https://posthog.com/docs/experiments",
+            claim: "Experiments compare variants.",
+          },
+        ],
+      }),
+    );
+
+    expect(types(result)).toEqual(["update_pages"]);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("leaves an analysis with no page action untouched", () => {
+    const result = enforcePageTargets(analysis({ actions: [enhanceExperiments] }));
+    expect(types(result)).toEqual(["consider_enhancing"]);
+  });
+});
 
 describe("signalTopic", () => {
   it("keeps what changed and drops the product it changed in", () => {

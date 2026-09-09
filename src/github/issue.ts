@@ -1,7 +1,9 @@
+import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
 import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
-import { findPostHogProduct, productForDocUrl, productsForAction } from "../posthog/products.js";
+import { isDocsUrl, isMarketingTarget } from "../posthog/pages.js";
+import { findProductByName, productForDocUrl, productsForAction } from "../posthog/products.js";
 import { relatedTeams, relatedTeamsLabel } from "../teams.js";
 import {
   IMPACTS,
@@ -61,8 +63,10 @@ function isPageAction(action: RecommendedAction): boolean {
  */
 export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction): string[] {
   const { item, analysis } = alert;
-  const product = action.feature ? findPostHogProduct(action.feature) : undefined;
-  const productName = product?.label ?? action.feature;
+  // Only a feature the catalog recognizes earns a label. A model's own phrasing
+  // for something we hold no docs for would mint a label nobody ever queries
+  // again, and a repo full of one-off labels is worse than none.
+  const product = action.feature ? findProductByName(action.feature) : undefined;
 
   return [
     "competitor-happenings",
@@ -72,7 +76,7 @@ export function buildIssueLabels(alert: AnalyzedItem, action: RecommendedAction)
     `action:${labelSlug(action.type)}`,
     `owner:${actionOwner(action)}`,
     ...relatedTeams(action).map((team) => `team:${team}`),
-    ...(productName ? [`product:${labelSlug(productName)}`] : []),
+    ...(product ? [`${product.kind}:${labelSlug(product.label)}`] : []),
   ];
 }
 
@@ -89,21 +93,23 @@ export function buildIssueTitle(alert: AnalyzedItem, action: RecommendedAction):
 
 /** A docs page says what PostHog ships; everything else on posthog.com is copy. */
 function isDocsRef(ref: PostHogRef): boolean {
-  return ref.url.includes("posthog.com/docs/");
+  return isDocsUrl(ref.url);
 }
 
 /**
  * The refs that back one action.
  *
- * A page action is the page work, so it gets every cited page and the edits
- * suggested for them. A product action is a claim about what PostHog ships,
- * and only the docs support that: a compare-page paragraph and its suggested
- * edit are the marketing issue's job, and a docs page for some other product
- * named in the same alert belongs to that product's own issue.
+ * A page action is the page work, so it gets every page someone could edit,
+ * with the edits suggested for them: the docs are evidence, never a target, so
+ * they are left off the list of pages to change. A product action is a claim
+ * about what PostHog ships, and only the docs support that: a compare-page
+ * paragraph and its suggested edit are the marketing issue's job, and a docs
+ * page for some other product named in the same alert belongs to that
+ * product's own issue.
  */
 function supportingRefs(alert: AnalyzedItem, action: RecommendedAction): PostHogRef[] {
   const refs = alert.analysis.posthogRefs;
-  if (isPageAction(action)) return refs;
+  if (isPageAction(action)) return refs.filter((ref) => isMarketingTarget(ref.url));
 
   const wanted = new Set(productsForAction(action).map((product) => product.label));
 
@@ -146,6 +152,37 @@ function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   return `${heading}\n${pages}`;
 }
 
+/** Enough to name the pages, short enough that nobody scrolls past it. */
+const MAX_DOCS_THAT_CHANGE = 6;
+
+/**
+ * The docs pages this recommendation was checked against, which are the pages
+ * that stop being true the day it ships.
+ *
+ * Nothing new is looked up for this. These are the same pages the action was
+ * verified against and cites, read a second way: as evidence they say what
+ * PostHog does today, and as a list they say what someone has to rewrite when
+ * PostHog does something else. Page actions have no use for it – editing a
+ * page is already the job they describe.
+ */
+function docsThatWouldChange(alert: AnalyzedItem, action: RecommendedAction): string[] {
+  if (isPageAction(action)) return [];
+  const verified = relevantDocs(action, alert.docs ?? []).map((doc) => doc.url);
+  const cited = supportingRefs(alert, action)
+    .filter(isDocsRef)
+    .map((ref) => ref.url);
+  return [...new Set([...verified, ...cited])].slice(0, MAX_DOCS_THAT_CHANGE);
+}
+
+function docsThatWouldChangeSection(
+  alert: AnalyzedItem,
+  action: RecommendedAction,
+): string | null {
+  const urls = docsThatWouldChange(alert, action);
+  if (urls.length === 0) return null;
+  return `## Docs that would change if this ships\n${urls.map((url) => `- ${url}`).join("\n")}`;
+}
+
 /**
  * The whole scale as a task list, so a reader who does not carry the three
  * levels in their head can see where this one sits. Slack keeps the single
@@ -185,6 +222,7 @@ export function buildIssueBody(
     `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     pagesSection(alert, action),
+    docsThatWouldChangeSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${item.source}](${item.url})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""

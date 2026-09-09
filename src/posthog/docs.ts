@@ -1,11 +1,11 @@
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { createLogger } from "../log.js";
-import type { PostHogDoc, PostHogPage, StoredItem } from "../types.js";
+import type { PostHogDoc, PostHogPage, RecommendedAction, StoredItem } from "../types.js";
 import { extractPage, proseText } from "../util/html.js";
 import { fetchText } from "../util/http.js";
 import { sentences, titleFromUrl, truncate } from "../util/text.js";
-import { docUrlsForText, matchProducts } from "./products.js";
+import { docUrlsForText, matchProducts, productForDocUrl, productsForAction } from "./products.js";
 
 const log = createLogger("posthog-docs");
 
@@ -147,6 +147,69 @@ export async function gatherDocsContext(
     `docs context for "${item.title}": ${docs.length} of ${urls.length} pages (${fetches} fetched live)`,
   );
   return docs;
+}
+
+/** How many overview pages the top-up may fetch for one verdict. */
+const MAX_TOP_UP_FETCHES = 2;
+
+/**
+ * The overview pages for products a verdict names but the signal's own words
+ * never matched.
+ *
+ * A signal about first-party domains pulls the proxy docs, and then the model
+ * writes about a product one step to the side of them. Whatever it named, the
+ * catalog knows where that product is documented, so the page is one fetch
+ * away – and an action verified against no page at all is the one that ships
+ * "PostHog has no X" when PostHog has X. Bounded to a couple of pages, and a
+ * failed fetch costs an excerpt rather than the verdict.
+ */
+export async function topUpDocsForActions(
+  config: Config,
+  store: Store,
+  item: Pick<StoredItem, "title" | "raw">,
+  actions: RecommendedAction[],
+  docs: PostHogDoc[],
+): Promise<PostHogDoc[]> {
+  const covered = new Set(
+    docs
+      .map((doc) => productForDocUrl(doc.url)?.label)
+      .filter((label): label is string => Boolean(label)),
+  );
+  const wanted: string[] = [];
+  for (const action of actions) {
+    for (const product of productsForAction(action)) {
+      const url = product.docs[0];
+      if (!url || covered.has(product.label) || wanted.includes(url)) continue;
+      wanted.push(url);
+    }
+  }
+  if (wanted.length === 0) return docs;
+
+  const terms = focusTerms(signalText(item));
+  const added: PostHogDoc[] = [];
+  const indexed = new Map(
+    (await store.getPages(wanted).catch(() => [])).map((page) => [page.url, page]),
+  );
+  let fetches = 0;
+
+  for (const url of wanted) {
+    const page = indexed.get(url) ?? fetched.get(url);
+    if (page && page.text.trim().length > 0) {
+      added.push(toDoc(page, terms));
+      continue;
+    }
+    if (fetches >= MAX_TOP_UP_FETCHES) continue;
+    fetches += 1;
+    const live = await fetchDoc(config, store, url);
+    if (live) added.push(toDoc(live, terms));
+  }
+
+  if (added.length > 0) {
+    log.info(
+      `topped up docs context with ${added.map((doc) => doc.url).join(", ")} for products the verdict named`,
+    );
+  }
+  return [...docs, ...added];
 }
 
 async function fetchDoc(
