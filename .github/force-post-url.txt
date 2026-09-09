@@ -11,6 +11,9 @@
 # summary instead of the recommend
 # retrigger 2026-09-08 for the first post that opens one issue per recommended
 # action: each stacked action should carry its own "Access GitHub issue #n"
+# retrigger 2026-09-09 now that a page edit has to be about the launch that
+# found it: this one should carry no update_pages about basic A/B testing, and
+# most likely no update_pages at all
 # retrigger 2026-09-08 for the first post where each action leads with the work:
 # consider enhancing should open with the scheduled end time to add, and update
 # pages should name the page and the line to change on it
