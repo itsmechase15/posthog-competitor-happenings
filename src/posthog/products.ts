@@ -1,3 +1,4 @@
+import type { RecommendedAction } from "../types.js";
 import { truncate } from "../util/text.js";
 
 /**
@@ -330,6 +331,17 @@ function countOccurrences(haystack: string, needle: string): number {
     index = haystack.indexOf(needle, index + needle.length);
   }
   return count;
+}
+
+/**
+ * The products one action is about: the one it names in `feature` first, then
+ * whatever its own words are about. Order matters, because the first match is
+ * the product an action is read as being for.
+ */
+export function productsForAction(action: RecommendedAction): PostHogProduct[] {
+  const named = action.feature ? findProductByName(action.feature) : undefined;
+  const fromDetail = matchProducts(action.detail, 3);
+  return [...new Set([...(named ? [named] : []), ...fromDetail])];
 }
 
 /** The cross-product capabilities a piece of text is about. */

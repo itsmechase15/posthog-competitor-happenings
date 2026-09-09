@@ -100,7 +100,9 @@ One short, pretty message per new signal, in this order and nothing else:
 5. **Recommended action(s)** – a heading, then each action stacked in its own
    block: bold title on one line, one short sentence under it, then a link to
    that action's own issue ("Access GitHub issue #12"). No single issue link
-   stands for the whole alert
+   stands for the whole alert. That sentence leads with the work: the change to
+   make for consider enhancing and consider building, the page and the update
+   for update pages and new compare page
 6. Small footer – competitor · source · model · source link
 
 PostHog page citations, suggested edits, and open questions are not in Slack.
@@ -118,10 +120,10 @@ product owns consider building and consider enhancing.
 Title is competitor + feature + the action. Each body is scoped to its own
 action: that action in full, the summary, key points, impact, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
-to update (url, claim, suggested edit); product's carry the same pages as
-context without the edits. Both name the sibling actions, so nobody wonders
-whether the rest is tracked. Labelled by competitor, source, impact, action,
-owner, and the PostHog product when the action names one. Uses the
+to update (url, claim, suggested edit); product's carry only the docs that back
+that action, without the edits or the compare-page copy. Neither lists the
+sibling actions: each one is its own issue. Labelled by competitor, source,
+impact, action, owner, and the PostHog product when the action names one. Uses the
 `GITHUB_TOKEN` Actions provides; with no token the run skips issue creation and
 keeps posting.
 

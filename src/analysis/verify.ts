@@ -1,4 +1,4 @@
-import { findProductByName, matchProducts, productForDocUrl } from "../posthog/products.js";
+import { productForDocUrl, productsForAction } from "../posthog/products.js";
 import type { Analysis, PostHogDoc, PostHogRef, RecommendedAction } from "../types.js";
 import { firstSentence, SPACED_EN_DASH, truncate } from "../util/text.js";
 
@@ -137,9 +137,7 @@ export function relevantDocs(action: RecommendedAction, docs: PostHogDoc[]): Pos
 }
 
 function productNames(action: RecommendedAction): string[] {
-  const named = action.feature ? findProductByName(action.feature) : undefined;
-  const fromDetail = matchProducts(action.detail, 3);
-  return [...new Set([...(named ? [named.label] : []), ...fromDetail.map((product) => product.label)])];
+  return productsForAction(action).map((product) => product.label);
 }
 
 function namedProducts(action: RecommendedAction): string {

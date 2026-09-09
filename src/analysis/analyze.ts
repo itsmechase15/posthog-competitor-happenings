@@ -14,6 +14,7 @@ import type {
 } from "../types.js";
 import type { Analyzer } from "./analyzer.js";
 import { FALLBACK_MODEL, heuristicAnalysis } from "./fallback.js";
+import { enforceActionLead } from "./lead.js";
 import { buildAnalysisPrompt } from "./prompt.js";
 import { enforceUpdatePagesTopic } from "./relevance.js";
 import { parseAnalysis } from "./schema.js";
@@ -125,8 +126,10 @@ export function createAnalyzer(config: Config): Analyzer {
  * or does not do; and the competitor's own comparison pages, which are where a
  * claim that PostHog cannot do something turns up. Every verdict is then
  * reconciled with the docs, so an action cannot claim a gap the docs
- * contradict, and page edits that wandered off this launch's topic are
- * dropped. A failed analysis drops that item and leaves the rest alone.
+ * contradict, page edits that wandered off this launch's topic are dropped,
+ * and each surviving action is made to open with the work it asks for, because
+ * that sentence is all Slack shows. A failed analysis drops that item and
+ * leaves the rest alone.
  */
 export type { Analyzer };
 
@@ -172,6 +175,8 @@ export async function analyzeItems(
         await analyzer.analyze(item, claims, docs, compareClaims),
         docs,
       );
+      // Page edits that are not about this launch go before the sentences are
+      // shaped, so nothing is spent on an action that is about to be dropped.
       // The heuristic is exempt: its one action says outright that nothing was
       // assessed and asks someone to check the closest page, which is a
       // sentence about no launch in particular by design.
@@ -179,10 +184,13 @@ export async function analyzeItems(
         analyzer.model === FALLBACK_MODEL
           ? { analysis: verified.analysis, notes: [] as string[] }
           : enforceUpdatePagesTopic(verified.analysis, item);
-      for (const note of [...verified.notes, ...scoped.notes]) {
+      // The docs pass can retype an action and name its feature, so the
+      // sentence Slack shows is shaped after it, not before.
+      const led = enforceActionLead(scoped.analysis);
+      for (const note of [...verified.notes, ...scoped.notes, ...led.notes]) {
         log.warn(`corrected ${item.url}: ${note}`);
       }
-      const analysis = scoped.analysis;
+      const analysis = led.analysis;
       analyzed.push({ item, analysis, model: analyzer.model });
       const actions =
         analysis.actions.map((action) => action.type).join(", ") || "no action worth taking";
