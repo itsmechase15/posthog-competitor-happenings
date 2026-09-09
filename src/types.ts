@@ -111,6 +111,14 @@ export const ACTION_OWNERS = ["marketing", "product"] as const;
 export type ActionOwner = (typeof ACTION_OWNERS)[number];
 
 /**
+ * The teams an issue can name. Deliberately short: PostHog has more teams than
+ * this, and until there is a list to route against, three names nobody has to
+ * look up beat a guess at a specific team. See `src/teams.ts`.
+ */
+export const TEAMS = ["marketing", "product", "engineering"] as const;
+export type Team = (typeof TEAMS)[number];
+
+/**
  * One recommended action and the issue opened for it. Every action gets its
  * own issue, because a page fix and a feature gap land on different desks and
  * get closed on different days.
