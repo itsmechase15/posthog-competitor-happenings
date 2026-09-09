@@ -44,4 +44,8 @@
 # has never shipped, and the enhance issue should carry "Docs that would change
 # if this ships" listing those proxy pages. No update_pages should point at a
 # docs URL.
-https://docs.mixpanel.com/changelogs
+# 2026-09-09 First-Party Domains once more, now named by its own anchor rather
+# than by the page every Mixpanel entry shares. The alert should open with a
+# screenshot of that entry instead of the "Changelogs" card, and the KNOW
+# sentence should end with a linked changelog pointing at the same anchor.
+https://docs.mixpanel.com/changelogs#2026-08-27
