@@ -41,6 +41,13 @@ export interface RecommendedAction {
    * consider_enhancing, where the label on its own names nothing to enhance.
    */
   feature?: string;
+  /**
+   * The PostHog small teams the model thinks are most involved, by name. Read
+   * as a suggestion only: every name is looked up in the catalog before
+   * anything renders it, so a team that is not on posthog.com/teams is
+   * dropped. See `src/teams.ts`.
+   */
+  teams?: string[];
 }
 
 /** A competitor signal before it has been written to the database. */
@@ -116,14 +123,6 @@ export interface IssueRef {
 /** Who picks the work up. Marketing owns the pages, product owns the roadmap. */
 export const ACTION_OWNERS = ["marketing", "product"] as const;
 export type ActionOwner = (typeof ACTION_OWNERS)[number];
-
-/**
- * The teams an issue can name. Deliberately short: PostHog has more teams than
- * this, and until there is a list to route against, three names nobody has to
- * look up beat a guess at a specific team. See `src/teams.ts`.
- */
-export const TEAMS = ["marketing", "product", "engineering"] as const;
-export type Team = (typeof TEAMS)[number];
 
 /**
  * One recommended action and the issue opened for it. Every action gets its

@@ -57,6 +57,7 @@ export function verifyAgainstDocs(analysis: Analysis, docs: PostHogDoc[]): DocsV
       );
       cite(primary);
       return {
+        ...action,
         type: "consider_enhancing",
         ...(feature ? { feature } : {}),
         detail: append(

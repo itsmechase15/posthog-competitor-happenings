@@ -1,7 +1,9 @@
 import { COMPETITORS } from "../config.js";
+import { POSTHOG_TEAMS, POSTHOG_TEAMS_URL } from "../posthog/teams.js";
 // The sentence budget the prompt asks for is the one Slack renders to, so it
 // is stated once, where the message is built.
 import { MAX_ACTION_CHARS } from "../slack/message.js";
+import { MAX_TEAMS } from "../teams.js";
 import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 
@@ -41,6 +43,18 @@ function renderCompareClaims(label: string, claims: CompetitorClaim[]): string {
     .join("\n");
 }
 
+/**
+ * PostHog's small teams, with what each one owns. The owned features are what
+ * routing is for: the model picks the team whose page says it builds the thing
+ * the action is about, rather than a department.
+ */
+function renderTeams(): string {
+  return POSTHOG_TEAMS.map((team) => {
+    const owns = team.ownsFeatures?.length ? ` ${EN_DASH} owns ${team.ownsFeatures.join(", ")}` : "";
+    return `- ${team.name}${owns}`;
+  }).join("\n");
+}
+
 function renderDocs(docs: PostHogDoc[]): string {
   if (docs.length === 0) {
     return "(no product docs are in context for this signal, so you cannot verify a gap: keep impact lower, put what you could not check in open_questions, and do not fall back on update_pages unless a page in front of you is genuinely wrong or understated)";
@@ -51,6 +65,10 @@ function renderDocs(docs: PostHogDoc[]): string {
     })
     .join("\n");
 }
+
+const TEAM_RULES = `- "teams" is 1 to ${MAX_TEAMS} PostHog small teams the action is for, most involved first, copied exactly from the "PostHog small teams" list below. Never invent a team, never write a department: "Product", "Engineering", "Platform", and "Core" are not teams and are thrown away.
+- Pick by who owns the work. A team that owns the feature the action is about is the answer: an experiments gap is for Experiments, a flag rollout change is for Feature Flags, events routed through a customer's own domain is for Ingestion, a compare-page edit is for Marketing, a blog or newsletter is for Editorial, a page that has to be built on posthog.com is for Website.
+- Two or three teams only when the work genuinely splits: the team that owns the feature plus the team that owns the plumbing it arrives on, or Marketing plus whoever owns the product a page is wrong about. One team is the normal answer, and a shorter list routes better than a long one.`;
 
 export const SYSTEM_RULES = `You are a competitive-intelligence analyst for PostHog, an open-source product analytics platform.
 You read one thing a competitor shipped and decide what PostHog should do about it.
@@ -67,6 +85,7 @@ Rules:
   - consider_building: PostHog has nothing like this.
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
 - The other three action types take no "feature". Leave the key out rather than sending it empty.
+${TEAM_RULES}
 - "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy.
 - Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
@@ -114,7 +133,8 @@ export const RESPONSE_SHAPE = `{
     {
       "type": "update_pages" | "new_compare_page" | "consider_building" | "consider_enhancing",
       "detail": "string",
-      "feature": "string (the PostHog feature to enhance; required for consider_enhancing)"
+      "feature": "string (the PostHog feature to enhance; required for consider_enhancing)",
+      "teams": ["string (1 to ${MAX_TEAMS} small team names, exactly as listed)"]
     }
   ],
   "posthog_refs": [{ "url": "string", "claim": "string", "suggested_edit": "string (optional)" }],
@@ -149,6 +169,10 @@ ${renderDocs(docs)}
 ## Indexed PostHog.com pages that mention ${competitor.label}
 Marketing copy, useful for finding a stale page to fix. Not evidence of what the product does.
 ${renderClaims(claims)}
+
+## PostHog small teams, from ${POSTHOG_TEAMS_URL}
+Every team an action can be routed to. Pick from these names and no others.
+${renderTeams()}
 
 ## What ${competitor.label} says about PostHog on their own comparison pages
 Their sales copy about PostHog. Where they claim PostHog does not do something the docs above show PostHog does, reason 3 for update_pages applies and PostHog's page should answer it. Never treat this as evidence about PostHog's product.

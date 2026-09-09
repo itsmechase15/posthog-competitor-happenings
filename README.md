@@ -131,19 +131,25 @@ Each issue is scoped to its own action and titled `Competitor: feature – Actio
 
 A product issue – `consider_enhancing` or `consider_building` – ends with **Docs that would change if this ships**, listing the docs pages that action was checked against. They are the same pages the issue already cites as evidence, read the other way round: today they say what PostHog does, and the day PostHog does this instead, someone has to rewrite them. Nothing new is fetched to build the list. Page actions have no use for it, because editing a page is already the job they describe.
 
-An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<team>` per related team, and `product:<feature>` when the action names a PostHog product the catalog in [`src/posthog/products.ts`](./src/posthog/products.ts) recognizes – `platform:<surface>` for a surface like the reverse proxy that sits under the products rather than beside them. A feature name the catalog does not know gets no label at all, because a repo full of one-off labels nobody queries is worse than none. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
+An issue is labeled `competitor-happenings`, the competitor, `source:<source>`, `impact:minor|notable|major`, `action:<action>`, `owner:marketing|product`, one `team:<slug>` per related small team, and `product:<feature>` when the action names a PostHog product the catalog in [`src/posthog/products.ts`](./src/posthog/products.ts) recognizes – `platform:<surface>` for a surface like the reverse proxy that sits under the products rather than beside them. A feature name the catalog does not know gets no label at all, because a repo full of one-off labels nobody queries is worse than none. A label the repo has never seen makes GitHub answer 422, so the app retries once without labels rather than losing the issue.
 
 Inside Actions the workflow's built-in `GITHUB_TOKEN` is enough, with `issues: write` – no new secret, and no repo settings to change beyond leaving issues switched on. Issues are filed against `GITHUB_REPOSITORY`, which Actions sets to whichever repo is running, so a fork files its own. Locally, set a PAT with repo scope as `GITHUB_TOKEN` or `GH_TOKEN` if you want real issues; without one, issue creation is skipped and the run still posts. A failed issue never fails the run: that action's block goes out without a link, and the other actions keep theirs.
 
 ### Related team(s)
 
-Every issue has a `## Related team(s)` line under the recommended action, saying who the work is for. [`src/teams.ts`](./src/teams.ts) is the whole map, and it is deliberately coarse:
+Every issue has a `## Related team(s)` line under the recommended action, naming the PostHog small teams the work is for: `Experiments`, `Ingestion, Client Libraries`, `Marketing 🦆, Growth 🦦`. Not "Product and Engineering" – PostHog is organized into small teams that each own particular features, so a department names nobody.
 
-- Page work – `update_pages` and `new_compare_page` – is **Marketing**.
-- Building and enhancing – `consider_building` and `consider_enhancing` – is **Product**.
-- **Engineering** is added on top when the action is plainly about the plumbing: SDKs, APIs, ingestion, pipelines, proxies, webhooks, self-hosting, DNS. It is a whole-word keyword match on the action's feature and detail, so "rapid" is not an API.
+[`src/posthog/teams.ts`](./src/posthog/teams.ts) is the catalog: every team on [posthog.com/teams](https://posthog.com/teams), with its slug, the features its page says it owns, the vocabulary of its work, and its spirit animal. The animal is a real field on the team's page, rendered there as "🦆 Duck" under a **Spirit animal** heading, and only some teams have picked one. A team that has not gets no emoji rather than an invented one, so an emoji in an issue is always the team's own. Refreshing the list means reading /teams again; nothing in it is inferred from this app's own product list.
 
-There is always at least one team and never more than three. It stays this coarse on purpose: PostHog's real team list is not something this app can read yet, and a specific team guessed wrong routes the issue to nobody. The intended next step is to route against the small teams listed on [posthog.com/teams](https://posthog.com/teams), so an issue names Product Analytics or Feature Flags rather than "Product". `relatedTeams` in [`src/teams.ts`](./src/teams.ts) is the only function the issue builder calls, so that is the one place to change when it lands.
+[`src/teams.ts`](./src/teams.ts) does the routing. **The model chooses.** The prompt gives it every team name and what each one owns and asks each action for one to three, and a list it wrote wins outright once each name has been found in the catalog – it is the only reader with the whole signal in front of it. `Product`, `Engineering`, and `Platform` are thrown away rather than mapped to something near them, which is why the fallback has to be good: a reply that names only departments falls all the way through it.
+
+Falling through, strongest first:
+
+1. **Who owns the feature.** The team whose page says it owns the feature the action names, plus the owners of the PostHog products the action's own words match. The app already works out which product a signal is about, and the catalog says who builds it – 18 of the 21 entries in [`src/posthog/products.ts`](./src/posthog/products.ts) have an owner, including `Reverse proxy` to Ingestion and `Notebooks` to Data Tools.
+2. **Team vocabulary** in the action's feature and detail, for a signal that names no product we recognize.
+3. **A default**, and only when both of those found nothing: Marketing for page work, Product Analytics for product work.
+
+There is always at least one team and never more than three, and the `team:<slug>` labels stay machine-friendly (`team:marketing`, `team:feature-flags`) while the issue body reads as the name plus the animal.
 
 ## Setup
 
@@ -334,4 +340,4 @@ To take it further inside PostHog, open an issue on [PostHog/marketing](https://
 >
 > Worth deciding: which channel it should post to, and whether the issues belong here or stay in the bot's own repo.
 
-Two things on the roadmap and deliberately not built: replying to a Slack alert to edit its recommended actions, and routing issues to the small teams on [posthog.com/teams](https://posthog.com/teams) instead of the coarse Marketing / Product / Engineering split.
+One thing on the roadmap and deliberately not built: replying to a Slack alert to edit its recommended actions.
