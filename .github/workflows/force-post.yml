@@ -63,6 +63,20 @@ jobs:
 
       - run: npm run build
 
+      # Names a missing secret before anything reaches a vendor. DRY_RUN is set
+      # so the database stays optional here, as it is for the post itself.
+      - name: Check the secrets are there
+        run: node dist/setup/check-env.js
+        env:
+          DRY_RUN: "true"
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID || secrets.AGENTMAIL_INBOX_ID }}
+
       # Before the pipeline, because it opens a GitHub issue on the way to
       # Slack and an undeliverable message should not leave one behind.
       - name: Check the Slack bot token

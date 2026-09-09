@@ -56,6 +56,22 @@ jobs:
       - run: npm run build
         if: steps.window.outputs.proceed == 'true'
 
+      # Fails in seconds, naming the secret and where its value comes from,
+      # rather than twenty minutes in as a Postgres timeout or a silent channel.
+      - name: Check the secrets are there
+        if: steps.window.outputs.proceed == 'true'
+        run: node dist/setup/check-env.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+          AGENTMAIL_INBOX_ID: ${{ vars.AGENTMAIL_INBOX_ID || secrets.AGENTMAIL_INBOX_ID }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
       - name: Run one cycle
         if: steps.window.outputs.proceed == 'true'
         run: node dist/index.js
