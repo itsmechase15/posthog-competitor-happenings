@@ -58,5 +58,8 @@
 # 2026-09-13 the first post under the new impact rules, which rate a post on
 # what it shipped. Amplitude's scheduled experiment stop is a new control on
 # Experiments, a product they already had, so Slack should read Notable where
-# the old "cosmetic or incremental" wording had it at Minor.
-https://amplitude.com/releases/schedule-experiment-stop
+# the old "cosmetic or incremental" wording had it at Minor. It did.
+# 2026-09-13 and Mixpanel's First-Party Domains straight after, as the other
+# half of the proof: serving events through a customer's own domain is a
+# capability Mixpanel did not have before, so this one should read Major.
+https://docs.mixpanel.com/changelogs#2026-08-27
