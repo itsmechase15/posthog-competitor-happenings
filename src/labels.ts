@@ -12,6 +12,16 @@ export const IMPACT_LABEL: Record<Impact, string> = {
   major: "Major",
 };
 
+/**
+ * What each level means, in one line. Impact is decided by what the post
+ * shipped and nothing else, so anywhere with the room to say so says it.
+ */
+export const IMPACT_MEANING: Record<Impact, string> = {
+  minor: "no new feature or enhancement in the post",
+  notable: "an enhancement of an existing feature",
+  major: "a brand-new feature that did not exist before",
+};
+
 /** A glanceable dot in Slack, so impact reads before the word does. */
 export const IMPACT_EMOJI: Record<Impact, string> = {
   minor: ":large_blue_circle:",

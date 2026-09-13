@@ -28,7 +28,7 @@ What you need to KNOW
 Amplitude: You can now schedule when an experiment or flag stops, not just
 when it starts. (changelog)
 
-Impact  🔵 Minor
+Impact  🟠 Notable
 
 More detail
 • Set a start time, an end time, or both.
@@ -65,7 +65,10 @@ Every alert has the same parts, in this order:
    change as soon as you have read what happened. A newsletter gets no link,
    because its only URL is a thread in our own inbox.
 4. **Impact.** `minor`, `notable`, or `major`. A label, not a gate. Every new
-   item gets a message.
+   item gets a message. One question decides the label: what did the post ship?
+   A brand-new feature is major, an enhancement of a feature they already had
+   is notable, and a post with neither in it is minor. See
+   [How impact is rated](#how-impact-is-rated).
 5. **More detail.** Two to four short bullets under their own heading, so it
    never reads as a second summary.
 6. **Recommended action(s).** Each action is its own block: a bold title, one
@@ -87,6 +90,27 @@ and [tone of voice](https://posthog.com/handbook/brand/tone).
 [`docs/writing.md`](./docs/writing.md) is the short version and says where each
 rule is enforced. The one to know: dashes are en dashes with a space either
 side, never em dashes.
+
+## How impact is rated
+
+Impact answers one question: what did this post ship?
+
+| Impact | The post is about | Example |
+| --- | --- | --- |
+| 🔵 Minor | No new feature and no enhancement | A hiring post, a pricing rewrite, a quarterly recap |
+| 🟠 Notable | An enhancement of a feature they already had | A scheduled stop time on experiments they already ship |
+| 🔴 Major | A brand-new feature they did not have before | Serving events through the customer's own domain |
+
+Nothing else moves it. Not how strategic the launch feels, not whether PostHog
+has a gap here, not how loudly it was written up. A post that mixes a new
+feature with company news is rated on the feature, because impact follows the
+strongest thing in the post and fluff never pulls it down.
+
+The rule lives in `SYSTEM_RULES` in
+[`src/analysis/prompt.ts`](./src/analysis/prompt.ts), which is what the model
+reads. The heuristic in [`src/analysis/fallback.ts`](./src/analysis/fallback.ts)
+approximates it from the words a launch post uses, for runs with no
+`CURSOR_API_KEY`.
 
 ## How a recommendation is decided
 
@@ -183,8 +207,8 @@ An issue is titled `Competitor: feature – Action` and carries what Slack no
 longer does: that action in full, the summary and key points, the impact, open
 questions, source links, and the feature image. Impact is written as the whole
 scale, a task list of `Minor`, `Notable`, `Major` with this alert's level
-checked, so a reader sees where it sits without holding the scale in their
-head.
+checked and each level carrying what it means, so a reader sees where it sits,
+and why, without holding the scale in their head.
 
 Marketing's issues get the PostHog pages to update as url + claim today +
 suggested edit. Product's get only the docs that back the action they are being
