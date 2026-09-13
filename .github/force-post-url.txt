@@ -62,4 +62,8 @@
 # 2026-09-13 and Mixpanel's First-Party Domains straight after, as the other
 # half of the proof: serving events through a customer's own domain is a
 # capability Mixpanel did not have before, so this one should read Major.
-https://docs.mixpanel.com/changelogs#2026-08-27
+# 2026-09-13 the MXP London panel recap, which went out as (post) and is the
+# reason the source tag changed. A page on mixpanel.com is an article, so the
+# KNOW line should end with a linked (article) and the footer should read
+# "Mixpanel · article". Impact stays Minor: the recap ships no feature.
+https://mixpanel.com/blog/ai-in-product-development
