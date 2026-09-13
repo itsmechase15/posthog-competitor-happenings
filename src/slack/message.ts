@@ -102,16 +102,12 @@ export function leadSentence(alert: Alert): string {
 }
 
 /**
- * What the link next to the KNOW sentence is called: the thing you land on,
- * not the source it came through. A newsletter has no entry: the URL is a
- * thread in our own inbox, which nobody else can open, so it is left out
+ * The sources the KNOW line can link, labeled by `SOURCE_LABEL` like every
+ * other place the source is tagged. A newsletter is not one of them: its URL
+ * is a thread in our own inbox, which nobody else can open, so it is left out
  * rather than linked to a page that answers 404 for the reader.
  */
-const KNOW_LINK_LABEL: Partial<Record<SourceId, string>> = {
-  changelog: "changelog",
-  blog: "post",
-  x: "tweet",
-};
+const LINKED_SOURCES: readonly SourceId[] = ["changelog", "blog", "x"];
 
 /**
  * The source link that sits with the KNOW sentence. The footer links the
@@ -120,10 +116,9 @@ const KNOW_LINK_LABEL: Partial<Record<SourceId, string>> = {
  * the GitHub issue to find out where the change was announced.
  */
 export function knowSourceLink(alert: Alert): string | null {
-  const label = KNOW_LINK_LABEL[alert.item.source];
-  if (!label) return null;
+  if (!LINKED_SOURCES.includes(alert.item.source)) return null;
   const url = entryUrl(alert.item);
-  return /^https?:\/\//i.test(url) ? link(url, label) : null;
+  return /^https?:\/\//i.test(url) ? link(url, SOURCE_LABEL[alert.item.source]) : null;
 }
 
 /**

@@ -78,9 +78,17 @@ export function actionLabel(action: RecommendedAction): string {
   return feature ? `${label} ${feature.label}` : label;
 }
 
+/**
+ * The short tag for where an item came from, used everywhere the source is
+ * named as a tag rather than in a sentence: the link on the KNOW line, the
+ * Slack footer, and the issue. It names the thing you land on, so a page on
+ * the competitor's own website is an article, whether it sits under /blog/ or
+ * anywhere else they publish. A changelog entry is a changelog entry, because
+ * that is what the reader opens.
+ */
 export const SOURCE_LABEL: Record<SourceId, string> = {
   changelog: "changelog",
-  blog: "blog",
-  x: "X",
+  blog: "article",
+  x: "tweet",
   newsletter: "newsletter",
 };
