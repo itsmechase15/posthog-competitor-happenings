@@ -130,7 +130,12 @@ competitor shipped, not about what could be checked on PostHog's side.
 One short, pretty message per new signal, in this order and nothing else:
 
 1. Feature image – changelog/blog image, tweet image, or a screenshot of the feature page. Never posted without one
-2. **What you need to KNOW** – the one sentence on what changed, under the heading. No unlabeled line above it
+2. **What you need to KNOW** – the one sentence on what changed, under the
+   heading. No unlabeled line above it. The source hangs off the end as a link
+   named for what you land on: `changelog`, `article` for anything published on
+   the competitor's own site, `tweet`, `newsletter`. Same four tags in the
+   footer and in the issue, and only a newsletter goes unlinked, because its
+   URL is a thread in our own inbox
 3. **Impact** – Minor / Notable / Major, right under the sentence. Same three
    words as before, rated by what the post shipped
 4. **More detail** – a few short bullets that elaborate, clearly separate from the KNOW sentence

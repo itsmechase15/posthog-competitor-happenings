@@ -60,10 +60,13 @@ Every alert has the same parts, in this order:
    nothing else depends on them.
 2. **A feature image**, first under the break. See [The pictures](#the-pictures).
 3. **What you need to KNOW.** One sentence on what changed, with the source
-   hanging off the end as a linked `changelog`, `post`, or `tweet`. The footer
-   links the source too, but that is the last line. This one lets you open the
-   change as soon as you have read what happened. A newsletter gets no link,
-   because its only URL is a thread in our own inbox.
+   hanging off the end as a linked `changelog`, `article`, or `tweet`. The tag
+   names the thing you land on, so anything published on the competitor's own
+   site is an `article`, whether it is a launch write-up or a recap of a panel
+   they hosted. The footer links the source too, but that is the last line.
+   This one lets you open the change as soon as you have read what happened. A
+   newsletter gets no link, because its only URL is a thread in our own inbox,
+   and `newsletter` is the tag it carries everywhere else.
 4. **Impact.** `minor`, `notable`, or `major`. A label, not a gate. Every new
    item gets a message. One question decides the label: what did the post ship?
    A brand-new feature is major, an enhancement of a feature they already had

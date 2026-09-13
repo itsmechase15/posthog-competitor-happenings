@@ -213,6 +213,21 @@ describe("buildIssueDraft", () => {
     }
   });
 
+  it("tags the source in the header and the sources link the way Slack does", () => {
+    expect(draft.body).toContain("**Amplitude** · changelog · published 2026-01-15");
+    expect(draft.body).toContain(
+      "- [Amplitude changelog](https://fixture.invalid/releases/schedule-experiment-stop)",
+    );
+
+    const fromTheirSite = buildIssueBody(
+      { ...analyzed, item: { ...analyzed.item, source: "blog" } },
+      image,
+      pageAction,
+    );
+    expect(fromTheirSite).toContain("**Amplitude** · article · published 2026-01-15");
+    expect(fromTheirSite).toContain("- [Amplitude article](");
+  });
+
   it("shows the whole impact scale, with what each level means and only this alert's level checked", () => {
     for (const [impact, expected] of [
       ["minor", "- [x] Minor \u2013 no new feature or enhancement in the post"],

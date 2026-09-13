@@ -124,7 +124,9 @@ describe("buildSlackMessage", () => {
   it("links the source from the KNOW sentence, so the change opens in one click", () => {
     const labels: Array<[Alert["item"]["source"], string]> = [
       ["changelog", "changelog"],
-      ["blog", "post"],
+      // A page on the competitor's own site is an article, whatever the feed
+      // that found it is called. "post" read as if it came from social.
+      ["blog", "article"],
       ["x", "tweet"],
     ];
     for (const [source, label] of labels) {
@@ -518,6 +520,19 @@ describe("buildSlackMessage", () => {
     expect(footer.elements[0]?.text).toContain(
       "<https://fixture.invalid/releases/schedule-experiment-stop|source>",
     );
+  });
+
+  it("tags the source the same way in the footer as on the KNOW line", () => {
+    for (const [source, label] of [
+      ["changelog", "changelog"],
+      ["blog", "article"],
+      ["x", "tweet"],
+      ["newsletter", "newsletter"],
+    ] as Array<[Alert["item"]["source"], string]>) {
+      const message = buildSlackMessage({ ...alert, item: { ...alert.item, source } });
+      const footer = message.blocks.at(-1) as { elements: Array<{ text: string }> };
+      expect(footer.elements[0]?.text).toContain(`Amplitude · ${label} ·`);
+    }
   });
 
   it("says so when the summary was not model-analyzed", () => {

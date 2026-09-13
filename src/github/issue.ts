@@ -1,7 +1,7 @@
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
-import { actionLabel, actionOwner, IMPACT_LABEL, IMPACT_MEANING } from "../labels.js";
+import { actionLabel, actionOwner, IMPACT_LABEL, IMPACT_MEANING, SOURCE_LABEL } from "../labels.js";
 import { isDocsUrl, isMarketingTarget } from "../posthog/pages.js";
 import { findProductByName, productForDocUrl, productsForAction } from "../posthog/products.js";
 import { entryUrl } from "../sources/link.js";
@@ -217,7 +217,7 @@ export function buildIssueBody(
   const published = item.publishedAt?.toISOString().slice(0, 10) ?? "unknown";
 
   const sections = [
-    `**${competitor.label}** · ${item.source} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
+    `**${competitor.label}** · ${SOURCE_LABEL[item.source]} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
@@ -227,7 +227,7 @@ export function buildIssueBody(
     pagesSection(alert, action),
     docsThatWouldChangeSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
-    `## Sources\n- [${competitor.label} ${item.source}](${entryUrl(item)})${
+    `## Sources\n- [${competitor.label} ${SOURCE_LABEL[item.source]}](${entryUrl(item)})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""
     }`,
     `---\nOpened by posthog-competitor-happenings. Analyzed with \`${model}\`.`,
