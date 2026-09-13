@@ -50,13 +50,25 @@ says so and recommends only the real gap: Amplitude scheduling an experiment
 stop meets [scheduled flag changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes)
 and [manual experiment lifecycle](https://posthog.com/docs/experiments/managing-lifecycle),
 so the honest gap is "flags schedule, experiments still stop by hand". When the
-docs do not settle it, the action drops to update pages or a lower impact and
-the doubt goes in open questions. `verifyAgainstDocs` enforces this after the
-model replies, so a contradicted "PostHog has nothing like this" cannot ship.
+docs do not settle it, the action drops to update pages and the doubt goes in
+open questions. Impact does not move for it: impact is about what the
+competitor shipped, not about what could be checked on PostHog's side.
+`verifyAgainstDocs` enforces this after the model replies, so a contradicted
+"PostHog has nothing like this" cannot ship.
 
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
 - Impact `minor | notable | major` = **label only** (not a post gate – every new signal can Slack)
+- Impact is decided by one question: what did the post ship?
+  - **major** – a brand-new feature the competitor did not have before, including anything that opens a new product surface for them
+  - **notable** – an enhancement of a feature they already had: a new option, setting, or control, scheduling, a raised limit, a new platform for it, polish
+  - **minor** – a published post with no new feature and no enhancement in it: company news, culture, hiring, pricing copy, recaps of things already shipped
+  Rate the post on the strongest thing it ships, so a new feature wrapped in
+  recap copy is still major and fluff never pulls the label down. Nothing else
+  moves it: not how strategic it feels, not whether PostHog has a gap, not how
+  thin the source text is. Worked examples: a scheduled experiment stop on
+  Experiments they already ship is notable; first-party domains, a capability
+  they never offered, is major; a post about a new office is minor
 - One to three recommended actions, most important first. One signal often
   needs two, e.g. a stale page to fix and a feature gap to close:
   - update pages (existing compare/content)
@@ -119,7 +131,8 @@ One short, pretty message per new signal, in this order and nothing else:
 
 1. Feature image – changelog/blog image, tweet image, or a screenshot of the feature page. Never posted without one
 2. **What you need to KNOW** – the one sentence on what changed, under the heading. No unlabeled line above it
-3. **Impact** – Minor / Notable / Major, right under the sentence
+3. **Impact** – Minor / Notable / Major, right under the sentence. Same three
+   words as before, rated by what the post shipped
 4. **More detail** – a few short bullets that elaborate, clearly separate from the KNOW sentence
 5. **Recommended action(s)** – a heading, then each action stacked in its own
    block: bold title on one line, one short sentence under it, then a link to
@@ -142,7 +155,8 @@ three issues, because marketing owns update pages and new compare page while
 product owns consider building and consider enhancing.
 
 Title is competitor + feature + the action. Each body is scoped to its own
-action: that action in full, the summary, key points, impact, open questions,
+action: that action in full, the summary, key points, the whole impact scale
+with each level's meaning next to it, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
 to update (url, claim, suggested edit); product's carry only the docs that back
 that action, without the edits or the compare-page copy. Neither lists the

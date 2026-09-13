@@ -38,9 +38,39 @@ changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes) and
 [manual experiment
 lifecycle](https://posthog.com/docs/experiments/managing-lifecycle), so the
 honest gap is that experiments stop by hand, not that "PostHog cannot schedule
-anything". When the docs in context do not settle it, the action keeps a lower
-impact and the doubt goes in `open_questions` instead of becoming an invented
-gap.
+anything". When the docs in context do not settle it, the doubt goes in
+`open_questions` instead of becoming an invented gap. Impact does not move for
+it: it is rated on what the competitor shipped, not on what could be checked on
+PostHog's side. See [How impact is rated](#how-impact-is-rated).
+
+## How impact is rated
+
+Impact answers one question: what did this post ship?
+
+- **Minor** – a post with no new feature and no enhancement in it. Company
+  news, culture, hiring, pricing copy, a recap of things already shipped.
+- **Notable** – an enhancement of a feature they already had. A new option,
+  setting, or control on it, scheduling, a raised limit, a new platform for it.
+- **Major** – a brand-new feature they did not have before, including anything
+  that opens a new product surface for them.
+
+Rate the post on the strongest thing it ships. A brand-new feature wrapped in
+recap copy is major, and an enhancement wrapped in recap copy is notable, so
+fluff never pulls the label down. Nothing else moves it: not how strategic the
+launch feels, not whether PostHog has a gap here, not how loudly it was written
+up.
+
+Worked examples. Amplitude scheduling an experiment stop is notable, because
+Experiments already existed and this is a new control on it. Mixpanel serving
+events through a customer's own domain is major, because they had no such
+capability before. A post about a new office is minor.
+
+`SYSTEM_RULES` in [`src/analysis/prompt.ts`](../src/analysis/prompt.ts) states
+the rule to the model, `IMPACT_MEANING` in
+[`src/labels.ts`](../src/labels.ts) is the one-line version the GitHub issue
+prints next to each level, and `impactOf` in
+[`src/analysis/fallback.ts`](../src/analysis/fallback.ts) approximates it for a
+run with no `CURSOR_API_KEY`.
 
 ## Lead an action with the work
 
@@ -112,8 +142,9 @@ alert they were reading.
 Two things follow. A small launch often needs no page edit at all – unless a
 PostHog compare or docs page already discusses the capability, or claims
 something this launch makes wrong, silence about a small lifecycle control is
-fine. And a notable or major impact buys nothing here: plenty of real launches
-are `consider_enhancing` or `consider_building` only.
+fine. And a notable or major impact buys nothing here: impact says what the
+competitor shipped, not that a PostHog page is wrong, and plenty of real
+launches are `consider_enhancing` or `consider_building` only.
 
 [`enforceUpdatePagesTopic`](../src/analysis/relevance.ts) enforces it after the
 model replies. It reads the topic out of the signal title and the summary the

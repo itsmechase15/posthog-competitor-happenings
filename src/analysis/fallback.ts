@@ -17,18 +17,42 @@ import {
 
 export const FALLBACK_MODEL = "fallback-heuristic";
 
-/** Words that reliably mark a shipped capability rather than a tweak. */
-const NOTABLE_SIGNALS = [
+/**
+ * Impact is decided by what the post shipped: a brand-new feature is major, an
+ * enhancement of an existing one is notable, and a post with neither is minor.
+ * The heuristic cannot read a post the way the model does, so it matches the
+ * words each kind of post is written with, and a new-feature word wins.
+ */
+const NEW_FEATURE_SIGNALS = [
   "introduc",
   "launch",
+  "new feature",
+  "new product",
+  "brand new",
   "now available",
   "general availability",
   "generally available",
-  "new ",
-  "announc",
-  "beta",
-  "agent",
-  " ai ",
+  "meet ",
+  "say hello to",
+];
+
+const ENHANCEMENT_SIGNALS = [
+  "you can now",
+  "now you can",
+  "now supports",
+  "now support",
+  "improv",
+  "enhanc",
+  "expand",
+  "extend",
+  "upgrad",
+  "faster",
+  "more control",
+  "added support",
+  "support for",
+  "new option",
+  "new setting",
+  "schedul",
 ];
 
 function bodyOf(item: StoredItem): string {
@@ -60,7 +84,9 @@ function firstSentences(text: string, max: number): string {
 }
 
 function impactOf(haystack: string): Impact {
-  return NOTABLE_SIGNALS.some((signal) => haystack.includes(signal)) ? "notable" : "minor";
+  if (NEW_FEATURE_SIGNALS.some((signal) => haystack.includes(signal))) return "major";
+  if (ENHANCEMENT_SIGNALS.some((signal) => haystack.includes(signal))) return "notable";
+  return "minor";
 }
 
 /**

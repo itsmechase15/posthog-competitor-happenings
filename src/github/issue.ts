@@ -1,7 +1,7 @@
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
-import { actionLabel, actionOwner, IMPACT_LABEL } from "../labels.js";
+import { actionLabel, actionOwner, IMPACT_LABEL, IMPACT_MEANING } from "../labels.js";
 import { isDocsUrl, isMarketingTarget } from "../posthog/pages.js";
 import { findProductByName, productForDocUrl, productsForAction } from "../posthog/products.js";
 import { entryUrl } from "../sources/link.js";
@@ -186,13 +186,14 @@ function docsThatWouldChangeSection(
 }
 
 /**
- * The whole scale as a task list, so a reader who does not carry the three
- * levels in their head can see where this one sits. Slack keeps the single
- * label; an issue has the room.
+ * The whole scale as a task list, each level with what it means, so a reader
+ * who does not carry the rule in their head can see where this one sits and
+ * why. Slack keeps the single label; an issue has the room.
  */
 function impactScale(impact: Impact): string {
   return IMPACTS.map(
-    (level) => `- [${level === impact ? "x" : " "}] ${IMPACT_LABEL[level]}`,
+    (level) =>
+      `- [${level === impact ? "x" : " "}] ${IMPACT_LABEL[level]}${SPACED_EN_DASH}${IMPACT_MEANING[level]}`,
   ).join("\n");
 }
 

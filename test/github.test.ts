@@ -200,7 +200,7 @@ describe("buildIssueDraft", () => {
   it("carries the detail Slack no longer shows", () => {
     for (const fragment of [
       "## What you need to know\nAmplitude experiments can now be scheduled to stop on their own.",
-      "## Impact\n- [ ] Minor\n- [x] Notable\n- [ ] Major",
+      "## Impact\n- [ ] Minor \u2013 no new feature or enhancement in the post\n- [x] Notable \u2013 an enhancement of an existing feature\n- [ ] Major \u2013 a brand-new feature that did not exist before",
       "## More detail\n- Set a start time, an end time, or both.",
       "## Recommended action",
       "**Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
@@ -213,10 +213,10 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("shows the whole impact scale with only this alert's level checked", () => {
+  it("shows the whole impact scale, with what each level means and only this alert's level checked", () => {
     for (const [impact, expected] of [
-      ["minor", "## Impact\n- [x] Minor\n- [ ] Notable\n- [ ] Major"],
-      ["major", "## Impact\n- [ ] Minor\n- [ ] Notable\n- [x] Major"],
+      ["minor", "- [x] Minor \u2013 no new feature or enhancement in the post"],
+      ["major", "- [x] Major \u2013 a brand-new feature that did not exist before"],
     ] as const) {
       const body = buildIssueBody(
         { ...analyzed, analysis: { ...analyzed.analysis, impact } },

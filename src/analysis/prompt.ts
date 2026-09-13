@@ -57,7 +57,7 @@ function renderTeams(): string {
 
 function renderDocs(docs: PostHogDoc[]): string {
   if (docs.length === 0) {
-    return "(no product docs are in context for this signal, so you cannot verify a gap: keep impact lower, put what you could not check in open_questions, and do not fall back on update_pages unless a page in front of you is genuinely wrong or understated)";
+    return "(no product docs are in context for this signal, so you cannot verify a gap: put what you could not check in open_questions, rate impact on what the competitor shipped anyway, and do not fall back on update_pages unless a page in front of you is genuinely wrong or understated)";
   }
   return docs
     .map((doc, index) => {
@@ -77,7 +77,13 @@ Rules:
 - Reply with a single JSON object and nothing else. No prose, no code fences.
 - "summary" is exactly one sentence, and it is the only line most people read. Name the competitor and what changed. Concrete, specific, no hype, no filler openers.
 - "key_points" is 2 to 4 short lines of substance that go under a "More detail" heading, below the summary and the impact: what it does, who it is for, what it replaces, what is still missing. Fragments, not paragraphs, under 140 characters each. No line repeats the summary.
-- "impact" is a label only. minor = cosmetic or incremental. notable = real capability PostHog customers will ask about. major = strategic move that changes the comparison.
+- "impact" is a label only, and one question decides it: what did this post ship?
+  - major: a brand-new feature, one the competitor did not have before. A capability that opens a new product surface for them is always major.
+  - notable: an enhancement of a feature they already had. A new option, setting, or control on it, scheduling, a raised limit, a new destination or platform for it, or polish on how it works.
+  - minor: a published post with nothing about a new feature or an enhancement in it. Company news, culture, hiring, pricing copy, customer stories, event write-ups, recaps and roundups of things already shipped, thought leadership.
+  Rate the post on the strongest thing it ships. A post that wraps a brand-new feature in recap copy is major, and one that wraps an enhancement in recap copy is notable. Fluff never pulls the label down.
+  Nothing else moves it. Not how strategic the launch feels, not whether PostHog has a gap here, not how much PostHog customers will ask about it, not how loudly it was written up.
+  Worked examples. A scheduled end time on experiments they already ship is notable, because Experiments existed and this is a new control on it. Serving customer events through the customer's own domain, which they never offered, is major, because it is a capability they did not have. A post about their new office, or a roundup of last quarter's releases, is minor.
 - "actions" is 1 to 3 things PostHog should do, most important first. One signal often needs two: a stale page to fix and a feature gap to close. Do not pad it: every action has to earn its line.
 - Each action has a "type", a "detail", and, for consider_enhancing, a "feature". "type" is one of:
   - update_pages: a PostHog marketing, product marketing, or compare page is now wrong, understates what PostHog does, or is contradicted by the competitor's own comparison page. It has a bar of its own, below.
@@ -93,14 +99,14 @@ ${TEAM_RULES}
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
 - "posthog_refs" cites indexed PostHog URLs from the context below. Only cite URLs given to you. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things the source does not answer that change what PostHog should do. Skip anything you can answer from the source.
-- Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and keep impact minor.
+- Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and rate impact on what the post does show: a post with no feature visible in it is minor.
 
 Check the docs before you recommend anything. Every action below is a claim about what PostHog ships, and getting that wrong is the one mistake that makes this bot useless:
 - Before you write a consider_enhancing, consider_building, or update_pages action, read the "PostHog product docs" section. Those pages are the product. The comparison pages are marketing copy written on some past date, so a compare blurb, or its silence, is not evidence about what PostHog does today.
 - Never write that PostHog cannot do something unless a docs excerpt in front of you shows that gap. "PostHog has no X" with no docs page behind it is the wrong answer even when it turns out to be true.
 - When the docs show an adjacent capability, say so in "detail" and recommend only the part that is genuinely missing. Worked example: Feature flags can schedule a change for a future date (https://posthog.com/docs/feature-flags/scheduled-flag-changes), while Experiments start, pause, and stop by hand (https://posthog.com/docs/experiments/managing-lifecycle). So "PostHog cannot schedule anything" is wrong, the real gap is that experiments stop by hand, and the action asks for the missing piece first: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand."
 - consider_building is only for a capability with no PostHog product behind it at all. If any docs page in context covers the area, the action is consider_enhancing and "feature" names that product.
-- When the docs in context do not settle whether PostHog does this, do not guess. Say so in the summary, keep impact lower, and put the unanswered question in "open_questions". update_pages is not the safe fallback for an unverified gap: it has its own bar below.
+- When the docs in context do not settle whether PostHog does this, do not guess. Say so in the summary and put the unanswered question in "open_questions". Impact does not move for it: impact is about what the competitor shipped, not about what you could check on PostHog's side. update_pages is not the safe fallback for an unverified gap either: it has its own bar below.
 - Cite the docs URL you relied on in "posthog_refs" whenever an action says what PostHog does or does not do. Prefer a docs URL over a compare URL for that.
 - A docs page is evidence for what PostHog ships, never a page to edit: update_pages and new_compare_page point at a PostHog marketing, product marketing, or compare page, and a "suggested_edit" on a /docs/ URL is always the wrong answer.
 
@@ -160,7 +166,7 @@ URL: ${item.url}
 Published: ${item.publishedAt?.toISOString() ?? "unknown"}
 
 Content:
-${body || "(no body text available, so reason from the title and URL, and keep impact minor)"}
+${body || "(no body text available, so reason from the title and URL alone, and rate impact on the capability the title names, if it names one)"}
 
 ## PostHog product docs, which are what PostHog ships today
 Check every action against these before you claim PostHog does or does not do something.

@@ -398,7 +398,27 @@ describe("heuristicAnalysis", () => {
   it("restates the source rather than inventing an assessment", () => {
     const analysis = heuristicAnalysis(item, []);
     expect(analysis.summary).toContain("Introducing Widget Sync");
-    expect(analysis.impact).toBe("notable");
+  });
+
+  it("rates a post on what it shipped, the way the rules do", () => {
+    for (const [body, expected] of [
+      ["Introducing Widget Sync. It copies widgets on a schedule.", "major"],
+      ["You can now schedule when an existing report stops sending.", "notable"],
+      ["We moved into a new office and hired a head of design.", "minor"],
+    ] as const) {
+      expect(heuristicAnalysis({ ...item, raw: { body } }, []).impact).toBe(expected);
+    }
+  });
+
+  it("reads a new feature as major even when the post also enhances something", () => {
+    const analysis = heuristicAnalysis(
+      {
+        ...item,
+        raw: { body: "Introducing Widget Sync, and dashboards are now faster too." },
+      },
+      [],
+    );
+    expect(analysis.impact).toBe("major");
   });
 
   it("keeps the summary to one sentence and puts the rest in key points", () => {
@@ -549,6 +569,45 @@ describe("buildAnalysisPrompt", () => {
   it("asks for the minor/notable/major scale, not low/medium/high", () => {
     expect(withRefs).toContain('"minor" | "notable" | "major"');
     expect(withRefs).not.toContain('"low" | "medium" | "high"');
+  });
+
+  describe("how impact is rated", () => {
+    it("rates on what the post shipped, and says so first", () => {
+      expect(withRefs).toContain('"impact" is a label only, and one question decides it: what did this post ship?');
+    });
+
+    it("gives each level its rule", () => {
+      expect(withRefs).toContain("major: a brand-new feature, one the competitor did not have before");
+      expect(withRefs).toContain("notable: an enhancement of a feature they already had");
+      expect(withRefs).toContain(
+        "minor: a published post with nothing about a new feature or an enhancement in it",
+      );
+    });
+
+    it("rates a mixed post on the strongest thing it ships", () => {
+      expect(withRefs).toContain("Rate the post on the strongest thing it ships");
+      expect(withRefs).toContain("Fluff never pulls the label down");
+    });
+
+    it("shuts out the old heuristics", () => {
+      expect(withRefs).toContain("Nothing else moves it");
+      expect(withRefs).toContain("not whether PostHog has a gap here");
+      expect(withRefs).not.toContain("strategic move that changes the comparison");
+      expect(withRefs).not.toContain("cosmetic or incremental");
+    });
+
+    it("works both edge cases the rules turn on", () => {
+      expect(withRefs).toContain("A scheduled end time on experiments they already ship is notable");
+      expect(withRefs).toContain("the customer's own domain, which they never offered, is major");
+    });
+
+    it("never asks for a lower impact when the docs settle nothing", () => {
+      expect(withRefs).not.toContain("keep impact lower");
+      expect(withRefs).not.toContain("keep impact minor");
+      expect(withRefs).toContain(
+        "impact is about what the competitor shipped, not about what you could check on PostHog's side",
+      );
+    });
   });
 
   describe("checking the docs before recommending", () => {
