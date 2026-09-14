@@ -87,7 +87,7 @@ export const REQUIREMENTS: Requirement[] = [
     home: "actions-variable",
     purpose: "The inbox address newsletters are read from. Yours, and there is no default",
     howToGet:
-      "The address of the AgentMail inbox you subscribed to the competitors' newsletters with, e.g. name@agentmail.to",
+      "The address of the AgentMail inbox you subscribed to the competitors' newsletters with, e.g. name@agentmail.to. The workflows read it from Variables, then from a secret of the same name",
     without: "the newsletter source is skipped, with a log line saying so",
   },
   {
@@ -95,7 +95,8 @@ export const REQUIREMENTS: Requirement[] = [
     need: "required",
     home: "actions-variable",
     purpose: "Channel the bot posts to. Yours, and there is no default",
-    howToGet: "In Slack, open the channel → View channel details → the C0… id at the bottom",
+    howToGet:
+      "In Slack, open the channel → View channel details → the C0… id at the bottom. The workflows read it from Variables, then from a secret of the same name",
     without: "the bot token has nowhere to post, so the run stops before delivery",
   },
   {
