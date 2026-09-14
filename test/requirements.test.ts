@@ -67,14 +67,14 @@ describe("checkEnv", () => {
   });
 
   it("catches Supabase's IPv6-only direct host before Actions does", () => {
-    expect(isDirectSupabaseHost("postgresql://postgres:pw@db.hapeyljmsclryifyhqdr.supabase.co:5432/postgres")).toBe(
+    expect(isDirectSupabaseHost("postgresql://postgres:pw@db.abcdefghijklmnopqrst.supabase.co:5432/postgres")).toBe(
       true,
     );
     expect(isDirectSupabaseHost(FULL.DATABASE_URL)).toBe(false);
 
     const report = checkEnv({
       ...FULL,
-      DATABASE_URL: "postgresql://postgres:pw@db.hapeyljmsclryifyhqdr.supabase.co:5432/postgres",
+      DATABASE_URL: "postgresql://postgres:pw@db.abcdefghijklmnopqrst.supabase.co:5432/postgres",
     });
     expect(report.warnings.join(" ")).toContain("Session pooler");
   });
