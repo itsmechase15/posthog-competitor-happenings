@@ -1,0 +1,146 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+/**
+ * The workflows are the only place the app's environment is assembled, and a
+ * variable the code now requires is worth nothing if the step that reads it was
+ * never handed it. That gap is invisible in review and costs a whole morning's
+ * alert, so it is asserted here instead.
+ */
+
+const WORKFLOW_DIR = ".github/workflows";
+
+const workflows = readdirSync(WORKFLOW_DIR)
+  .filter((name) => name.endsWith(".yml"))
+  .map((name) => ({ name, text: readFileSync(`${WORKFLOW_DIR}/${name}`, "utf8") }));
+
+interface Step {
+  run: string;
+  /** Names the step can actually see: its own env plus the job's. */
+  env: Set<string>;
+}
+
+/**
+ * Enough of a reader for the shape these files are written in: a job `env:`
+ * block at four spaces, steps at six, a step `env:` block at eight. A real YAML
+ * parser would mean a dependency for one test.
+ */
+function readSteps(text: string): Step[] {
+  const lines = text.split("\n");
+  const jobEnv = new Set<string>();
+  const steps: Step[] = [];
+
+  let current: { run: string[]; env: Set<string> } | undefined;
+  let envIndent: number | undefined;
+  let inJobEnv = false;
+
+  const flush = (): void => {
+    if (current) steps.push({ run: current.run.join(" "), env: current.env });
+    current = undefined;
+  };
+
+  for (const line of lines) {
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const indent = line.length - line.trimStart().length;
+
+    if (/^ {4}env:\s*$/.test(line)) {
+      inJobEnv = true;
+      envIndent = undefined;
+      continue;
+    }
+    if (inJobEnv) {
+      const match = /^ {6}([A-Z0-9_]+):/.exec(line);
+      if (match?.[1]) {
+        jobEnv.add(match[1]);
+        continue;
+      }
+      inJobEnv = false;
+    }
+
+    if (/^ {6}- /.test(line)) {
+      flush();
+      current = { run: [], env: new Set() };
+      envIndent = undefined;
+    }
+
+    if (!current) continue;
+
+    if (/^ {8}env:\s*$/.test(line)) {
+      envIndent = 10;
+      continue;
+    }
+    if (envIndent !== undefined) {
+      const match = /^ {10}([A-Z0-9_]+):/.exec(line);
+      if (match?.[1]) {
+        current.env.add(match[1]);
+        continue;
+      }
+      if (indent <= 8) envIndent = undefined;
+    }
+
+    const run = /^\s+(?:- )?run: (.*)$/.exec(line);
+    if (run?.[1]) current.run.push(run[1]);
+    else if (current.run.length > 0 && indent >= 10) current.run.push(line.trim());
+  }
+  flush();
+
+  return steps.map((step) => ({ run: step.run, env: new Set([...step.env, ...jobEnv]) }));
+}
+
+/** Steps that either judge the environment or run the pipeline against it. */
+function configuredSteps(text: string): Step[] {
+  return readSteps(text).filter(
+    (step) =>
+      /check-env/.test(step.run) || /dist\/index\.js|npm run run/.test(step.run),
+  );
+}
+
+describe("workflow environments", () => {
+  it("finds the steps it means to check", () => {
+    const counted = workflows.map(({ name, text }) => [name, configuredSteps(text).length]);
+    expect(Object.fromEntries(counted)).toEqual({
+      "check-secrets.yml": 2,
+      "ci.yml": 0,
+      "daily.yml": 2,
+      "force-post.yml": 3,
+    });
+  });
+
+  it.each(workflows)(
+    "$name hands the channel id to every step it hands a bot token",
+    ({ text }) => {
+      for (const step of configuredSteps(text)) {
+        // `--check-slack` asks Slack what the token can do. It never posts, so
+        // it has no use for a channel.
+        if (step.run.includes("--check-slack")) continue;
+        if (!step.env.has("SLACK_BOT_TOKEN")) continue;
+        expect(step.env, step.run).toContain("SLACK_CHANNEL_ID");
+      }
+    },
+  );
+
+  it.each(workflows)(
+    "$name hands the inbox id to every step it hands an AgentMail key",
+    ({ text }) => {
+      for (const step of configuredSteps(text)) {
+        if (!step.env.has("AGENTMAIL_API_KEY")) continue;
+        expect(step.env, step.run).toContain("AGENTMAIL_INBOX_ID");
+      }
+    },
+  );
+
+  /**
+   * A channel id and an inbox address are not credentials, so they belong in
+   * Variables — but both are easy to reach for as a secret, and reading only
+   * `vars` leaves such a value silently empty. Every reference takes both.
+   */
+  it.each(workflows)("$name reads the two non-credential values from either home", ({ text }) => {
+    const references = text
+      .split("\n")
+      .filter((line) => /^\s+(SLACK_CHANNEL_ID|AGENTMAIL_INBOX_ID):/.test(line));
+
+    for (const line of references) {
+      expect(line, line.trim()).toMatch(/vars\.\w+ \|\| secrets\.\w+/);
+    }
+  });
+});
