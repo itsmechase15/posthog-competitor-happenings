@@ -389,7 +389,12 @@ else's channel or read somebody else's inbox:
 | Variable | Needed for | What it is |
 | --- | --- | --- |
 | `SLACK_CHANNEL_ID` | Posting with a bot token | The channel the bot posts to, the `C0…` id from **View channel details**. Nothing is delivered until it is set |
-| `AGENTMAIL_INBOX_ID` | The newsletter source | The inbox newsletters are read from, like `name@agentmail.to`. Unset skips the source. Also accepted as a secret, since it is easy to store as one |
+| `AGENTMAIL_INBOX_ID` | The newsletter source | The inbox newsletters are read from, like `name@agentmail.to`. Unset skips the source |
+
+Either one is also accepted as a **secret** of the same name, because both are
+easy to reach for as one. Every workflow reads the variable first and falls back
+to the secret, so it does not matter which home you pick – only that one of them
+has a value.
 
 `GITHUB_TOKEN` is on neither list. Actions provides it, and the workflows grant
 it `issues: write`, which is all issue creation needs.
