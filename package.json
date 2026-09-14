@@ -2,6 +2,7 @@
   "name": "posthog-competitor-happenings",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Daily Slack alerts when Mixpanel or Amplitude ships something, with what PostHog should do about it.",
   "engines": {
