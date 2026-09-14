@@ -85,18 +85,18 @@ export const REQUIREMENTS: Requirement[] = [
     name: "AGENTMAIL_INBOX_ID",
     need: "source",
     home: "actions-variable",
-    purpose: "The inbox address newsletters are read from",
+    purpose: "The inbox address newsletters are read from. Yours, and there is no default",
     howToGet:
       "The address of the AgentMail inbox you subscribed to the competitors' newsletters with, e.g. name@agentmail.to",
-    without: "the built-in default address is used, which is almost certainly not yours",
+    without: "the newsletter source is skipped, with a log line saying so",
   },
   {
     name: "SLACK_CHANNEL_ID",
-    need: "optional",
+    need: "required",
     home: "actions-variable",
-    purpose: "Channel the bot posts to",
+    purpose: "Channel the bot posts to. Yours, and there is no default",
     howToGet: "In Slack, open the channel → View channel details → the C0… id at the bottom",
-    without: "posts go to the default channel id in src/config.ts",
+    without: "the bot token has nowhere to post, so the run stops before delivery",
   },
   {
     name: "SLACK_WEBHOOK_URL",
@@ -196,6 +196,12 @@ export function checkEnv(env: Env): EnvReport {
 
     // Only worth naming when the source it feeds is switched on.
     if (requirement.name === "AGENTMAIL_INBOX_ID" && !has(env, "AGENTMAIL_API_KEY")) continue;
+
+    // Only the bot token reads it: a webhook carries its own channel, and a dry
+    // run prints the payload instead of delivering it.
+    if (requirement.name === "SLACK_CHANNEL_ID" && (!has(env, "SLACK_BOT_TOKEN") || dryRun)) {
+      continue;
+    }
 
     if (requirement.need === "required") missingRequired.push(requirement);
     else if (requirement.need === "source") missingSources.push(requirement);

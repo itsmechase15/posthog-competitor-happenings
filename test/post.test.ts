@@ -35,8 +35,8 @@ afterEach(() => {
 
 describe("BotTokenPoster", () => {
   it("calls chat.postMessage with the bot token and channel", async () => {
-    const fetchSpy = mockFetch(jsonResponse({ ok: true, ts: "1", channel: "C0C07A1DM09" }));
-    await new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).post(message);
+    const fetchSpy = mockFetch(jsonResponse({ ok: true, ts: "1", channel: "C0TESTCHAN1" }));
+    await new BotTokenPoster("xoxb-test", "C0TESTCHAN1", 5_000).post(message);
 
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -44,7 +44,7 @@ describe("BotTokenPoster", () => {
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer xoxb-test");
 
     const body = JSON.parse(init.body as string);
-    expect(body.channel).toBe("C0C07A1DM09");
+    expect(body.channel).toBe("C0TESTCHAN1");
     expect(body.text).toBe(message.text);
     expect(body.blocks).toEqual(message.blocks);
     expect(body.unfurl_links).toBe(false);
@@ -74,19 +74,19 @@ describe("BotTokenPoster", () => {
   });
 
   it("names the channel it targets", () => {
-    expect(new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).description).toContain(
-      "C0C07A1DM09",
+    expect(new BotTokenPoster("xoxb-test", "C0TESTCHAN1", 5_000).description).toContain(
+      "C0TESTCHAN1",
     );
   });
 
   it("logs the permalink so a CI run records that the message landed", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    mockFetch(jsonResponse({ ok: true, ts: "1757343375.123456", channel: "C0C07A1DM09" }));
-    await new BotTokenPoster("xoxb-test", "C0C07A1DM09", 5_000).post(message);
+    mockFetch(jsonResponse({ ok: true, ts: "1757343375.123456", channel: "C0TESTCHAN1" }));
+    await new BotTokenPoster("xoxb-test", "C0TESTCHAN1", 5_000).post(message);
 
     const lines = logSpy.mock.calls.map((call) => String(call[0]));
     expect(lines.join("\n")).toContain(
-      "https://slack.com/archives/C0C07A1DM09/p1757343375123456",
+      "https://slack.com/archives/C0TESTCHAN1/p1757343375123456",
     );
     logSpy.mockRestore();
   });
@@ -177,7 +177,7 @@ describe("createPoster", () => {
     ({
       dryRun: false,
       slackBotToken: undefined,
-      slackChannelId: "C0C07A1DM09",
+      slackChannelId: "C0TESTCHAN1",
       slackWebhookUrl: undefined,
       httpTimeoutMs: 5_000,
       ...overrides,
@@ -188,7 +188,7 @@ describe("createPoster", () => {
       config({ slackBotToken: "xoxb-test", slackWebhookUrl: "https://hooks.slack.invalid/x" }),
     );
     expect(poster).toBeInstanceOf(BotTokenPoster);
-    expect(poster.description).toContain("C0C07A1DM09");
+    expect(poster.description).toContain("C0TESTCHAN1");
   });
 
   it("falls back to the webhook when there is no bot token", () => {
@@ -206,5 +206,11 @@ describe("createPoster", () => {
 
   it("prints and says why when Slack is not configured at all", () => {
     expect(createPoster(config({})).description).toContain("SLACK_BOT_TOKEN");
+  });
+
+  it("refuses to guess a channel for a bot token that was given none", () => {
+    expect(() =>
+      createPoster(config({ slackBotToken: "xoxb-test", slackChannelId: undefined })),
+    ).toThrow(/SLACK_CHANNEL_ID/);
   });
 });

@@ -29,7 +29,11 @@ Nothing works until the keys are in place, so do this before anything else.
    ```
 
    Or Settings → Secrets and variables → Actions → New repository secret.
-   `SLACK_CHANNEL_ID` and `AGENTMAIL_INBOX_ID` are variables, not secrets.
+   `SLACK_CHANNEL_ID` and `AGENTMAIL_INBOX_ID` are variables, not secrets, and
+   neither has a default in the code – a Slack channel id and an inbox address
+   belong to whoever is running this, so the app stops or skips the source
+   rather than guessing at one. Never reintroduce a personal default for
+   either.
 4. For a local run only, the same values go in `.env`, which git ignores. Copy
    `.env.example` and fill it in.
 5. Confirm it took: Actions → **Check secrets** → Run workflow. It reports what

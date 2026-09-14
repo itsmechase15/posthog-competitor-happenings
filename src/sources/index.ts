@@ -111,12 +111,8 @@ async function collectX(config: Config, competitor: CompetitorConfig): Promise<C
   return postsToItems(competitor, posts, competitor.xUsername, timeline.includes?.media ?? []);
 }
 
-async function collectNewsletters(config: Config): Promise<CandidateItem[]> {
-  const url = messagesUrl(
-    config.agentMailInboxId,
-    daysAgo(config.lookbackDays),
-    NEWSLETTER_FETCH_LIMIT,
-  );
+async function collectNewsletters(config: Config, inboxId: string): Promise<CandidateItem[]> {
+  const url = messagesUrl(inboxId, daysAgo(config.lookbackDays), NEWSLETTER_FETCH_LIMIT);
   const response = await fetchJson<AgentMailMessageList>(url, {
     ...http(config),
     headers: { authorization: `Bearer ${config.agentMailApiKey ?? ""}` },
@@ -125,7 +121,7 @@ async function collectNewsletters(config: Config): Promise<CandidateItem[]> {
   const items = messagesToItems(
     messages,
     COMPETITOR_IDS.map((id) => COMPETITORS[id]),
-    config.agentMailInboxId,
+    inboxId,
   );
   log.info(`newsletters: ${messages.length} messages, ${items.length} mention a competitor`);
   return items;
@@ -165,10 +161,13 @@ export async function collectCandidates(config: Config): Promise<CollectionResul
     notes.push(note);
   }
 
-  if (config.agentMailApiKey) {
-    await run("newsletters", () => collectNewsletters(config));
+  const inboxId = config.agentMailInboxId;
+  if (config.agentMailApiKey && inboxId) {
+    await run("newsletters", () => collectNewsletters(config, inboxId));
   } else {
-    const note = "newsletters: skipped, AGENTMAIL_API_KEY is not set";
+    const note = config.agentMailApiKey
+      ? "newsletters: skipped, AGENTMAIL_API_KEY is set but AGENTMAIL_INBOX_ID is not, and there is no default inbox to fall back on"
+      : "newsletters: skipped, AGENTMAIL_API_KEY is not set";
     log.warn(note);
     notes.push(note);
   }

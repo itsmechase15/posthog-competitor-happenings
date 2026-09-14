@@ -382,12 +382,14 @@ Add these under **Settings → Secrets and variables → Actions → Secrets**:
 | `AGENTMAIL_API_KEY` | The newsletter source. Unset skips it | agentmail.to → dashboard → API keys |
 | `SLACK_WEBHOOK_URL` | Optional fallback delivery, only read when there is no bot token | api.slack.com/apps → Incoming Webhooks |
 
-And these under **Variables**, because neither is a credential:
+And these under **Variables**, because neither is a credential. Both are yours,
+and neither has a default – the app would rather stop than post into somebody
+else's channel or read somebody else's inbox:
 
-| Variable | Default | What it is |
+| Variable | Needed for | What it is |
 | --- | --- | --- |
-| `SLACK_CHANNEL_ID` | `C0C07A1DM09` | The channel the bot posts to |
-| `AGENTMAIL_INBOX_ID` | `chasemccaskill@agentmail.to` | The inbox newsletters are read from. Also accepted as a secret, since it is easy to store as one |
+| `SLACK_CHANNEL_ID` | Posting with a bot token | The channel the bot posts to, the `C0…` id from **View channel details**. Nothing is delivered until it is set |
+| `AGENTMAIL_INBOX_ID` | The newsletter source | The inbox newsletters are read from, like `name@agentmail.to`. Unset skips the source. Also accepted as a secret, since it is easy to store as one |
 
 `GITHUB_TOKEN` is on neither list. Actions provides it, and the workflows grant
 it `issues: write`, which is all issue creation needs.
@@ -404,7 +406,8 @@ permissions does this once:
 4. In Slack, invite the app to the channel: `/invite @your-app`. Every post
    fails with `not_in_channel` if you skip this step.
 5. Open the channel → **View channel details** → copy the `C0…` id into the
-   `SLACK_CHANNEL_ID` variable.
+   `SLACK_CHANNEL_ID` variable. There is no default channel, so a bot token
+   without this one stops the run rather than guessing.
 
 A missing scope answers `missing_scope`. Fix it by adding the scope,
 reinstalling the app, and copying the new token into the secret. Reinstalling
@@ -424,7 +427,8 @@ be read by a cron job.
 1. Create an inbox in the [AgentMail](https://agentmail.to) dashboard. You get
    an address like `name@agentmail.to`.
 2. Copy an API key from the same dashboard into `AGENTMAIL_API_KEY`, and the
-   address into the `AGENTMAIL_INBOX_ID` variable.
+   address into the `AGENTMAIL_INBOX_ID` variable. Both, or the source is
+   skipped – there is no default inbox to read instead.
 3. Subscribe that address to both competitors' product update lists, from the
    signup forms on their own sites.
 4. Open the inbox and click through the confirmation mail. Most of them double
@@ -540,11 +544,11 @@ reads. A variable missing from it is a variable nobody is told about.
 | `DATABASE_URL` | yes, unless `DRY_RUN=true` | – | Supabase pooler / Postgres connection string |
 | `CURSOR_API_KEY` | for analysis | – | Cursor SDK key. Unset falls back to the labeled heuristic |
 | `SLACK_BOT_TOKEN` | for posting | – | Bot token with `chat:write`. Preferred over the webhook |
-| `SLACK_CHANNEL_ID` | no | `C0C07A1DM09` | Channel the bot posts to. Ignored by the webhook path |
+| `SLACK_CHANNEL_ID` | with a bot token | – | Channel the bot posts to, as a `C0…` id. Ignored by the webhook path |
 | `SLACK_WEBHOOK_URL` | no | – | Incoming webhook, used only when there is no bot token |
 | `X_BEARER_TOKEN` | no | – | Unset skips the X source |
 | `AGENTMAIL_API_KEY` | no | – | Unset skips the newsletter source |
-| `AGENTMAIL_INBOX_ID` | no | `chasemccaskill@agentmail.to` | Inbox to read newsletters from |
+| `AGENTMAIL_INBOX_ID` | with an AgentMail key | – | Inbox to read newsletters from. Unset skips the source |
 | `GITHUB_TOKEN` | for issues | – | Set automatically in Actions. `GH_TOKEN` is read as a fallback. Unset skips issue creation |
 | `GITHUB_REPOSITORY` | no | `itsmechase15/posthog-competitor-happenings` | `owner/repo` the issues are filed against. Actions sets it to the running repo |
 | `SCREENSHOT_URL_TEMPLATE` | no | microlink, then thum.io | Comma-separated renderer templates, tried in order. `{url}` or `{encodedUrl}` becomes the page to screenshot |
@@ -682,3 +686,7 @@ is where the conversation lives, not the code. Something like:
 [PLAN.md](./PLAN.md) has the scope and phasing. One thing on the roadmap and
 deliberately not built: replying to a Slack alert to edit its recommended
 actions.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
