@@ -44,6 +44,11 @@ export interface RunSummary {
 export function createPoster(config: Config): SlackPoster {
   if (config.dryRun) return new ConsolePoster("dry run");
   if (config.slackBotToken) {
+    if (!config.slackChannelId) {
+      throw new Error(
+        "SLACK_CHANNEL_ID is not set, and a bot token has to be told where to post. In Slack, open the channel, View channel details, and copy the C0… id into the SLACK_CHANNEL_ID variable",
+      );
+    }
     return new BotTokenPoster(config.slackBotToken, config.slackChannelId, config.httpTimeoutMs);
   }
   if (config.slackWebhookUrl) {

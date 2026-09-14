@@ -11,6 +11,7 @@ const FULL = {
   DATABASE_URL: "postgresql://user:pw@aws-0-us-west-1.pooler.supabase.com:5432/postgres",
   CURSOR_API_KEY: "key_live",
   SLACK_BOT_TOKEN: "xoxb-000",
+  SLACK_CHANNEL_ID: "C0TESTCHAN1",
   X_BEARER_TOKEN: "bearer",
   AGENTMAIL_API_KEY: "am_key",
   AGENTMAIL_INBOX_ID: "someone@agentmail.to",
@@ -53,6 +54,19 @@ describe("checkEnv", () => {
     expect(withKey.missingSources.map((requirement) => requirement.name)).toContain(
       "AGENTMAIL_INBOX_ID",
     );
+  });
+
+  it("only asks for the channel id once there is a bot token to post with", () => {
+    const withoutToken = checkEnv({ ...FULL, SLACK_BOT_TOKEN: "", SLACK_CHANNEL_ID: "" });
+    expect(withoutToken.missingRequired.map((requirement) => requirement.name)).not.toContain(
+      "SLACK_CHANNEL_ID",
+    );
+
+    const withToken = checkEnv({ ...FULL, SLACK_CHANNEL_ID: "" });
+    expect(withToken.missingRequired.map((requirement) => requirement.name)).toContain(
+      "SLACK_CHANNEL_ID",
+    );
+    expect(isFailing(withToken, false)).toBe(true);
   });
 
   it("accepts the webhook as a delivery path, and says what it costs", () => {

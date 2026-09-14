@@ -12,7 +12,7 @@ Help PostHog marketing stay current on Mixpanel + Amplitude product moves. Succe
   - Amplitude: https://amplitude.com/releases/feed.xml
   - Mixpanel: https://docs.mixpanel.com/changelogs/rss.xml
 - Blog / launch articles via sitemap diff for both competitors
-- Newsletters via AgentMail inbox `chasemccaskill@agentmail.to` (optional until subscribed)
+- Newsletters via an AgentMail inbox (`AGENTMAIL_INBOX_ID`, optional until subscribed)
 - Official X: `@mixpanel` and `@Amplitude_HQ` (last ~10 posts/day)
 
 ### Out of v1 daily flow
@@ -170,7 +170,8 @@ impact, action, owner, and the PostHog product when the action names one. Uses t
 `GITHUB_TOKEN` Actions provides; with no token the run skips issue creation and
 keeps posting.
 
-Chase personal Slack first; PostHog channel later.
+A private channel first; a PostHog channel later. Whichever it is, the id lives
+in `SLACK_CHANNEL_ID`, never in the code.
 
 ### Storage
 Supabase Postgres (`DATABASE_URL`). The project ref lives with the secret, not here.
@@ -186,7 +187,7 @@ TypeScript on GitHub. Cron via GitHub Actions (~7am PT).
 - `GITHUB_TOKEN` (free inside Actions; needs `issues: write`)
 - Optional: AgentMail API, `X_BEARER_TOKEN` if Actions cannot use other X access
 
-## Handoff to Joe (PostHog Marketing Lead)
-1. Prove on Chase Slack + screenshot
+## Taking it to PostHog marketing
+1. Prove it in a private channel, with a screenshot
 2. Ship this app repo
 3. Open issue/PR in https://github.com/PostHog/marketing linking the app + setup notes (that repo is planning hub, not deploy)

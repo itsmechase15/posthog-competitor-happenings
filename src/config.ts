@@ -50,9 +50,6 @@ export const COMPETITORS: Record<CompetitorId, CompetitorConfig> = {
 
 export const COMPETITOR_IDS = Object.keys(COMPETITORS) as CompetitorId[];
 
-/** The private #posthog-competitor-happenings channel. */
-export const DEFAULT_SLACK_CHANNEL_ID = "C0C07A1DM09";
-
 /** Issues are filed against this app's own repo, where the daily job already runs. */
 export const DEFAULT_GITHUB_REPO = "itsmechase15/posthog-competitor-happenings";
 
@@ -78,8 +75,11 @@ export interface Config {
   databaseUrl: string | undefined;
   /** Bot token for `chat.postMessage`. Preferred over the webhook when both are set. */
   slackBotToken: string | undefined;
-  /** Channel the bot posts to. Defaults to #posthog-competitor-happenings. */
-  slackChannelId: string;
+  /**
+   * Channel the bot posts to. No default: a built-in id would be one
+   * workspace's channel, and every other install would post at it by accident.
+   */
+  slackChannelId: string | undefined;
   /** Fallback delivery when no bot token is configured. */
   slackWebhookUrl: string | undefined;
   /** Token used to open the issue each Slack message links to. Set for free inside Actions. */
@@ -97,7 +97,8 @@ export interface Config {
   cursorRuntime: "local" | "cloud";
   xBearerToken: string | undefined;
   agentMailApiKey: string | undefined;
-  agentMailInboxId: string;
+  /** Inbox the newsletters are read from. No default, for the same reason. */
+  agentMailInboxId: string | undefined;
   /** Items published before this many days ago are ignored. */
   lookbackDays: number;
   /** Hard cap on items analyzed and posted in one run, so a feed glitch can't flood Slack. */
@@ -169,7 +170,7 @@ export function loadConfig(): Config {
     forceAnalyze,
     databaseUrl: str("DATABASE_URL"),
     slackBotToken: str("SLACK_BOT_TOKEN"),
-    slackChannelId: str("SLACK_CHANNEL_ID") ?? DEFAULT_SLACK_CHANNEL_ID,
+    slackChannelId: str("SLACK_CHANNEL_ID"),
     slackWebhookUrl: str("SLACK_WEBHOOK_URL"),
     githubToken: str("GITHUB_TOKEN") ?? str("GH_TOKEN"),
     githubRepo: str("GITHUB_REPOSITORY") ?? DEFAULT_GITHUB_REPO,
@@ -179,7 +180,7 @@ export function loadConfig(): Config {
     cursorRuntime: runtime,
     xBearerToken: str("X_BEARER_TOKEN"),
     agentMailApiKey: str("AGENTMAIL_API_KEY"),
-    agentMailInboxId: str("AGENTMAIL_INBOX_ID") ?? "chasemccaskill@agentmail.to",
+    agentMailInboxId: str("AGENTMAIL_INBOX_ID"),
     lookbackDays: int("LOOKBACK_DAYS", 7),
     maxItemsPerRun: int("MAX_ITEMS_PER_RUN", 12),
     maxItemsPerSource: int("MAX_ITEMS_PER_SOURCE", 8),
