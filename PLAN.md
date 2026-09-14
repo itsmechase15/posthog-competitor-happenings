@@ -173,7 +173,7 @@ keeps posting.
 Chase personal Slack first; PostHog channel later.
 
 ### Storage
-Supabase Postgres (`DATABASE_URL`). Project ref `hapeyljmsclryifyhqdr`.
+Supabase Postgres (`DATABASE_URL`). The project ref lives with the secret, not here.
 Tables: `items`, `analyses`, `pages`, `claims` (already migrated).
 
 ### Runtime
