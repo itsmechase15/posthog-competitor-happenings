@@ -130,6 +130,15 @@ export const REQUIREMENTS: Requirement[] = [
     purpose: "Model id passed to the Cursor SDK",
     howToGet: "Defaults to claude-opus-5",
   },
+  {
+    name: "DOCS_LLMS_FULL_TXT",
+    need: "optional",
+    home: "actions-variable",
+    purpose: "One-off seed for an empty docs corpus, read once and then ignored",
+    howToGet:
+      "Only set this if PostHog starts publishing an llms-full.txt and you want to fill a fresh corpus in one request instead of over several runs",
+    without: "the corpus fills a page at a time, which takes one long first run",
+  },
 ];
 
 export const REQUIREMENT_NAMES = new Set(REQUIREMENTS.map((requirement) => requirement.name));

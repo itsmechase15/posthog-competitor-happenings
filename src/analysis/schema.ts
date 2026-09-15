@@ -66,6 +66,8 @@ const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
 const actionToken = z.enum(ACTIONS);
 const detail = optionalText(900);
 const feature = optionalText(120);
+const gap = optionalText(400);
+const quote = optionalText(600);
 
 /** Small team names, blanks dropped. Validated against the catalog later. */
 const teamNames = z.preprocess(
@@ -89,6 +91,12 @@ const actionSchema = z.object({
   teams: teamNames,
   posthog_teams: teamNames,
   posthogTeams: teamNames,
+  gap,
+  gap_today: gap,
+  evidence_url: optionalText(500),
+  evidenceUrl: optionalText(500),
+  evidence_quote: quote,
+  evidenceQuote: quote,
 });
 
 export const analysisSchema = z.object({
@@ -106,11 +114,29 @@ export const analysisSchema = z.object({
   feature,
   posthog_feature: feature,
   posthogFeature: feature,
+  no_action_reason: optionalText(600),
+  noActionReason: optionalText(600),
   posthog_refs: refs.optional(),
   posthogRefs: refs.optional(),
   open_questions: lines.optional(),
   openQuestions: lines.optional(),
+  pages_read: lines.optional(),
+  pagesRead: lines.optional(),
 });
+
+/**
+ * Zero to three. The cap is Slack's: a fourth action would not render, and an
+ * alert asking for four things is an alert nobody starts.
+ */
+export const MAX_ACTIONS = 3;
+
+/**
+ * Said when an analyst recommends nothing and does not say why. Zero actions
+ * is a normal answer, so this is not a failure – but it is not an answer
+ * either, and the alert says so rather than going out blank.
+ */
+export const UNSTATED_NO_ACTION_REASON =
+  "The analysis recommended nothing and did not say why, so nothing here has been ruled out.";
 
 /** Every string a model wrote is punctuated PostHog's way before anything renders it. */
 function clean(value: string): string {
@@ -125,49 +151,46 @@ function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | nul
 
   const feature = parsed.feature ?? parsed.posthog_feature ?? parsed.posthogFeature;
   const teams = parsed.teams ?? parsed.posthog_teams ?? parsed.posthogTeams;
+  const namedGap = parsed.gap ?? parsed.gap_today;
+  const evidenceUrl = parsed.evidence_url ?? parsed.evidenceUrl;
+  const evidenceQuote = parsed.evidence_quote ?? parsed.evidenceQuote;
   return {
     type,
     detail: clean(detail),
     ...(feature ? { feature: clean(feature) } : {}),
     ...(teams && teams.length > 0 ? { teams: teams.map((team) => team.trim()) } : {}),
+    ...(namedGap ? { gap: clean(namedGap) } : {}),
+    ...(evidenceUrl ? { evidenceUrl: evidenceUrl.trim() } : {}),
+    // Not punctuation-corrected: a quote is checked character by character
+    // against the stored page, and rewriting its dashes would fail that check.
+    ...(evidenceQuote ? { evidenceQuote: evidenceQuote.trim() } : {}),
   };
 }
 
-export interface ReadOptions {
-  /**
-   * Read an actions list that is empty as empty, rather than as a broken
-   * reply. A stored alert can genuinely have no action: the relevance guard
-   * drops a page edit that was not about the launch, and sometimes that was
-   * the only thing the model asked for. A model reply still has to name one.
-   */
-  allowNoAction?: boolean;
-}
-
 /**
- * An alert can need several actions. Replies and rows written before `actions`
- * existed carry exactly one, inline, so they are read as a list of one.
+ * An alert can need several actions, and can need none. Replies and rows
+ * written before `actions` existed carry exactly one, inline, so they are read
+ * as a list of one.
  */
-function readActions(
-  parsed: z.infer<typeof analysisSchema>,
-  options: ReadOptions,
-): RecommendedAction[] {
+function readActions(parsed: z.infer<typeof analysisSchema>): RecommendedAction[] {
   const listed = (parsed.actions ?? [])
     .map(toAction)
     .filter((action): action is RecommendedAction => action !== null);
-  if (listed.length > 0) return listed;
+  if (listed.length > 0) return listed.slice(0, MAX_ACTIONS);
 
   const single = toAction(parsed);
   if (single) return [single];
-  if (options.allowNoAction && Array.isArray(parsed.actions)) return [];
-  throw new Error("analysis is missing an action with an action_detail");
+  // An empty list is an answer: plenty of launches ask nothing of PostHog.
+  // Nothing at all under `actions` is a reply that did not answer the field,
+  // and only the reason it gives makes the difference readable.
+  if (Array.isArray(parsed.actions)) return [];
+  if (parsed.no_action_reason ?? parsed.noActionReason) return [];
+  throw new Error("analysis is missing its actions list");
 }
 
 /** Models drift between snake_case and camelCase; accept both and normalize. */
-export function normalizeAnalysis(
-  parsed: z.infer<typeof analysisSchema>,
-  options: ReadOptions = {},
-): Analysis {
-  const actions = readActions(parsed, options);
+export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analysis {
+  const actions = readActions(parsed);
 
   const token = parsed.impact ?? parsed.severity;
   if (!token) throw new Error("analysis is missing impact");
@@ -176,12 +199,17 @@ export function normalizeAnalysis(
   const refs = parsed.posthog_refs ?? parsed.posthogRefs ?? [];
   const keyPoints = parsed.key_points ?? parsed.keyPoints ?? [];
   const openQuestions = parsed.open_questions ?? parsed.openQuestions ?? [];
+  const pagesRead = parsed.pages_read ?? parsed.pagesRead ?? [];
+  const stated = parsed.no_action_reason ?? parsed.noActionReason;
+  const noActionReason =
+    actions.length > 0 ? undefined : clean(stated ?? UNSTATED_NO_ACTION_REASON);
 
   return {
     impact,
     summary: clean(parsed.summary),
     keyPoints: keyPoints.map(clean).filter(Boolean),
     actions,
+    ...(noActionReason ? { noActionReason } : {}),
     posthogRefs: refs.map((ref) => {
       const suggestedEdit = ref.suggested_edit ?? ref.suggestedEdit;
       return {
@@ -191,6 +219,7 @@ export function normalizeAnalysis(
       };
     }),
     openQuestions: openQuestions.map(clean).filter(Boolean),
+    ...(pagesRead.length > 0 ? { pagesRead: pagesRead.map((url) => url.trim()) } : {}),
   };
 }
 
@@ -253,7 +282,7 @@ function readActionIssues(
 
 export function parseStoredAlert(raw: unknown): StoredAlertPayload {
   const parsed = alertPayloadSchema.parse(raw);
-  const analysis = normalizeAnalysis(parsed, { allowNoAction: true });
+  const analysis = normalizeAnalysis(parsed);
   return {
     analysis,
     image: parsed.image ?? null,

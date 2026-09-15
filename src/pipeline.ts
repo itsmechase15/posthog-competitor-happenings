@@ -1,11 +1,18 @@
-import { analyzeItems, createAnalyzer, createFallbackAnalyzer } from "./analysis/analyze.js";
+import {
+  analyzeItems,
+  createAnalyzer,
+  createFallbackAnalyzer,
+  type RunContext,
+} from "./analysis/analyze.js";
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
 import { buildIssueDrafts, createIssueCreator, type IssueCreator } from "./github/issue.js";
 import { createLogger } from "./log.js";
 import { resolveFeatureImage } from "./media/image.js";
-import { refreshPostHogIndex } from "./posthog/index.js";
+import { refreshDocsCorpus } from "./posthog/corpus.js";
+import { buildCorpusIndex } from "./posthog/retrieval.js";
+import { writeDocsWorkspace } from "./posthog/workspace.js";
 import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
 import {
   BotTokenPoster,
@@ -23,6 +30,45 @@ const log = createLogger("pipeline");
 
 /** How far back to look for analyses that never reached Slack. */
 const RETRY_WINDOW_DAYS = 3;
+
+/**
+ * Build the corpus and everything that reads it: the search index, and the
+ * markdown copy on disk the analyst opens files in.
+ *
+ * A failure here costs evidence, never the run. An analysis with an empty
+ * corpus can still say what shipped and how big it is; what it cannot do is
+ * claim PostHog is missing something, and the gate sees to that by dropping
+ * every gap claim it cannot check. That is the right trade: a thinner alert
+ * beats a confident wrong one, and beats no alert at all.
+ */
+async function prepareCorpus(
+  config: Config,
+  store: Store,
+): Promise<{ context: RunContext; notes: string[] }> {
+  const notes: string[] = [];
+
+  try {
+    const corpus = await refreshDocsCorpus(config, store);
+    notes.push(...corpus.notes);
+    const index = buildCorpusIndex(corpus.pages);
+
+    let workspace = null;
+    try {
+      workspace = await writeDocsWorkspace(config.docsWorkspaceDir, corpus.pages);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error(`could not write the docs workspace: ${message}`);
+      notes.push(`docs-workspace: failed (${message})`);
+    }
+
+    return { context: { index, workspace }, notes };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.error(`corpus refresh failed: ${message}`);
+    notes.push(`corpus: failed (${message})`);
+    return { context: { index: buildCorpusIndex([]), workspace: null }, notes };
+  }
+}
 
 export interface RunSummary {
   candidates: number;
@@ -175,16 +221,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
   log.info(`GitHub issues: ${issues.description}`);
 
   try {
-    try {
-      await refreshPostHogIndex(config, store);
-    } catch (error) {
-      // The crawl only supplies citations. Losing it costs detail; failing the
-      // run costs the message this mode exists to send.
-      log.error(
-        "PostHog index refresh failed, continuing without fresh claims",
-        error instanceof Error ? error.message : error,
-      );
-    }
+    const { context } = await prepareCorpus(config, store);
 
     const { candidates } = await collectCandidates(config);
     const wanted = normalizeUrl(targetUrl);
@@ -214,10 +251,10 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     if (!inserted) log.info(`${targetUrl} is already stored — re-posting it`);
     const stored: StoredItem = { ...prepared, id };
 
-    let [analyzed] = await analyzeItems([stored], store, createAnalyzer(config), config);
+    let [analyzed] = await analyzeItems([stored], store, createAnalyzer(config), config, context);
     if (!analyzed) {
-      log.warn(`analysis failed for ${targetUrl} — falling back to a heuristic summary`);
-      [analyzed] = await analyzeItems([stored], store, createFallbackAnalyzer(), config);
+      log.warn(`analysis failed for ${targetUrl} — falling back to a labeled restatement`);
+      [analyzed] = await analyzeItems([stored], store, createFallbackAnalyzer(), config, context);
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
@@ -257,13 +294,8 @@ export async function runCycle(config: Config): Promise<RunSummary> {
   };
 
   try {
-    try {
-      await refreshPostHogIndex(config, store);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log.error(`PostHog index refresh failed: ${message}`);
-      summary.notes.push(`posthog-index: failed (${message})`);
-    }
+    const corpus = await prepareCorpus(config, store);
+    summary.notes.push(...corpus.notes);
 
     const collection = await collectCandidates(config);
     summary.candidates = collection.candidates.length;
@@ -276,7 +308,13 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     log.info(`${selection.toAnalyze.length} new items to analyze`);
 
     const analyzer = createAnalyzer(config);
-    const analyzed = await analyzeItems(selection.toAnalyze, store, analyzer, config);
+    const analyzed = await analyzeItems(
+      selection.toAnalyze,
+      store,
+      analyzer,
+      config,
+      corpus.context,
+    );
     summary.analyzed = analyzed.length;
 
     const pending = await store.getUnpostedAnalyses(

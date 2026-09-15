@@ -80,6 +80,36 @@ export function proseText(blocks: ExtractedPage["blocks"]): string {
   return collapseWhitespace(prose.join(" "));
 }
 
+/**
+ * Every same-site link on a page, as absolute URLs.
+ *
+ * This is discovery's third input, after the sitemap and `llms.txt`. A page
+ * reached only from another page's prose – a new docs page the sitemap has not
+ * caught up with, a changelog entry linked from its own index – gets into the
+ * corpus on this and nothing else. Fragments are dropped: `/docs/x#setup` and
+ * `/docs/x` are one page.
+ */
+export function extractLinks(html: string, baseUrl: string, pathPrefixes?: string[]): string[] {
+  const found: string[] = [];
+
+  for (const match of html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const target = match[1];
+    if (!target || target.startsWith("#") || target.startsWith("mailto:")) continue;
+    try {
+      const url = new URL(target, baseUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+      if (pathPrefixes && !pathPrefixes.some((prefix) => url.pathname.startsWith(prefix))) continue;
+      url.hash = "";
+      const absolute = url.toString();
+      if (!found.includes(absolute)) found.push(absolute);
+    } catch {
+      // A link target that is not a URL is a link nobody can follow.
+    }
+  }
+
+  return found;
+}
+
 /** Social-preview tags first: a page's og:image is the picture it chose for itself. */
 const META_IMAGE_SELECTORS = [
   "meta[property='og:image:secure_url']",

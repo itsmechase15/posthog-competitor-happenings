@@ -65,6 +65,13 @@ export const DEFAULT_GITHUB_REPO = "itsmechase15/posthog-competitor-happenings";
  * the client. thum.io has no daily quota, so it stays behind it as the
  * fallback for a day microlink turns down.
  */
+/**
+ * Where the corpus is discovered from. PostHog's own sitemap is the closest
+ * thing to an authoritative list of its pages – and still only one input,
+ * because a sitemap lags a launch.
+ */
+export const DEFAULT_DOCS_SITEMAPS = ["https://posthog.com/sitemap/sitemap-0.xml"];
+
 export const DEFAULT_SCREENSHOT_URL_TEMPLATES = [
   "https://api.microlink.io/?url={encodedUrl}&screenshot=true&meta=false&embed=screenshot.url",
   "https://image.thum.io/get/width/1200/crop/900/noanimate/{url}",
@@ -107,10 +114,38 @@ export interface Config {
   maxItemsPerSource: number;
   /** Cap on PostHog.com pages fetched in one run. */
   posthogMaxPages: number;
-  /** Re-fetch an indexed PostHog page once it is this old. */
+  /**
+   * Re-fetch a corpus page this long after it was last read, when nothing has
+   * reasoned against it lately. The cold tier.
+   */
   posthogRefreshDays: number;
-  /** Skip the PostHog.com crawl entirely (useful for fast local runs). */
+  /**
+   * The same, for a page an analyst has read recently. Those are the pages
+   * recommendations rest on, so they are kept closer to current.
+   */
+  docsHotRefreshDays: number;
+  /** Skip the PostHog.com corpus refresh entirely (useful for fast local runs). */
   skipPosthogIndex: boolean;
+  /** Sitemaps discovery reads, filtered to PostHog docs and marketing pages. */
+  docsSitemaps: string[];
+  /** One discovery input among several, never the corpus itself. Unset skips it. */
+  docsLlmsTxt: string | undefined;
+  /**
+   * A single file carrying every docs page's body, used once to seed an empty
+   * corpus and never read again. posthog.com does not publish one today, so
+   * this is unset and the first run fills the corpus a page at a time.
+   */
+  docsLlmsFullTxt: string | undefined;
+  /** PostHog's own changelog index. Its entries are evidence that something shipped. */
+  posthogChangelogIndex: string | undefined;
+  /** Where the per-run markdown copy of the corpus is written for the analyst to search. */
+  docsWorkspaceDir: string;
+  /** How many corpus pages are read at once. Small: this is somebody else's website. */
+  docsFetchConcurrency: number;
+  /** How many corpus excerpts are pre-loaded into the prompt as a starting point. */
+  retrievalTopK: number;
+  /** Excerpts allowed from any one docs section, so one area cannot fill the prompt. */
+  retrievalPerSection: number;
   /**
    * Analyze a competitor+source pair's backlog on the very first run instead of
    * recording it silently. Dry runs only — it exists so you can preview a real
@@ -184,9 +219,23 @@ export function loadConfig(): Config {
     lookbackDays: int("LOOKBACK_DAYS", 7),
     maxItemsPerRun: int("MAX_ITEMS_PER_RUN", 12),
     maxItemsPerSource: int("MAX_ITEMS_PER_SOURCE", 8),
-    posthogMaxPages: int("POSTHOG_MAX_PAGES", 60),
+    // PostHog publishes roughly 3,700 pages worth holding, and the coverage
+    // gate is only as good as the corpus behind it: a partial corpus blocks
+    // honest actions and misses others. So the budget covers the whole site
+    // rather than a slice of it, and conditional requests keep the steady-state
+    // cost to a few thousand 304s.
+    posthogMaxPages: int("POSTHOG_MAX_PAGES", 6_000),
     posthogRefreshDays: int("POSTHOG_REFRESH_DAYS", 14),
+    docsHotRefreshDays: int("DOCS_HOT_REFRESH_DAYS", 3),
     skipPosthogIndex: bool("SKIP_POSTHOG_INDEX", false),
+    docsSitemaps: list("DOCS_SITEMAPS") ?? DEFAULT_DOCS_SITEMAPS,
+    docsLlmsTxt: str("DOCS_LLMS_TXT") ?? "https://posthog.com/llms.txt",
+    docsLlmsFullTxt: str("DOCS_LLMS_FULL_TXT"),
+    posthogChangelogIndex: str("POSTHOG_CHANGELOG_INDEX") ?? "https://posthog.com/changelog",
+    docsWorkspaceDir: str("DOCS_WORKSPACE_DIR") ?? ".docs-workspace",
+    docsFetchConcurrency: int("DOCS_FETCH_CONCURRENCY", 6),
+    retrievalTopK: int("RETRIEVAL_TOP_K", 10),
+    retrievalPerSection: int("RETRIEVAL_PER_SECTION", 4),
     httpTimeoutMs: int("HTTP_TIMEOUT_MS", 20_000),
     userAgent:
       str("USER_AGENT") ??

@@ -4,14 +4,86 @@ import { createLogger } from "../log.js";
 import {
   type CandidateItem,
   type CompetitorId,
+  type DiscoverySource,
+  type PageKind,
+  type PageMeta,
   type PostHogClaim,
   type PostHogPage,
   type SourceId,
   type StoredItem,
 } from "../types.js";
-import { itemKey, type PendingPost, type RecordAnalysisInput, type Store } from "./store.js";
+import {
+  itemKey,
+  type CorpusBookkeeping,
+  type DiscoveryRecord,
+  type PendingPost,
+  type RecordAnalysisInput,
+  type Store,
+} from "./store.js";
 
 const log = createLogger("db");
+
+const PAGE_COLUMNS = `url, title, text, mentions, kind, content_hash, fetched_at, changed_at,
+              discovered_from, etag, last_modified, missing_streak, last_used_at, retired_at`;
+
+interface PageRow {
+  url: string;
+  title: string | null;
+  text: string | null;
+  mentions: CompetitorId[] | null;
+  kind: string | null;
+  content_hash: string | null;
+  fetched_at: Date | null;
+  changed_at: Date | null;
+  discovered_from: string[] | null;
+  etag: string | null;
+  last_modified: string | null;
+  missing_streak: number | null;
+  last_used_at: Date | null;
+  retired_at: Date | null;
+}
+
+/**
+ * The seen URLs bucketed by the exact set of sources that offered them, so
+ * each distinct combination is one UPDATE.
+ */
+function groupBySources(seen: DiscoveryRecord[]): Map<DiscoverySource[], string[]> {
+  const byKey = new Map<string, { sources: DiscoverySource[]; urls: string[] }>();
+  for (const record of seen) {
+    const sources = [...record.sources].sort();
+    const key = sources.join("|");
+    const bucket = byKey.get(key) ?? { sources, urls: [] };
+    bucket.urls.push(record.url);
+    byKey.set(key, bucket);
+  }
+  return new Map([...byKey.values()].map((bucket) => [bucket.sources, bucket.urls]));
+}
+
+/**
+ * A corpus row as the rest of the app reads it. Every column added by
+ * migration 003 has a default, so a row written before it applied reads as a
+ * docs page with no known hash and no validators, which is what makes the next
+ * run re-read it in full.
+ */
+function toPage(row: PageRow): PostHogPage {
+  const fetchedAt = row.fetched_at ?? new Date(0);
+  return {
+    url: row.url,
+    title: row.title ?? "",
+    text: row.text ?? "",
+    mentions: row.mentions ?? [],
+    kind: (row.kind ?? "docs") as PageKind,
+    contentHash: row.content_hash ?? "",
+    fetchedAt,
+    changedAt: row.changed_at ?? fetchedAt,
+    discoveredFrom: (row.discovered_from ?? []) as DiscoverySource[],
+    etag: row.etag,
+    lastModified: row.last_modified,
+    missingStreak: row.missing_streak ?? 0,
+    lastUsedAt: row.last_used_at,
+    retiredAt: row.retired_at,
+  };
+}
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", ""]);
 
@@ -265,51 +337,131 @@ export class PostgresStore implements Store {
     return pending;
   }
 
-  async getIndexedPageUrls(): Promise<Map<string, Date>> {
-    const result = await this.pool.query<{ url: string; fetched_at: Date | null }>(
-      "SELECT url, fetched_at FROM pages",
+  async listPageMeta(): Promise<PageMeta[]> {
+    const result = await this.pool.query<PageRow>(
+      `SELECT url, title, '' AS text, '{}'::text[] AS mentions, kind, content_hash,
+              fetched_at, changed_at, discovered_from, etag, last_modified,
+              missing_streak, last_used_at, retired_at
+       FROM pages`,
     );
-    const map = new Map<string, Date>();
-    for (const row of result.rows) {
-      map.set(row.url, row.fetched_at ?? new Date(0));
-    }
-    return map;
+    return result.rows.map((row) => {
+      const { text: _text, mentions: _mentions, ...meta } = toPage(row);
+      return meta;
+    });
+  }
+
+  async loadCorpus(kinds?: PageKind[]): Promise<PostHogPage[]> {
+    const result = await this.pool.query<PageRow>(
+      `SELECT ${PAGE_COLUMNS}
+       FROM pages
+       WHERE retired_at IS NULL
+         AND ($1::text[] IS NULL OR kind = ANY($1::text[]))
+       ORDER BY url`,
+      [kinds ?? null],
+    );
+    return result.rows.map(toPage);
   }
 
   async getPages(urls: string[]): Promise<PostHogPage[]> {
     if (urls.length === 0) return [];
-    const result = await this.pool.query<{
-      url: string;
-      title: string;
-      text: string;
-      mentions: CompetitorId[] | null;
-      fetched_at: Date | null;
-    }>(
-      `SELECT url, title, text, mentions, fetched_at
+    const result = await this.pool.query<PageRow>(
+      `SELECT ${PAGE_COLUMNS}
        FROM pages
        WHERE url = ANY($1::text[])`,
       [urls],
     );
-    return result.rows.map((row) => ({
-      url: row.url,
-      title: row.title,
-      text: row.text,
-      mentions: row.mentions ?? [],
-      fetchedAt: row.fetched_at ?? new Date(0),
-    }));
+    return result.rows.map(toPage);
   }
 
-  async upsertPage(page: PostHogPage): Promise<void> {
+  /**
+   * `retired_at` is cleared on purpose: a page we are writing a body for is
+   * back, whatever a past run concluded about it.
+   */
+  async savePage(page: PostHogPage): Promise<void> {
     await this.pool.query(
-      `INSERT INTO pages (url, title, text, mentions, fetched_at)
-       VALUES ($1, $2, $3, $4::text[], $5)
+      `INSERT INTO pages (url, title, text, mentions, kind, content_hash, fetched_at, changed_at,
+                          discovered_from, etag, last_modified, missing_streak, last_used_at,
+                          retired_at)
+       VALUES ($1, $2, $3, $4::text[], $5, $6, $7, $8, $9::text[], $10, $11, $12, $13, NULL)
        ON CONFLICT (url) DO UPDATE
          SET title = EXCLUDED.title,
              text = EXCLUDED.text,
              mentions = EXCLUDED.mentions,
-             fetched_at = EXCLUDED.fetched_at`,
-      [page.url, page.title, page.text, page.mentions, page.fetchedAt],
+             kind = EXCLUDED.kind,
+             content_hash = EXCLUDED.content_hash,
+             fetched_at = EXCLUDED.fetched_at,
+             changed_at = EXCLUDED.changed_at,
+             discovered_from = EXCLUDED.discovered_from,
+             etag = EXCLUDED.etag,
+             last_modified = EXCLUDED.last_modified,
+             missing_streak = EXCLUDED.missing_streak,
+             last_used_at = coalesce(EXCLUDED.last_used_at, pages.last_used_at),
+             retired_at = NULL`,
+      [
+        page.url,
+        page.title,
+        page.text,
+        page.mentions,
+        page.kind,
+        page.contentHash,
+        page.fetchedAt,
+        page.changedAt,
+        page.discoveredFrom,
+        page.etag,
+        page.lastModified,
+        page.missingStreak,
+        page.lastUsedAt,
+      ],
     );
+  }
+
+  async touchPage(url: string, at: Date): Promise<void> {
+    await this.pool.query(
+      "UPDATE pages SET fetched_at = $2, missing_streak = 0, retired_at = NULL WHERE url = $1",
+      [url, at],
+    );
+  }
+
+  async recordCorpusRun(update: CorpusBookkeeping): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Batched by the set of sources rather than one statement per URL. There
+      // are five discovery sources, so a corpus of any size collapses into at
+      // most a couple of dozen updates instead of thousands of round trips.
+      for (const [sources, urls] of groupBySources(update.seen)) {
+        await client.query(
+          "UPDATE pages SET missing_streak = 0, discovered_from = $2::text[] WHERE url = ANY($1::text[])",
+          [urls, sources],
+        );
+      }
+      if (update.missing.length > 0) {
+        await client.query(
+          "UPDATE pages SET missing_streak = missing_streak + 1, discovered_from = '{}' WHERE url = ANY($1::text[])",
+          [update.missing],
+        );
+      }
+      if (update.retired.length > 0) {
+        await client.query(
+          "UPDATE pages SET retired_at = $2 WHERE url = ANY($1::text[]) AND retired_at IS NULL",
+          [update.retired, update.at],
+        );
+      }
+      if (update.used.length > 0) {
+        await client.query("UPDATE pages SET last_used_at = $2 WHERE url = ANY($1::text[])", [
+          update.used,
+          update.at,
+        ]);
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async replaceClaimsForUrl(url: string, claims: PostHogClaim[]): Promise<void> {

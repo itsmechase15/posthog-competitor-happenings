@@ -79,6 +79,76 @@ export async function fetchText(url: string, options: FetchTextOptions): Promise
   throw lastError instanceof Error ? lastError : new Error(`failed to fetch ${url}`);
 }
 
+/** What a page looked like last time, as the server labelled it. */
+export interface CacheValidators {
+  etag?: string | undefined;
+  lastModified?: string | undefined;
+}
+
+/**
+ * A conditional GET: either the body, or the server saying it has not moved.
+ *
+ * `notModified` is the whole point. A corpus of a few thousand pages is
+ * re-read on a schedule, and posthog.com answers `If-None-Match` with a 304
+ * and no body, so keeping a page current costs a round trip rather than a
+ * download. The validators are handed back so the caller can store the new
+ * ones: an ETag only helps on the request after the one that learned it.
+ */
+export type ConditionalResponse =
+  | ({ notModified: false; text: string } & CacheValidators)
+  | { notModified: true };
+
+/**
+ * GET a URL unless the copy named by `validators` is still current.
+ *
+ * Retries and error handling are `fetchText`'s, because a 304 is the only
+ * thing this adds: anything else is a page that has to be read and a failure
+ * that has to be reported the same way as any other.
+ */
+export async function fetchConditional(
+  url: string,
+  options: FetchTextOptions & { validators?: CacheValidators },
+): Promise<ConditionalResponse> {
+  const { validators, ...rest } = options;
+  const conditional: Record<string, string> = { ...options.headers };
+  if (validators?.etag) conditional["if-none-match"] = validators.etag;
+  if (validators?.lastModified) conditional["if-modified-since"] = validators.lastModified;
+
+  const attempts = options.attempts ?? 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await request(url, { ...rest, headers: conditional });
+      if (response.status === 304) return { notModified: true };
+      if (!response.ok) {
+        const body = (await response.text().catch(() => "")).slice(0, 500);
+        const error = new HttpError(response.status, url, body);
+        if (!retryable(response.status)) throw error;
+        lastError = error;
+      } else {
+        return {
+          notModified: false,
+          text: await response.text(),
+          etag: response.headers.get("etag") ?? undefined,
+          lastModified: response.headers.get("last-modified") ?? undefined,
+        };
+      }
+    } catch (error) {
+      if (error instanceof HttpError && !retryable(error.status)) throw error;
+      lastError = error;
+    }
+
+    if (attempt < attempts) {
+      const backoffMs = 500 * 2 ** (attempt - 1);
+      log.debug(`retrying ${url} in ${backoffMs}ms (attempt ${attempt + 1}/${attempts})`);
+      await sleep(backoffMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`failed to fetch ${url}`);
+}
+
 /**
  * What a URL claims to serve, without downloading it. Returns null when the
  * URL cannot be reached at all — callers treat that as "not usable" rather

@@ -48,6 +48,15 @@ export interface RecommendedAction {
    * dropped. See `src/teams.ts`.
    */
   teams?: string[];
+  /**
+   * What PostHog does not do today, in one line. Required for the two product
+   * actions: an enhancement with no gap named is a suggestion nobody can check.
+   */
+  gap?: string;
+  /** The corpus page the gap was read off. Checked against the stored corpus. */
+  evidenceUrl?: string;
+  /** Words quoted from `evidenceUrl`. Checked against the stored page body. */
+  evidenceQuote?: string;
 }
 
 /** A competitor signal before it has been written to the database. */
@@ -81,14 +90,22 @@ export interface Analysis {
   /** The elaboration, as short lines under "More detail". */
   keyPoints: string[];
   /**
-   * In the order they should be read. Usually one to three, and empty when the
-   * only thing the model asked for was a page edit about something other than
-   * this launch, which the relevance guard drops.
+   * Zero to three, in the order they should be read. Empty is a normal answer,
+   * not a failure: plenty of launches are worth knowing about and ask nothing
+   * of PostHog, and an action that cannot survive the evidence checks is
+   * dropped rather than filed.
    */
   actions: RecommendedAction[];
+  /** Why there is nothing to do. Set whenever `actions` is empty. */
+  noActionReason?: string;
   posthogRefs: PostHogRef[];
   /** What we could not tell from the source, for whoever picks the issue up. */
   openQuestions: string[];
+  /**
+   * Corpus pages the analyst actually read, as URLs. Recorded from its own
+   * tool calls, so the coverage gate can tell a checked claim from a guess.
+   */
+  pagesRead?: string[];
 }
 
 export interface AnalyzedItem {
@@ -144,14 +161,62 @@ export interface Alert extends AnalyzedItem {
   issueNote?: string;
 }
 
-/** A PostHog.com page we have indexed. */
+/**
+ * What a corpus page is for.
+ *
+ * `docs` is what PostHog ships, and the only evidence a gap claim may rest on.
+ * `marketing` is copy: the compare pages, the product pages, pricing, the blog,
+ * which are the only pages an action may ask anyone to edit. `changelog` is
+ * PostHog's own changelog, which is evidence that something shipped and no
+ * evidence at all that it is documented.
+ */
+export const PAGE_KINDS = ["docs", "marketing", "changelog"] as const;
+export type PageKind = (typeof PAGE_KINDS)[number];
+
+/**
+ * Where a corpus URL came from. A URL that no source offers any more is on its
+ * way out, so the union is kept per page rather than collapsed to a boolean.
+ *
+ * `catalog` pins the overview pages `products.ts` routes to, so the products
+ * this bot reasons about cannot fall out of the corpus. Everything else is
+ * discovered: `sitemap` is PostHog's own list, `llms` is one input and never
+ * the whole truth, and `crawl` is the links found on pages already fetched.
+ */
+export const DISCOVERY_SOURCES = ["sitemap", "llms", "crawl", "catalog", "changelog"] as const;
+export type DiscoverySource = (typeof DISCOVERY_SOURCES)[number];
+
+/**
+ * A PostHog.com page as the `pages` table holds it, which is this bot's source
+ * of truth for what PostHog documents.
+ *
+ * `contentHash` is what freshness is decided on: a re-download whose hash
+ * matches leaves `changedAt` alone, so "we looked" and "it moved" stay
+ * separate facts. `etag` and `lastModified` are what the server said about the
+ * copy we hold, so most re-reads cost a 304 and no body at all. `lastUsedAt`
+ * is the last time the page reached an analyst, which is what puts it in the
+ * every-few-days tier instead of the every-fortnight one.
+ */
 export interface PostHogPage {
   url: string;
   title: string;
   text: string;
   mentions: CompetitorId[];
   fetchedAt: Date;
+  kind: PageKind;
+  contentHash: string;
+  changedAt: Date;
+  discoveredFrom: DiscoverySource[];
+  etag: string | null;
+  lastModified: string | null;
+  /** Consecutive runs this URL was offered by no discovery source. Two retires it. */
+  missingStreak: number;
+  lastUsedAt: Date | null;
+  /** Set once the page is gone: retired pages stay on the row and leave the corpus. */
+  retiredAt: Date | null;
 }
+
+/** A corpus row without its body, for deciding what to re-fetch. */
+export type PageMeta = Omit<PostHogPage, "text" | "mentions">;
 
 /** A single competitor-mentioning paragraph lifted out of a PostHog page. */
 export interface PostHogClaim {
@@ -174,7 +239,7 @@ export interface CompetitorClaim {
 }
 
 /**
- * A PostHog docs page, cut down to what it says about one signal. This is the
+ * A corpus page, cut down to what it says about one signal. This is the
  * evidence an action is checked against before it may claim PostHog cannot do
  * something.
  */
@@ -182,4 +247,9 @@ export interface PostHogDoc {
   url: string;
   title: string;
   excerpt: string;
+  /**
+   * What the page is evidence of. Absent on an excerpt assembled before the
+   * corpus knew: read as product documentation, which is the common case.
+   */
+  kind?: PageKind;
 }

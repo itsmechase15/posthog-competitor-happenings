@@ -390,8 +390,9 @@ export const POSTHOG_CAPABILITIES: PostHogCapability[] = [
 ];
 
 /**
- * Every canonical docs URL, deduplicated. This is the whole set the indexer is
- * asked to keep fresh: a bounded list, not a crawl of posthog.com.
+ * Every docs URL the catalog names, deduplicated. These are pinned into the
+ * corpus: a product the bot routes to has to have its pages, whatever the
+ * sitemap happens to list this week.
  */
 export const CANONICAL_DOC_URLS: string[] = [
   ...new Set([
@@ -399,6 +400,45 @@ export const CANONICAL_DOC_URLS: string[] = [
     ...POSTHOG_CAPABILITIES.flatMap((capability) => capability.docs),
   ]),
 ];
+
+/**
+ * The posthog.com pages a page action may name, pinned into the corpus for the
+ * same reason.
+ *
+ * These are the ones the catalog knows about: every product marketing page,
+ * plus pricing and the compare index. They are held as marketing copy, not as
+ * evidence – an action that read a gap off `/experiments` read it off a sales
+ * page. The corpus holds far more editable pages than these; this list only
+ * guarantees the ones an action is most likely to reach for.
+ */
+export const MARKETING_PAGE_URLS: string[] = [
+  ...new Set([
+    ...POSTHOG_PRODUCTS.map((product) => product.url).filter((url): url is string => Boolean(url)),
+    "https://posthog.com/pricing",
+    "https://posthog.com/compare",
+  ]),
+];
+
+/**
+ * The overview page of every product and capability: one page per thing the
+ * catalog can name. Retrieval boosts these, because a product's own overview
+ * answers "does PostHog do this at all" and a guide that mentions it does not.
+ */
+export const CATALOG_OVERVIEW_URLS: string[] = [
+  ...new Set(
+    [
+      ...POSTHOG_PRODUCTS.map((product) => product.docs[0]),
+      ...POSTHOG_CAPABILITIES.map((capability) => capability.docs[0]),
+    ].filter((url): url is string => Boolean(url)),
+  ),
+];
+
+const OVERVIEW_URL_SET = new Set(CATALOG_OVERVIEW_URLS);
+
+/** Whether a URL is a product's overview page, which retrieval ranks up. */
+export function isCatalogOverviewUrl(url: string): boolean {
+  return OVERVIEW_URL_SET.has(url);
+}
 
 /** A model writes "feature flags", "Feature Flags", and "Feature  Flags" for the same thing. */
 function normalize(name: string): string {
@@ -463,7 +503,7 @@ export function matchProducts(text: string, limit = POSTHOG_PRODUCTS.length): Po
     // Only when the label is not already one of the keywords, so a product
     // whose name is its own first keyword is not counted twice.
     const label = normalize(product.label);
-    if (!product.keywords.includes(label) && lower.includes(label)) score += 3;
+    if (!product.keywords.includes(label) && countOccurrences(lower, label) > 0) score += 3;
     return { product, score };
   }).filter((entry) => entry.score > 0);
 
@@ -471,8 +511,30 @@ export function matchProducts(text: string, limit = POSTHOG_PRODUCTS.length): Po
   return scored.slice(0, limit).map((entry) => entry.product);
 }
 
+/** A term short enough that finding it inside another word is the likely outcome. */
+const SHORT_TERM = 4;
+
+function escapeForRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * How many times a keyword appears, counting whole words for the short ones.
+ *
+ * A plain substring search is right for a phrase somebody chose and wrong for
+ * a three-letter word. Over a corpus of a few thousand pages it is the
+ * difference between routing and noise: "flag" is in "flagship", "trend" is in
+ * "trending", and "ai" is in "email", "chain", and "available". Each of those
+ * pointed real signals at the wrong product.
+ */
 function countOccurrences(haystack: string, needle: string): number {
   if (!needle) return 0;
+
+  if (needle.length <= SHORT_TERM && !needle.includes(" ")) {
+    const matches = haystack.match(new RegExp(`\\b${escapeForRegex(needle)}(?:e?s)?\\b`, "g"));
+    return matches?.length ?? 0;
+  }
+
   let count = 0;
   let index = haystack.indexOf(needle);
   while (index !== -1) {
