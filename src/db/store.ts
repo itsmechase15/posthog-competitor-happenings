@@ -3,12 +3,40 @@ import type {
   Analysis,
   CandidateItem,
   CompetitorId,
+  DiscoverySource,
   FeatureImage,
+  PageKind,
+  PageMeta,
   PostHogClaim,
   PostHogPage,
   SourceId,
   StoredItem,
 } from "../types.js";
+
+/** One URL and the discovery sources that offered it on this run. */
+export interface DiscoveryRecord {
+  url: string;
+  sources: DiscoverySource[];
+}
+
+/**
+ * What one corpus refresh learned about URLs it did not re-download.
+ *
+ * Kept apart from `savePage` because most of a run's bookkeeping is about
+ * pages nothing happened to: they were still listed, or they were not, and two
+ * runs of not being listed is what retires a page.
+ */
+export interface CorpusBookkeeping {
+  /** Offered by at least one source: the missing streak resets. */
+  seen: DiscoveryRecord[];
+  /** Offered by no source: the missing streak goes up by one. */
+  missing: string[];
+  /** Gone for good – missing twice over, or answering 404 or 410. */
+  retired: string[];
+  /** Reached an analyst this run, so it belongs in the short refresh tier. */
+  used: string[];
+  at: Date;
+}
 
 export interface RecordAnalysisInput {
   itemId: string;
@@ -69,8 +97,19 @@ export interface Store {
    */
   getUnpostedAnalyses(since: Date, limit: number): Promise<PendingPost[]>;
 
-  /** URLs already indexed, mapped to when they were last fetched. */
-  getIndexedPageUrls(): Promise<Map<string, Date>>;
+  /**
+   * Every corpus row without its body, retired ones included. This is what the
+   * refresh plans against: which URLs are known, what they last hashed to,
+   * what the server called them, when each was read, and which are on their
+   * way out.
+   */
+  listPageMeta(): Promise<PageMeta[]>;
+
+  /**
+   * The live corpus with bodies, which is what retrieval searches and what the
+   * workspace on disk is written from. Retired pages are left out.
+   */
+  loadCorpus(kinds?: PageKind[]): Promise<PostHogPage[]>;
 
   /**
    * Indexed pages for these exact URLs, in whatever order they come back.
@@ -78,7 +117,18 @@ export interface Store {
    */
   getPages(urls: string[]): Promise<PostHogPage[]>;
 
-  upsertPage(page: PostHogPage): Promise<void>;
+  /** Write a page and everything known about it. Un-retires a page that is back. */
+  savePage(page: PostHogPage): Promise<void>;
+
+  /**
+   * Record that a page was checked and had not moved, without touching its
+   * body. This is what a 304 leaves behind: no download happened, so the only
+   * new fact is that the copy we hold was current at this moment.
+   */
+  touchPage(url: string, at: Date): Promise<void>;
+
+  /** Freshness bookkeeping for the pages this run did not re-download. */
+  recordCorpusRun(update: CorpusBookkeeping): Promise<void>;
 
   replaceClaimsForUrl(url: string, claims: PostHogClaim[]): Promise<void>;
 

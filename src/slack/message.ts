@@ -164,6 +164,26 @@ export function actionEntries(alert: Alert): ActionIssue[] {
   }));
 }
 
+/** What the action section says when there is nothing to do. */
+export const NO_ACTION_TITLE = "None";
+const FALLBACK_NO_ACTION_REASON =
+  "Nothing here asks anything of PostHog, and no reason was recorded.";
+/** A Slack section block stops rendering past this, so the reason is cut first. */
+const MAX_NO_ACTION_CHARS = 600;
+
+/**
+ * Zero actions rendered as an answer rather than as a blank.
+ *
+ * A launch that asks nothing of PostHog is a normal outcome and a useful one:
+ * it says somebody looked. An empty section would read as a broken alert, and
+ * a missing one would read as an alert nobody finished, so the reason goes
+ * where the actions would have been.
+ */
+export function noActionSectionText(alert: Alert): string {
+  const reason = alert.analysis.noActionReason?.trim() || FALLBACK_NO_ACTION_REASON;
+  return [`*${NO_ACTION_TITLE}*`, escape(truncate(reason, MAX_NO_ACTION_CHARS))].join("\n");
+}
+
 /**
  * The message as Slack renders it, for logs and artifacts. Section text is
  * already mrkdwn, so this only has to join the blocks back together.
@@ -236,15 +256,19 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   // opened for it. Slack puts real space between sections, so each action reads
   // as its own thing on a phone, with its own place to go for the detail.
   const entries = actionEntries(alert);
+  blocks.push(section(`*${ACTION_HEADING}*`));
   if (entries.length > 0) {
-    blocks.push(section(`*${ACTION_HEADING}*`));
     for (const entry of entries) {
       blocks.push(section(actionSectionText(entry.action, entry.issue)));
     }
+  } else {
+    blocks.push(section(noActionSectionText(alert)));
   }
 
-  if (issueNote && entries.every((entry) => entry.issue === null)) {
-    blocks.push(section(`_${escape(issueNote)}_`));
+  // `every` on an empty list is true, which used to put "GitHub issues not
+  // created" under an alert that never asked for one.
+  if (issueNote && entries.length > 0 && entries.every((entry) => entry.issue === null)) {
+    blocks.push(section(`_${escape(truncate(issueNote, MAX_NO_ACTION_CHARS))}_`));
   }
 
   const footer = [

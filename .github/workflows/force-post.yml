@@ -34,7 +34,8 @@ permissions:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # One item, but the analyst still builds and searches the docs corpus.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

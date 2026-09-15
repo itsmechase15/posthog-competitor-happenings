@@ -19,42 +19,97 @@ Help PostHog marketing stay current on Mixpanel + Amplitude product moves. Succe
 - Webinars/events, status/SDK feeds, LinkedIn, web UI, weekly digest, auto page edits
 - PRs for page edits (Phase 3)
 
-### Index PostHog.com
-Index PostHog.com pages that mention Mixpanel or Amplitude. Cite URL + claim + suggested edit when relevant.
+### The docs corpus
+The `pages` table is the source of truth for what PostHog documents. It holds
+around 3,800 pages: the prose under `/docs`, the compare pages, the product
+marketing pages, the blog, the tutorials, and PostHog's own changelog. The
+generated reference is left out – `/docs/api`, `/docs/open-api-spec`, and
+`/docs/references` are 2,800 pages of one-per-endpoint and one-per-type stubs
+that establish nothing about what the product does and skew a lexical index by
+their sheer number.
 
-Alongside those, keep a bounded list of canonical product docs indexed: one
-overview page per product in [`src/posthog/products.ts`](./src/posthog/products.ts)
-plus the lifecycle, scheduling, and rollout pages competitors keep shipping
-against. Not a crawl of posthog.com – the docs for the products a signal names,
-capped per run.
+Discovery is the union of the sitemap, `llms.txt`, the links the pages already
+held carry, and the catalog, which pins the overview pages the bot routes to.
+No single input decides what the corpus contains: a sitemap lags a launch, and
+`llms.txt` is a subset curated for somebody else's purpose. In practice the
+sitemap lists 13,100 URLs and `llms.txt` names 3,700, and the two overlap
+partly – neither is a superset of the other.
 
-That catalog tracks the Tools section of
+Freshness is a content hash in two tiers: a page an analyst read in the last
+three days is re-read every three days, the rest every fortnight, and a URL the
+corpus has never held is read the run it turns up. Conditional requests keep
+that affordable – posthog.com answers `If-None-Match` with a 304 and no body,
+so a steady-state run costs round trips rather than downloads. A URL no source
+has offered for two runs is retired, and so is one answering 404 or 410.
+
+PostHog's own changelog is indexed as its own kind of evidence: proof something
+shipped, and no proof at all that it is documented. PostHog ships several
+things a week and the docs lag, so an analyst that cannot tell those apart will
+either invent a gap or wave one away.
+
+Pages that mention Mixpanel or Amplitude still have their claims extracted, for
+the URL + claim + suggested edit a page action needs.
+
+The catalog is now a route into the corpus rather than the boundary of it. It
+does three jobs: naming (a model writes "A/B testing", an issue has to say
+"Experiments"), routing (an action names a product, the product names the pages
+a correction should cite), and boosting (an overview page outranks a guide that
+uses the same words). It tracks the Tools section of
 [posthog.com/platform.md](https://posthog.com/platform.md), plus the platform
 surfaces that sit under all of them and still get shipped against by name:
 [Advanced / proxy](https://posthog.com/docs/advanced/proxy) is the one that
 keeps coming up, because Mixpanel calls it First-Party Domains and nobody calls
-it a reverse proxy. A surface missing from the catalog is a recommendation with
-nothing to check it against, which is how "PostHog has no managed reverse
-proxy" gets shipped when PostHog has run one for years. Renamed products keep
-their old names as aliases, so a model writing "LLM analytics" still lands on
-AI observability.
+it a reverse proxy. A product missing from the catalog used to be a
+recommendation with nothing to check it against, which is how "PostHog has no
+managed reverse proxy" gets shipped when PostHog has run one for years; now it
+is a recommendation nobody gave a nickname, and the coverage gate still reads
+the docs for it. Renamed products keep their old names as aliases, so a model
+writing "LLM analytics" still lands on AI observability.
+
+### One analyst run, with the corpus under it
+Every run writes the corpus to `.docs-workspace/` as markdown, one file per
+page plus a table of contents, and the analyst gets read-only tools over it:
+read, grep, glob, list. A BM25 search pre-loads the ten best excerpts for the
+launch, capped at four per docs section. The files it opens are recorded from
+its own tool calls, not from its account of itself.
+
+The full page list is 540KB, far too much for a prompt, so the prompt carries
+the corpus as its sections and their sizes and tells the analyst to grep the
+full list on disk. That still answers the question the list is there for – is
+there a part of the docs about this at all – which is the difference between
+"PostHog has no consent controls" and "there is a privacy section, let me read
+it".
+
+There is no second model pass that reads the first reply and corrects it. A
+model shown its own unsupported claim argues for it better rather than going to
+check.
 
 ### Verify before recommending
-Every recommendation is a claim about what PostHog ships, so it is checked
-against the product docs first. Before any consider enhancing / consider
-building / update pages action, the canonical docs for the products the signal
-touches go into the analysis context, and an action may only say PostHog cannot
-do something when a docs excerpt shows that gap – a compare-page blurb, or its
-silence, is not evidence. Where the docs show an adjacent capability the action
-says so and recommends only the real gap: Amplitude scheduling an experiment
-stop meets [scheduled flag changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes)
+Every recommendation is a claim about what PostHog ships, so every product
+action carries its evidence and every part of it is checked against the stored
+corpus: the gap in one line, the docs page it was read off, and a quote from
+that page. The page has to be in the corpus, it has to be product documentation
+rather than marketing copy or a changelog entry, and the quote has to be on the
+stored copy.
+
+Then the corpus is searched again with the gap's own words, and the action is
+dropped when the docs answer it on a page the analysis never opened. That is
+the check the others cannot do: every other check asks whether the evidence
+offered is real, and this one asks whether it was the relevant evidence.
+
+Where the docs show an adjacent capability the action says so and recommends
+only the real gap: Amplitude scheduling an experiment stop meets
+[scheduled flag changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes)
 and [manual experiment lifecycle](https://posthog.com/docs/experiments/managing-lifecycle),
-so the honest gap is "flags schedule, experiments still stop by hand". When the
-docs do not settle it, the action drops to update pages and the doubt goes in
-open questions. Impact does not move for it: impact is about what the
-competitor shipped, not about what could be checked on PostHog's side.
-`verifyAgainstDocs` enforces this after the model replies, so a contradicted
-"PostHog has nothing like this" cannot ship.
+so the honest gap is "flags schedule, experiments still stop by hand".
+
+Pricing and packaging are not capability gaps, "document this" is not an
+action, and a compare page PostHog already publishes is not one to write.
+Anything that fails becomes an open question and opens no GitHub issue – a
+failed check is never a correction, because there is no way to rewrite a claim
+whose basis we cannot find without inventing one. Impact does not move for it:
+impact is about what the competitor shipped, not about what could be checked on
+PostHog's side.
 
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
@@ -69,8 +124,9 @@ competitor shipped, not about what could be checked on PostHog's side.
   thin the source text is. Worked examples: a scheduled experiment stop on
   Experiments they already ship is notable; first-party domains, a capability
   they never offered, is major; a post about a new office is minor
-- One to three recommended actions, most important first. One signal often
-  needs two, e.g. a stale page to fix and a feature gap to close:
+- Zero to three recommended actions, most important first. One signal often
+  needs two, e.g. a stale page to fix and a feature gap to close. Zero is a
+  normal answer, and Slack renders **None** with one sentence saying why:
   - update pages (existing compare/content)
   - new compare page
   - consider building (PostHog has nothing like this)

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { analyzeItems, createFallbackAnalyzer } from "../src/analysis/analyze.js";
+import {
+  analyzeItems,
+  createFallbackAnalyzer,
+  type RunContext,
+} from "../src/analysis/analyze.js";
 import type { Analyzer } from "../src/analysis/analyzer.js";
 import {
   describeTopic,
@@ -13,6 +17,7 @@ import { MemoryStore } from "../src/db/memory.js";
 import { docUrlsForText } from "../src/posthog/products.js";
 import type { Analysis, RecommendedAction, StoredItem } from "../src/types.js";
 import { titleFromUrl } from "../src/util/text.js";
+import { corpus } from "./helpers.js";
 
 const scheduleStop: StoredItem = {
   id: "1",
@@ -315,19 +320,33 @@ describe("the guard inside a run", () => {
     skipPosthogIndex: true,
     posthogMaxPages: 0,
     posthogRefreshDays: 14,
+    retrievalTopK: 10,
+    retrievalPerSection: 4,
     httpTimeoutMs: 1,
     userAgent: "test",
   } as Config;
   const noCompareClaims = { claimsFor: async () => [] };
 
+  /** The corpus this signal would reach for, so the run touches no network. */
+  const context: RunContext = {
+    index: corpus(
+      ...docUrlsForText(`${scheduleStop.title} ${scheduleStop.raw.body as string}`).map((url) => ({
+        url,
+        title: titleFromUrl(url),
+        text: "You stop an experiment by hand. Scheduled flag changes take a date.",
+      })),
+    ),
+    workspace: null,
+  };
+
   function analyzerReturning(result: Analysis): Analyzer {
-    return { model: "test-model", analyze: async () => result };
+    return { model: "test-model", analyze: async () => ({ analysis: result, readUrls: [] }) };
   }
 
   it("keeps a tangent out of the alert the pipeline hands to Slack", async () => {
     const [analyzed] = await analyzeItems(
       [scheduleStop],
-      await seededStore(),
+      new MemoryStore(),
       analyzerReturning(
         analysis({
           actions: [
@@ -341,51 +360,67 @@ describe("the guard inside a run", () => {
         }),
       ),
       config,
+      context,
       noCompareClaims,
     );
 
-    expect(analyzed?.analysis.actions.map((action) => action.type)).toEqual([
-      "consider_enhancing",
-    ]);
+    // The tangent goes for being off topic, and the enhancement goes for
+    // carrying no evidence. Both are blocks, and neither is a rewrite.
+    expect(analyzed?.analysis.actions).toEqual([]);
+    expect(analyzed?.analysis.openQuestions.join(" ")).toContain("nothing to check");
   });
 
-  it("leaves the heuristic's unassessed page check alone", async () => {
-    const store = await seededStore();
+  it("keeps a page edit that is about the launch and quotes copy the page carries", async () => {
     const compareUrl = "https://posthog.com/compare/amplitude-vs-posthog";
-    await store.replaceClaimsForUrl(compareUrl, [
-      {
+    const withCompare: RunContext = {
+      index: corpus({
         url: compareUrl,
-        competitor: "amplitude",
-        paragraph: "PostHog and Amplitude both run experiments.",
-        heading: null,
-      },
-    ]);
+        title: "Amplitude vs PostHog",
+        kind: "marketing",
+        text: "Amplitude cannot schedule an experiment to stop on a date you pick.",
+      }),
+      workspace: null,
+    };
 
     const [analyzed] = await analyzeItems(
       [scheduleStop],
-      store,
-      createFallbackAnalyzer(),
+      new MemoryStore(),
+      analyzerReturning(
+        analysis({
+          actions: [
+            {
+              type: "update_pages",
+              detail: `On ${compareUrl}, say Amplitude can now schedule an experiment stop.`,
+            },
+          ],
+          posthogRefs: [
+            {
+              url: compareUrl,
+              claim: "Amplitude cannot schedule an experiment to stop on a date you pick",
+              suggestedEdit: "Say they can now schedule a stop.",
+            },
+          ],
+        }),
+      ),
       config,
+      withCompare,
       noCompareClaims,
     );
 
-    // The heuristic's one action asks someone to check the closest page. It is
-    // about no launch in particular on purpose, so the guard has to skip it.
     expect(analyzed?.analysis.actions.map((action) => action.type)).toEqual(["update_pages"]);
   });
 
-  /** Every docs page this signal wants, so the run reaches for no network. */
-  async function seededStore(): Promise<MemoryStore> {
-    const store = new MemoryStore();
-    for (const url of docUrlsForText(`${scheduleStop.title} ${scheduleStop.raw.body as string}`)) {
-      await store.upsertPage({
-        url,
-        title: titleFromUrl(url),
-        text: "You stop an experiment by hand. Scheduled flag changes take a date.",
-        mentions: [],
-        fetchedAt: new Date(),
-      });
-    }
-    return store;
-  }
+  it("lets the heuristic through, because it recommends nothing to judge", async () => {
+    const [analyzed] = await analyzeItems(
+      [scheduleStop],
+      new MemoryStore(),
+      createFallbackAnalyzer(),
+      config,
+      context,
+      noCompareClaims,
+    );
+
+    expect(analyzed?.analysis.actions).toEqual([]);
+    expect(analyzed?.analysis.noActionReason).toContain("No model analysis ran");
+  });
 });

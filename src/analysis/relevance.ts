@@ -2,7 +2,7 @@ import { COMPETITORS } from "../config.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { matchCapabilities, matchProducts } from "../posthog/products.js";
 import type { Analysis, RecommendedAction, StoredItem } from "../types.js";
-import { firstSentence } from "../util/text.js";
+import { firstSentence, stem, WORD_PATTERN } from "../util/text.js";
 
 /**
  * Is a page edit about the thing that shipped?
@@ -20,7 +20,7 @@ import { firstSentence } from "../util/text.js";
  * schedule and stop, which the A/B tangent never mentions.
  */
 
-const WORD = /[a-z0-9]+/g;
+const WORD = WORD_PATTERN;
 
 /**
  * Words that appear in every competitor alert, so they discriminate nothing.
@@ -48,28 +48,6 @@ const STOPWORDS = new Set([
   ...GENERIC_WORDS,
   ...Object.values(COMPETITORS).map((competitor) => competitor.label),
 ].map((word) => stem(word.toLowerCase())));
-
-/**
- * Fold a word to a stem crude enough to be predictable: schedule, schedules,
- * scheduled, and scheduling all have to land on the same token, and stopping
- * has to land on stop. Plurals go first, so dates and date meet at date rather
- * than parting at dat and date.
- */
-export function stem(word: string): string {
-  let stemmed = singular(word);
-  if (stemmed.length > 4 && stemmed.endsWith("ing")) stemmed = stemmed.slice(0, -3);
-  else if (stemmed.length > 4 && stemmed.endsWith("ed")) stemmed = stemmed.slice(0, -2);
-  if (stemmed.length > 4 && stemmed.endsWith("e")) stemmed = stemmed.slice(0, -1);
-  // "stopping" and "shipped" lose a doubled consonant that "stop" never had.
-  return stemmed.replace(/([bdgklmnprt])\1$/, "$1");
-}
-
-function singular(word: string): string {
-  if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
-  if (word.length > 4 && /(?:ss|s|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
-  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
-  return word;
-}
 
 /** Text as a space-padded run of stems, so a term can be matched whole. */
 function stemmed(text: string): string {

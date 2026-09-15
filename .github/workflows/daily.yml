@@ -25,7 +25,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The analyst reads its way around a few thousand docs pages per item now,
+    # rather than answering one prompt, so a full run of new items takes longer
+    # than it used to. The first run of a fresh database is the slow one: it
+    # builds the whole corpus, where later runs mostly collect 304s.
+    timeout-minutes: 60
     steps:
       - name: Check it is not before 07:00 in America/Los_Angeles
         id: window

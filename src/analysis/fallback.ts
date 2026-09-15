@@ -1,19 +1,6 @@
 import { COMPETITORS } from "../config.js";
-import type {
-  Analysis,
-  Impact,
-  PostHogClaim,
-  PostHogDoc,
-  RecommendedAction,
-  StoredItem,
-} from "../types.js";
-import {
-  firstSentence,
-  pageNameFromUrl,
-  sentences,
-  SPACED_EN_DASH,
-  truncate,
-} from "../util/text.js";
+import type { Analysis, Impact, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
+import { firstSentence, pageNameFromUrl, sentences, truncate } from "../util/text.js";
 
 export const FALLBACK_MODEL = "fallback-heuristic";
 
@@ -104,8 +91,8 @@ function pointsFrom(lead: string, item: StoredItem): string[] {
 
 /**
  * Deterministic stand-in used when `CURSOR_API_KEY` is unset. It never invents
- * product facts. It restates the source and points at the pages we already
- * indexed, so a dry run is honest about being unanalyzed.
+ * product facts. It restates the source and points at the pages already in the
+ * corpus, so a run without a key is honest about being unanalyzed.
  */
 export function heuristicAnalysis(
   item: StoredItem,
@@ -136,44 +123,47 @@ export function heuristicAnalysis(
     ? `${competitor.label}: ${firstSentence(lead, 240)}`
     : `${competitor.label} published "${item.title}".`;
 
+  // Failing an indexed claim, this competitor's own compare page: an
+  // unassessed Mixpanel launch has no business sending anyone to read about
+  // Amplitude.
+  const page = refs[0]?.url ?? `https://posthog.com/compare/${competitor.id}-vs-posthog`;
+
   return {
     impact: impactOf(haystack),
     summary,
     keyPoints: pointsFrom(lead, item),
-    actions: [fallbackAction(competitor.label, refs[0]?.url, docRefs[0]?.url)],
+    actions: [],
+    noActionReason: NO_ANALYSIS_REASON,
     posthogRefs: [...refs, ...docRefs],
-    openQuestions: [],
+    openQuestions: unverifiedQuestions(competitor.label, page, docRefs[0]?.url),
   };
 }
 
 /**
- * The heuristic knows no PostHog product facts, so it never recommends
- * enhancing anything: that action has to name the feature to enhance, and
- * guessing one would be an invented fact. It points at page coverage instead,
- * which is the one thing the indexed claims actually tell us.
+ * Why an unanalyzed run recommends nothing.
  *
- * Slack shows the first sentence and nothing else, so that sentence names the
- * page and the job. That the run was unassessed is the second sentence, where
- * it belongs.
+ * The heuristic knows no PostHog product facts. It cannot say PostHog is
+ * missing something, because that needs a docs page it has not read, and it
+ * cannot ask for a page edit either, because a page is only worth editing when
+ * something on it is wrong and nothing here has established that. What it can
+ * do is say plainly that nobody assessed this, and name the pages a person
+ * would start from.
  */
-function fallbackAction(
-  label: string,
-  closestPage: string | undefined,
-  closestDoc: string | undefined,
-): RecommendedAction {
-  const caveat = "No model analysis ran, so this is unassessed.";
-  const docHint = closestDoc
-    ? ` What PostHog ships in this area is documented at ${closestDoc}; read it before treating anything here as a gap.`
-    : "";
+export const NO_ANALYSIS_REASON =
+  "No model analysis ran, so nothing has been assessed and nothing is recommended. The open questions name where to start.";
 
-  if (closestPage) {
-    return {
-      type: "update_pages",
-      detail: `On ${pageNameFromUrl(closestPage)}, check whether this makes anything it says about ${label} wrong, and edit it only if it does. ${caveat} The page is ${closestPage}.${docHint}`,
-    };
+function unverifiedQuestions(
+  label: string,
+  page: string,
+  closestDoc: string | undefined,
+): string[] {
+  const questions = [
+    `Does this change anything ${pageNameFromUrl(page)} says about ${label}? Nobody has checked: ${page}.`,
+  ];
+  if (closestDoc) {
+    questions.push(
+      `What does PostHog already ship here? ${closestDoc} is the closest page in the corpus, and it has not been read against this launch.`,
+    );
   }
-  return {
-    type: "new_compare_page",
-    detail: `Consider a PostHog vs ${label} page for this${SPACED_EN_DASH}no indexed PostHog.com page mentions ${label} in a way that covers it. ${caveat}${docHint}`,
-  };
+  return questions;
 }
