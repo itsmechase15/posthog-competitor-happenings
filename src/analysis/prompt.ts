@@ -150,11 +150,11 @@ ${TEAM_RULES}
 
 Every product action carries its own evidence, and every part of it is checked against PostHog's stored docs before anyone is asked to do the work:
 - "gap" is one line saying what PostHog does not do today. Specific enough to be wrong: "no scheduled end time on an experiment", not "weaker experimentation story".
-- "evidence_url" is the PostHog docs page you read the gap off. It has to be a page in the corpus, and it has to be product documentation ${EN_DASH} not a compare page, not a product marketing page, not a changelog entry. Marketing copy is never evidence about the product.
+- "evidence_url" is the PostHog docs page you read the gap off. It has to be a page in the corpus, and it has to be product documentation ${EN_DASH} not a compare page, not a product marketing page, not a changelog entry ${EN_DASH} because marketing copy is never evidence about the product.
 - "evidence_quote" is words copied from that page, exactly as they appear on it. Do not paraphrase and do not tidy the punctuation: the quote is matched against the stored page, and a rewritten one fails.
 - The gap has to be the thing the page is about. If searching the docs for your own gap words leads somewhere other than the page you cited, you cited the wrong page.
 - Read the pages the docs offer for your gap before you claim it. An action is dropped when the corpus holds a page about the gap that you never opened, however well argued the action is.
-- A gap you cannot evidence is an open question. Say what you could not check and move on: impact does not move for it, because impact is about what the competitor shipped.
+- A gap you cannot evidence is an open question. Say what you could not check and move on. Impact does not move for it: impact is about what the competitor shipped, not about what you could check on PostHog's side. update_pages is not the safe fallback for an unverified gap either: it has its own bar below.
 - When the docs show an adjacent capability, say so in "detail" and recommend only the part that is genuinely missing. Worked example: Feature flags can schedule a change for a future date (https://posthog.com/docs/feature-flags/scheduled-flag-changes), while Experiments start, pause, and stop by hand (https://posthog.com/docs/experiments/managing-lifecycle). So "PostHog cannot schedule anything" is wrong, the real gap is that experiments stop by hand, and the action asks for the missing piece first: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand."
 - consider_building is only for a capability with no PostHog product behind it at all. If any docs page covers the area, the action is consider_enhancing and "feature" names that product.
 

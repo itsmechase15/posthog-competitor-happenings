@@ -4,7 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isUnreachable, PostgresStore, sslConfigFor, unreachableHint } from "../src/db/pg.js";
-import type { CandidateItem } from "../src/types.js";
+import type { CandidateItem, CompetitorId, PageKind, PostHogPage } from "../src/types.js";
 
 /**
  * Runs the real SQL against an embedded Postgres over the wire protocol, so
@@ -12,9 +12,13 @@ import type { CandidateItem } from "../src/types.js";
  * only being exercised against a hand-written fake.
  */
 const PORT = 55_432;
-const migration = readFileSync(
-  fileURLToPath(new URL("../migrations/001_init.sql", import.meta.url)),
-  "utf8",
+/**
+ * Every migration, in order, so this suite runs against the schema a real
+ * database would have. 003 is applied on top of 001 rather than folded into
+ * it, which is also how it reaches production.
+ */
+const migrations = ["001_init.sql", "003_docs_corpus.sql"].map((name) =>
+  readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), "utf8"),
 );
 
 let db: PGlite;
@@ -23,7 +27,7 @@ let store: PostgresStore;
 
 beforeAll(async () => {
   db = await PGlite.create();
-  await db.exec(migration);
+  for (const migration of migrations) await db.exec(migration);
   server = new PGLiteSocketServer({ db, port: PORT, host: "127.0.0.1" });
   await server.start();
   store = new PostgresStore(`postgres://postgres@127.0.0.1:${PORT}/postgres`);
@@ -34,6 +38,28 @@ afterAll(async () => {
   await server?.stop();
   await db?.close();
 });
+
+/** A corpus row with the bookkeeping columns filled in, so a case says only its point. */
+function corpusPage(
+  overrides: Partial<PostHogPage> & { url: string; text: string },
+): PostHogPage {
+  const fetchedAt = overrides.fetchedAt ?? new Date("2026-01-01T00:00:00Z");
+  return {
+    title: "",
+    mentions: [] as CompetitorId[],
+    kind: "docs" as PageKind,
+    contentHash: "hash",
+    changedAt: fetchedAt,
+    discoveredFrom: ["sitemap"],
+    etag: null,
+    lastModified: null,
+    missingStreak: 0,
+    lastUsedAt: null,
+    retiredAt: null,
+    ...overrides,
+    fetchedAt,
+  };
+}
 
 function item(externalId: string, overrides: Partial<CandidateItem> = {}): CandidateItem {
   return {
@@ -321,43 +347,63 @@ describe("PostgresStore", () => {
     expect(pending).toHaveLength(0);
   });
 
-  it("upserts pages and reports when each was fetched", async () => {
+  it("saves a page with everything known about it, and overwrites it next time", async () => {
     const url = "https://posthog.com/compare/best-mixpanel-alternatives";
-    await store.upsertPage({
-      url,
-      title: "Old title",
-      text: "old",
-      mentions: ["mixpanel"],
-      fetchedAt: new Date("2026-01-01T00:00:00Z"),
-    });
-    await store.upsertPage({
-      url,
+    await store.savePage(
+      corpusPage({
+        url,
+        title: "Old title",
+        text: "old",
+        mentions: ["mixpanel"],
+        kind: "marketing",
+        contentHash: "one",
+        fetchedAt: new Date("2026-01-01T00:00:00Z"),
+      }),
+    );
+    await store.savePage(
+      corpusPage({
+        url,
+        title: "New title",
+        text: "new",
+        mentions: ["mixpanel", "amplitude"],
+        kind: "marketing",
+        contentHash: "two",
+        etag: '"abc"',
+        fetchedAt: new Date("2026-01-15T00:00:00Z"),
+        changedAt: new Date("2026-01-15T00:00:00Z"),
+      }),
+    );
+
+    const [stored] = await store.getPages([url]);
+    expect(stored).toMatchObject({
       title: "New title",
       text: "new",
       mentions: ["mixpanel", "amplitude"],
-      fetchedAt: new Date("2026-01-15T00:00:00Z"),
+      kind: "marketing",
+      contentHash: "two",
+      etag: '"abc"',
     });
+    expect(stored?.fetchedAt.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+  });
 
-    const indexed = await store.getIndexedPageUrls();
-    expect(indexed.get(url)?.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+  it("lists every row without its body, which is what the refresh plans against", async () => {
+    const meta = await store.listPageMeta();
+    const row = meta.find((entry) => entry.url.includes("best-mixpanel-alternatives"));
 
-    const rows = await db.query<{ title: string; mentions: string[] }>(
-      "select title, mentions from pages where url = $1",
-      [url],
-    );
-    expect(rows.rows[0]?.title).toBe("New title");
-    expect(rows.rows[0]?.mentions).toEqual(["mixpanel", "amplitude"]);
+    expect(row?.contentHash).toBe("two");
+    expect(row).not.toHaveProperty("text");
   });
 
   it("reads back the pages analysis asks for by URL, and skips the rest", async () => {
     const docsUrl = "https://posthog.com/docs/experiments/managing-lifecycle";
-    await store.upsertPage({
-      url: docsUrl,
-      title: "Managing the experiment lifecycle",
-      text: "You stop an experiment by hand.",
-      mentions: [],
-      fetchedAt: new Date("2026-01-20T00:00:00Z"),
-    });
+    await store.savePage(
+      corpusPage({
+        url: docsUrl,
+        title: "Managing the experiment lifecycle",
+        text: "You stop an experiment by hand.",
+        fetchedAt: new Date("2026-01-20T00:00:00Z"),
+      }),
+    );
 
     const pages = await store.getPages([docsUrl, "https://posthog.com/docs/never-indexed"]);
 
@@ -367,8 +413,67 @@ describe("PostgresStore", () => {
       title: "Managing the experiment lifecycle",
       text: "You stop an experiment by hand.",
       mentions: [],
+      kind: "docs",
     });
     expect(await store.getPages([])).toEqual([]);
+  });
+
+  it("records that a page was checked and had not moved, without touching its body", async () => {
+    const url = "https://posthog.com/docs/unchanged";
+    await store.savePage(
+      corpusPage({ url, text: "the stored body", fetchedAt: new Date("2026-01-01T00:00:00Z") }),
+    );
+
+    await store.touchPage(url, new Date("2026-02-01T00:00:00Z"));
+
+    const [stored] = await store.getPages([url]);
+    expect(stored?.text).toBe("the stored body");
+    expect(stored?.fetchedAt.toISOString()).toBe("2026-02-01T00:00:00.000Z");
+  });
+
+  describe("the corpus bookkeeping", () => {
+    const listed = "https://posthog.com/docs/still-listed";
+    const dropped = "https://posthog.com/docs/dropped";
+    const used = "https://posthog.com/docs/used-by-an-analyst";
+    const at = new Date("2026-03-01T00:00:00Z");
+
+    it("resets a streak, raises another, retires a page, and stamps what was used", async () => {
+      for (const url of [listed, dropped, used]) {
+        await store.savePage(corpusPage({ url, text: "t", missingStreak: 1 }));
+      }
+
+      await store.recordCorpusRun({
+        seen: [{ url: listed, sources: ["sitemap", "llms"] }],
+        missing: [dropped],
+        retired: [dropped],
+        used: [used],
+        at,
+      });
+
+      const byUrl = new Map((await store.listPageMeta()).map((row) => [row.url, row]));
+      expect(byUrl.get(listed)?.missingStreak).toBe(0);
+      expect(byUrl.get(listed)?.discoveredFrom).toEqual(["llms", "sitemap"]);
+      expect(byUrl.get(dropped)?.missingStreak).toBe(2);
+      expect(byUrl.get(dropped)?.retiredAt?.toISOString()).toBe(at.toISOString());
+      expect(byUrl.get(used)?.lastUsedAt?.toISOString()).toBe(at.toISOString());
+    });
+
+    it("leaves a retired page out of the corpus but keeps the row", async () => {
+      const live = (await store.loadCorpus()).map((page) => page.url);
+      expect(live).not.toContain(dropped);
+      expect((await store.listPageMeta()).map((row) => row.url)).toContain(dropped);
+    });
+
+    it("brings a page back the moment a body is written for it again", async () => {
+      await store.savePage(corpusPage({ url: dropped, text: "it is back" }));
+      expect((await store.loadCorpus()).map((page) => page.url)).toContain(dropped);
+    });
+
+    it("loads only the kinds it was asked for", async () => {
+      const marketing = await store.loadCorpus(["marketing"]);
+      expect(marketing.every((page) => page.kind === "marketing")).toBe(true);
+      expect(marketing.length).toBeGreaterThan(0);
+    });
   });
 
   it("replaces a page's claims instead of appending", async () => {
@@ -393,7 +498,7 @@ describe("PostgresStore", () => {
     ];
 
     for (const [url, paragraph] of pages) {
-      await store.upsertPage({ url, title: url, text: "t", mentions: ["amplitude"], fetchedAt: new Date() });
+      await store.savePage(corpusPage({ url, title: url, text: "t", mentions: ["amplitude"] }));
       await store.replaceClaimsForUrl(url, [
         { url, competitor: "amplitude", paragraph, heading: null },
       ]);
@@ -408,13 +513,9 @@ describe("PostgresStore", () => {
 
   it("ranks comparison pages ahead of docs pages", async () => {
     const docsUrl = "https://posthog.com/docs/migrate/mixpanel";
-    await store.upsertPage({
-      url: docsUrl,
-      title: "Migrate",
-      text: "t",
-      mentions: ["mixpanel"],
-      fetchedAt: new Date(),
-    });
+    await store.savePage(
+      corpusPage({ url: docsUrl, title: "Migrate", text: "t", mentions: ["mixpanel"] }),
+    );
     await store.replaceClaimsForUrl(docsUrl, [
       {
         url: docsUrl,

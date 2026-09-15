@@ -223,12 +223,93 @@ describe("parseAnalysis", () => {
     ).toThrow();
   });
 
-  it("rejects a response with no usable action", () => {
+  it("rejects a reply that never answered the actions field at all", () => {
+    // An empty list is an answer. No list is a reply that stopped early, and
+    // reading it as "nothing to do" would hide a broken analysis.
     const { actions, ...withoutActions } = valid;
-    expect(() => parseAnalysis(JSON.stringify(withoutActions))).toThrow(/action_detail/);
-    expect(() =>
-      parseAnalysis(JSON.stringify({ ...withoutActions, actions: [{ type: "update_pages" }] })),
-    ).toThrow(/action_detail/);
+    expect(() => parseAnalysis(JSON.stringify(withoutActions))).toThrow(/actions list/);
+  });
+
+  it("reads an entry with no detail as no entry, rather than failing the whole reply", () => {
+    const { actions, ...withoutActions } = valid;
+    const analysis = parseAnalysis(
+      JSON.stringify({ ...withoutActions, actions: [{ type: "update_pages" }] }),
+    );
+    expect(analysis.actions).toEqual([]);
+  });
+
+  it("reads zero actions as an answer, with the reason it gave", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [],
+        no_action_reason: "PostHog already ships this, so there is nothing to do.",
+      }),
+    );
+
+    expect(analysis.actions).toEqual([]);
+    expect(analysis.noActionReason).toBe("PostHog already ships this, so there is nothing to do.");
+  });
+
+  it("says so when an analysis recommends nothing and does not say why", () => {
+    const analysis = parseAnalysis(JSON.stringify({ ...valid, actions: [] }));
+    expect(analysis.noActionReason).toContain("did not say why");
+  });
+
+  it("keeps a product action's gap, page, and quote", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          {
+            type: "consider_enhancing",
+            detail: "Add a scheduled end time on experiments.",
+            feature: "Experiments",
+            gap: "no end date field on an experiment",
+            evidence_url: "https://posthog.com/docs/experiments/managing-lifecycle",
+            evidence_quote: "There is no end date field",
+          },
+        ],
+      }),
+    );
+
+    expect(analysis.actions[0]?.gap).toBe("no end date field on an experiment");
+    expect(analysis.actions[0]?.evidenceUrl).toBe(
+      "https://posthog.com/docs/experiments/managing-lifecycle",
+    );
+    expect(analysis.actions[0]?.evidenceQuote).toBe("There is no end date field");
+  });
+
+  it("leaves a quote's punctuation alone, because it is matched character by character", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [
+          {
+            type: "consider_building",
+            detail: "Build it.",
+            gap: "a gap",
+            evidence_url: "https://posthog.com/docs/x",
+            evidence_quote: "PostHog\u2014unlike others\u2014does not",
+          },
+        ],
+      }),
+    );
+
+    // Every other string is punctuated PostHog's way; this one is not, because
+    // rewriting the dash would fail the check against the stored page.
+    expect(analysis.actions[0]?.evidenceQuote).toContain("\u2014");
+    expect(analysis.summary).not.toContain("\u2014");
+  });
+
+  it("caps the list at what Slack can render", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: Array.from({ length: 4 }, () => ({ type: "update_pages", detail: "Do it." })),
+      }),
+    );
+    expect(analysis.actions).toHaveLength(3);
   });
 
   it("reads a single-action reply as a list of one", () => {
@@ -327,10 +408,10 @@ describe("parseStoredAlert", () => {
     expect(stored.issues).toEqual([]);
   });
 
-  it("still refuses a model reply that names no action", () => {
-    expect(() => parseAnalysis(JSON.stringify({ ...valid, actions: [] }))).toThrow(
-      /missing an action/,
-    );
+  it("reads a stored alert that recommends nothing, which is now a normal row", () => {
+    const stored = parseStoredAlert({ ...valid, actions: [], no_action_reason: "Nothing to do." });
+    expect(stored.analysis.actions).toEqual([]);
+    expect(stored.issues).toEqual([]);
   });
 });
 
@@ -346,53 +427,55 @@ const item: StoredItem = {
 };
 
 describe("heuristicAnalysis", () => {
-  it("cites an indexed page and asks for a check when one exists", () => {
-    const analysis = heuristicAnalysis(item, [
-      {
-        url: "https://posthog.com/compare/best-mixpanel-alternatives",
-        competitor: "mixpanel",
-        paragraph: "PostHog and Mixpanel both offer product analytics.",
-        heading: null,
-      },
-    ]);
-    expect(analysis.actions[0]?.type).toBe("update_pages");
-    expect(analysis.posthogRefs).toHaveLength(1);
-    expect(analysis.actions[0]?.detail).toContain("No model analysis ran");
-  });
+  const indexedClaim = {
+    url: "https://posthog.com/compare/best-mixpanel-alternatives",
+    competitor: "mixpanel" as const,
+    paragraph: "PostHog and Mixpanel both offer product analytics.",
+    heading: null,
+  };
 
-  it("asks for a compare page when nothing is indexed", () => {
-    expect(heuristicAnalysis(item, []).actions[0]?.type).toBe("new_compare_page");
-  });
-
-  it("never recommends enhancing a feature it cannot name", () => {
-    for (const claims of [[], [
-      {
-        url: "https://posthog.com/compare/best-mixpanel-alternatives",
-        competitor: "mixpanel" as const,
-        paragraph: "PostHog and Mixpanel both offer product analytics.",
-        heading: null,
-      },
-    ]]) {
-      const types = heuristicAnalysis(item, claims).actions.map((action) => action.type);
-      expect(types).not.toContain("consider_enhancing");
+  it("recommends nothing, because it knows no PostHog product facts", () => {
+    // It cannot establish a gap, and a page is only worth editing when
+    // something on it is wrong, which nothing here has established either.
+    for (const claims of [[], [indexedClaim]]) {
+      expect(heuristicAnalysis(item, claims).actions).toEqual([]);
     }
   });
 
-  it("points at the docs for what PostHog ships, without assessing the gap itself", () => {
-    const analysis = heuristicAnalysis(item, [], [
-      {
-        url: "https://posthog.com/docs/experiments/managing-lifecycle",
-        title: "Managing the experiment lifecycle",
-        excerpt: "You stop an experiment by hand. There is no end date field.",
-      },
-    ]);
+  it("says plainly that nobody assessed this", () => {
+    expect(heuristicAnalysis(item, []).noActionReason).toContain("No model analysis ran");
+  });
+
+  it("cites the indexed page and asks whether it is now wrong, as a question", () => {
+    const analysis = heuristicAnalysis(item, [indexedClaim]);
+
+    expect(analysis.posthogRefs.map((ref) => ref.url)).toEqual([indexedClaim.url]);
+    expect(analysis.openQuestions[0]).toContain("Nobody has checked");
+    expect(analysis.openQuestions[0]).toContain(indexedClaim.url);
+  });
+
+  it("names the closest docs page without assessing the gap itself", () => {
+    const analysis = heuristicAnalysis(
+      item,
+      [],
+      [
+        {
+          url: "https://posthog.com/docs/experiments/managing-lifecycle",
+          title: "Managing the experiment lifecycle",
+          excerpt: "You stop an experiment by hand. There is no end date field.",
+        },
+      ],
+    );
+
     expect(analysis.posthogRefs.map((ref) => ref.url)).toEqual([
       "https://posthog.com/docs/experiments/managing-lifecycle",
     ]);
-    expect(analysis.actions[0]?.detail).toContain(
-      "read it before treating anything here as a gap",
-    );
-    expect(analysis.actions.map((action) => action.type)).not.toContain("consider_building");
+    expect(analysis.openQuestions.join(" ")).toContain("What does PostHog already ship here?");
+    expect(analysis.actions).toEqual([]);
+  });
+
+  it("points an unassessed Mixpanel launch at Mixpanel, not at the other competitor", () => {
+    expect(heuristicAnalysis(item, []).openQuestions[0]).toContain("mixpanel");
   });
 
   it("restates the source rather than inventing an assessment", () => {
@@ -488,16 +571,18 @@ describe("buildAnalysisPrompt", () => {
     paragraph: "PostHog and Mixpanel both offer product analytics.",
     heading: "Overview",
   };
-  const withRefs = buildAnalysisPrompt(item, [claim]);
+  const withRefs = buildAnalysisPrompt(item, { claims: [claim] });
 
   it("gives the model only the claims it may cite", () => {
     expect(withRefs).toContain("https://posthog.com/compare/best-mixpanel-alternatives");
     expect(withRefs).toContain('section "Overview"');
-    expect(withRefs).toContain("Only cite URLs given to you");
+    expect(withRefs).toContain("Only cite URLs that exist in it");
   });
 
   it("says so when nothing is indexed, rather than leaving a blank section", () => {
-    expect(buildAnalysisPrompt(item, [])).toContain("no indexed PostHog.com pages mention");
+    expect(buildAnalysisPrompt(item, { claims: [] })).toContain(
+      "no indexed PostHog.com pages mention",
+    );
   });
 
   it("asks for the four allowed actions and nothing else", () => {
@@ -623,7 +708,7 @@ describe("buildAnalysisPrompt", () => {
         excerpt: "You stop an experiment by hand. There is no end date field.",
       },
     ];
-    const withDocs = buildAnalysisPrompt(item, [claim], docs);
+    const withDocs = buildAnalysisPrompt(item, { claims: [claim], docs });
 
     it("puts the docs pages in front of the model, with their text", () => {
       expect(withDocs).toContain("https://posthog.com/docs/feature-flags/scheduled-flag-changes");
@@ -631,9 +716,18 @@ describe("buildAnalysisPrompt", () => {
       expect(withDocs).toContain("There is no end date field");
     });
 
-    it("requires a docs page behind any claim that PostHog cannot do something", () => {
-      expect(withDocs).toContain("Never write that PostHog cannot do something");
-      expect(withDocs).toContain("Check the docs before you recommend anything");
+    it("asks a gap claim to carry the page it was read off and a quote from it", () => {
+      expect(withDocs).toContain('"gap" is one line saying what PostHog does not do today');
+      expect(withDocs).toContain('"evidence_url" is the PostHog docs page you read the gap off');
+      expect(withDocs).toContain("words copied from that page, exactly as they appear on it");
+    });
+
+    it("says the quote is checked, so a paraphrase is not worth writing", () => {
+      expect(withDocs).toContain("the quote is matched against the stored page");
+    });
+
+    it("warns that a gap on a page nobody opened is dropped", () => {
+      expect(withDocs).toContain("An action is dropped when the corpus holds a page about the gap");
     });
 
     it("says a compare page is not evidence about the product", () => {
@@ -652,19 +746,79 @@ describe("buildAnalysisPrompt", () => {
       );
     });
 
-    it("asks for an open question when the docs settle nothing, not a page edit", () => {
-      expect(withDocs).toContain("do not guess");
+    it("asks for an open question when the gap cannot be evidenced, not a page edit", () => {
+      expect(withDocs).toContain("A gap you cannot evidence is an open question");
       expect(withDocs).toContain("open_questions");
       expect(withDocs).toContain("update_pages is not the safe fallback for an unverified gap");
     });
 
-    it("asks for the docs URL in posthog_refs", () => {
-      expect(withDocs).toContain('Cite the docs URL you relied on in "posthog_refs"');
+    it("rules out the things that look like gaps and are not", () => {
+      expect(withDocs).toContain("What is not a gap");
+      expect(withDocs).toContain("not a capability PostHog is missing");
+      expect(withDocs).toContain('"Document this" is not one of the action types');
+      expect(withDocs).toContain("A capability PostHog has under a different name");
     });
 
-    it("says plainly when no docs are in context, rather than leaving a gap open", () => {
-      expect(withRefs).toContain("no product docs are in context for this signal");
-      expect(withRefs).toContain("do not fall back on update_pages");
+    it("says to check the corpus before asking for a compare page that exists", () => {
+      expect(withDocs).toContain("A compare page PostHog already publishes");
+    });
+
+    it("says plainly when nothing was pre-loaded, rather than leaving a gap open", () => {
+      expect(withRefs).toContain("nothing was pre-loaded");
+      expect(withRefs).toContain("instead of guessing");
+    });
+  });
+
+  describe("the docs workspace", () => {
+    const workspace = buildAnalysisPrompt(item, {
+      claims: [claim],
+      toc: "# PostHog docs workspace\n\n## docs/experiments (1)\n- Managing the experiment lifecycle `pages/docs-experiments/managing-lifecycle.md`",
+    });
+
+    it("tells the analyst it has files to search, and which tools it has", () => {
+      expect(workspace).toContain("as files you can search");
+      expect(workspace).toContain("read a file, grep the text, glob for paths, list a directory");
+    });
+
+    it("lists every page when the corpus is small enough to list", () => {
+      expect(workspace).toContain("Every page in the corpus");
+      expect(workspace).toContain("Managing the experiment lifecycle");
+    });
+
+    it("falls back to the section outline when the full list will not fit", () => {
+      // PostHog publishes a few thousand pages, so this is the normal path.
+      const big = buildAnalysisPrompt(item, {
+        claims: [claim],
+        toc: "x".repeat(200_000),
+        outline: "- `docs/experiments` 40 pages in `pages/docs-experiments/`",
+      });
+
+      expect(big).not.toContain("x".repeat(1_000));
+      expect(big).toContain("The corpus, by section");
+      expect(big).toContain("docs/experiments` 40 pages");
+    });
+
+    it("says what each kind of page is evidence of", () => {
+      expect(workspace).toContain("product documentation: what PostHog ships today");
+      expect(workspace).toContain("shipped, may be undocumented");
+    });
+
+    it("warns that a quiet docs page is not a gap when the changelog says otherwise", () => {
+      expect(workspace).toContain("do not call it a gap because the docs are quiet");
+    });
+
+    it("tells it to hold back when there is no workspace at all", () => {
+      expect(withRefs).toContain("You have no searchable copy of PostHog's docs this run");
+      expect(withRefs).toContain("the honest answer is an open question and no action");
+    });
+  });
+
+  describe("recommending nothing", () => {
+    it("says zero actions is a normal answer and asks for the reason", () => {
+      expect(withRefs).toContain('"actions" is 0 to 3 things PostHog should do');
+      expect(withRefs).toContain("Zero is a normal answer and often the right one");
+      expect(withRefs).toContain('one sentence in "no_action_reason" saying why');
+      expect(withRefs).toContain('"no_action_reason"');
     });
   });
 
@@ -724,7 +878,7 @@ describe("buildAnalysisPrompt", () => {
         heading: "Reporting",
       },
     ];
-    const withCompare = buildAnalysisPrompt(item, [claim], [], compareClaims);
+    const withCompare = buildAnalysisPrompt(item, { claims: [claim], compareClaims });
 
     it("puts their comparison page in context, quoted and cited", () => {
       expect(withCompare).toContain("What Mixpanel says about PostHog on their own comparison pages");
