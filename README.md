@@ -357,19 +357,19 @@ it for a day microlink turns us down.
 [`.github/workflows/daily.yml`](./.github/workflows/daily.yml) runs the bot
 every morning. One run does 7 steps:
 
-1. **Refresh the PostHog.com index.** Read the sitemap, keep the marketing and
-   docs pages worth citing, and fetch a budgeted slice of them. The canonical
-   product docs in [`src/posthog/products.ts`](./src/posthog/products.ts) are
-   added by hand and sorted first, because they are what a recommendation gets
-   checked against. Pages that name Mixpanel or Amplitude have their
-   competitor-mentioning paragraphs stored as `claims`. Half the budget
-   refreshes pages we know, half reaches pages we have never read.
+1. **Refresh the docs corpus.** Discover what PostHog publishes from the
+   sitemap, `llms.txt`, the links held pages carry, and the catalog; read what
+   is new or stale; retire what has gone. Pages that name Mixpanel or Amplitude
+   have their competitor-mentioning paragraphs stored as `claims`. Then write
+   the corpus to `.docs-workspace/` and build the search index over it. A
+   failure here costs evidence, never the run: the gate drops every gap claim
+   it cannot check, which makes a thinner alert rather than a wrong one.
 2. **Collect candidates** from the four sources.
 3. **Keep only what is new.** Dedupe against `items` on
    `(competitor, source, external_id)`.
 4. **Fill in the body.** A sitemap only gives a URL, so a new blog item gets its
    article fetched for a real title and body before analysis.
-5. **Analyze against the docs.** See
+5. **Analyze against the corpus, then check the answer against it.** See
    [How a recommendation is decided](#how-a-recommendation-is-decided).
 6. **Illustrate and file.** Find the feature image, then open one GitHub issue
    per recommended action. Both are stored alongside the verdict, so a retry
@@ -402,7 +402,9 @@ that one posts as normal.
 | `src/pipeline.ts` | The run order. It calls the other modules. |
 | `src/config.ts` | Every environment variable, read once. |
 | `src/sources/` | Changelog RSS, blog sitemaps, X, and AgentMail. |
-| `src/posthog/` | The posthog.com index, the product catalog, the team catalog. |
+| `src/posthog/` | The docs corpus: discovery, fetching, freshness, retrieval, the workspace on disk. Plus the product and team catalogs. |
+| `src/analysis/evidence.ts` | The checks an action survives before anyone is asked to do it. |
+| `src/analysis/analyst.ts` | The one analyst run, and its read-only tools. |
 | `src/analysis/` | The prompt, the reply schema, and the three guards. |
 | `src/teams.ts` | Routes an action to PostHog's small teams. |
 | `src/media/image.ts` | The feature image chain. |
@@ -412,6 +414,7 @@ that one posts as normal.
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
 | `migrations/001_init.sql` | The four tables. |
 | `migrations/002_close_data_api.sql` | Takes those tables off Supabase's Data API. |
+| `migrations/003_docs_corpus.sql` | Makes `pages` the corpus: kind, content hash, cache validators, retirement. |
 | `docs/writing.md` | The copy rules, and where each one is enforced. |
 | `AGENTS.md` | Notes for a coding agent, including the rules about keys. |
 | `.env.example` | The shape of every variable. Never a value. |
@@ -501,8 +504,10 @@ catches that one by sight, before a run spends twenty minutes finding out.
 
 Apply [`migrations/001_init.sql`](./migrations/001_init.sql) to create the four
 tables, then [`migrations/002_close_data_api.sql`](./migrations/002_close_data_api.sql)
-to take them off the Data API. The next section says why the second one is not
-optional.
+to take them off the Data API, then
+[`migrations/003_docs_corpus.sql`](./migrations/003_docs_corpus.sql) to give
+`pages` its corpus bookkeeping. The next section says why the second one is not
+optional. All three are safe to re-run.
 
 ### On Supabase, the tables are on the Data API until you say otherwise
 
@@ -666,8 +671,9 @@ The bot keeps what it has seen in Postgres. Four tables, defined in
   `(competitor, source, external_id)`. This is the dedupe key.
 - `analyses` – one row per analyzed item, with the verdict as `jsonb`, the
   feature image, and one issue per action, in action order.
-- `pages` – the PostHog.com pages we have read, and which competitors they
-  mention.
+- `pages` – the corpus: every page PostHog publishes about the product, what
+  kind of evidence each one is, what it last hashed to, what posthog.com called
+  it, when an analyst last read it, and whether it has been retired.
 - `claims` – the individual competitor-mentioning paragraphs we can cite.
 
 None of it is reachable over Supabase's Data API, by

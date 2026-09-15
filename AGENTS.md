@@ -10,6 +10,12 @@ and newsletters, asks Opus what PostHog should do about anything new, opens a
 GitHub issue per recommended action, and posts one Slack alert per launch. It
 runs on GitHub Actions, on a cron, and stores what it has seen in Postgres.
 
+The `pages` table is also the corpus: every page PostHog publishes about the
+product, around 3,800 of them. Each run writes it to `.docs-workspace/` and
+gives the analyst read-only search over it, then checks every gap claim the
+analyst makes back against the same corpus. The mistake the whole thing exists
+to stop is a GitHub issue telling PostHog to build something PostHog ships.
+
 ## First job on a fresh clone or fork: the secrets
 
 Nothing works until the keys are in place, so do this before anything else.
@@ -58,7 +64,10 @@ a secret **by name** – "set `CURSOR_API_KEY`" – is the whole job.
 | `npm test` / `npm run typecheck` | What CI runs |
 
 Start with the dry run. It needs no secrets at all, hits the live feeds, and is
-the fastest way to see what a change does to a message.
+the fastest way to see what a change does to a message. It builds the whole
+corpus first, which takes a few minutes and leaves it in `.docs-workspace/` –
+worth opening, because it is exactly what the analyst sees. `SKIP_POSTHOG_INDEX=true`
+skips the rebuild when you only care about the message.
 
 ## House rules for changes
 
@@ -69,8 +78,19 @@ the fastest way to see what a change does to a message.
   each rule is enforced. The one that catches people out: no em dashes. A dash
   is an en dash with a space either side.
 - **A recommendation is a claim about what PostHog ships**, so it is checked
-  against the product docs before it is written. See `verifyAgainstDocs` in
-  [`src/analysis/verify.ts`](./src/analysis/verify.ts).
+ against the corpus after it is written, by code rather than by another model
+ pass. See `gateActions` in
+ [`src/analysis/evidence.ts`](./src/analysis/evidence.ts): the cited page has
+ to be in the corpus, it has to be product documentation, the quote has to be
+ on the stored copy, and the gap's own words must not lead somewhere the
+ analysis never opened. A failed check becomes an open question and opens no
+ issue – never a correction, because there is no way to rewrite a claim whose
+ basis we cannot find without inventing one.
+- **Do not add a guess-then-fix model pass.** A model shown its own unsupported
+ claim argues for it better rather than going to check. One analyst run, with
+ the corpus under it, then code.
+- **Zero actions is a normal answer**, rendered as **None** with a reason. Do
+ not reintroduce a rule that an alert has to recommend something.
 - **New environment variable?** Add it to [`src/config.ts`](./src/config.ts),
   [`src/setup/requirements.ts`](./src/setup/requirements.ts), `.env.example`,
   and the workflow that needs it. The requirements list is what `check-env`

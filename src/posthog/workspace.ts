@@ -186,7 +186,8 @@ export function renderOutline(entries: TocEntry[]): string {
     const kinds = new Set(group.map((entry) => entry.page.kind));
     const label = kinds.has("docs") && kinds.size === 1 ? "" : ` [${[...kinds].sort().join(", ")}]`;
     const dir = `${PAGES_DIRNAME}/${slugify(section)}/`;
-    lines.push(`- \`${section}\`${label} ${group.length} pages in \`${dir}\``);
+    const count = `${group.length} page${group.length === 1 ? "" : "s"}`;
+    lines.push(`- \`${section}\`${label} ${count} in \`${dir}\``);
   }
 
   return lines.join("\n");

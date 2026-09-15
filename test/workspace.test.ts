@@ -152,6 +152,12 @@ describe("writeDocsWorkspace", () => {
       expect(workspace.outline).toContain(TOC_FILENAME);
     });
 
+    it("counts one page as a page", async () => {
+      const workspace = await writeDocsWorkspace(await workspaceDir(), pages);
+      expect(workspace.outline).toContain("1 page in");
+      expect(workspace.outline).not.toContain("1 pages");
+    });
+
     it("labels a section that is not product documentation", async () => {
       const workspace = await writeDocsWorkspace(await workspaceDir(), pages);
       expect(workspace.outline).toContain("`changelog` [changelog]");
