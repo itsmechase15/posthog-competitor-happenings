@@ -360,6 +360,7 @@ that one posts as normal.
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
 | `migrations/001_init.sql` | The four tables. |
+| `migrations/002_close_data_api.sql` | Takes those tables off Supabase's Data API. |
 | `docs/writing.md` | The copy rules, and where each one is enforced. |
 | `AGENTS.md` | Notes for a coding agent, including the rules about keys. |
 | `.env.example` | The shape of every variable. Never a value. |
@@ -448,7 +449,36 @@ from a dual-stack laptop and fails on every scheduled run with
 catches that one by sight, before a run spends twenty minutes finding out.
 
 Apply [`migrations/001_init.sql`](./migrations/001_init.sql) to create the four
-tables.
+tables, then [`migrations/002_close_data_api.sql`](./migrations/002_close_data_api.sql)
+to take them off the Data API. The next section says why the second one is not
+optional.
+
+### On Supabase, the tables are on the Data API until you say otherwise
+
+Supabase serves every table in `public` over PostgREST, and the default
+privileges on that schema give `anon` and `authenticated` full insert, update,
+and delete on anything created in it. Row-level security is off on a new table.
+So a fresh project, with nothing wrong with it, answers this from the open
+internet:
+
+```sh
+curl "https://<ref>.supabase.co/rest/v1/items?select=*" -H "apikey: <publishable key>"
+```
+
+That is one read. The same key also takes `PATCH` and `DELETE`. Supabase flags
+it as `rls_disabled_in_public`, at critical, and the flag is correct even for a
+bot with no browser client anywhere near it.
+
+This repo never uses that path – it connects over the session pooler as
+`postgres`, which has BYPASSRLS – so `002_close_data_api.sql` enables row-level
+security with no policies, revokes the grants, and revokes the default
+privileges that would hand the same thing to the next table. A run cannot tell
+the difference.
+
+Worth doing as well, in the dashboard, if you are not using PostgREST for
+anything: Project Settings → Data API → turn it off. That closes the surface
+rather than emptying it, and it is the setting a later migration cannot undo by
+accident.
 
 ### Keys live in Actions, never in the repo
 
@@ -471,7 +501,7 @@ secret that reaches an agent's context is a secret to rotate.
 
 1. Create the Slack app, install it, and copy the bot token.
 2. Invite the app to the channel, and copy the channel id.
-3. Create the database, apply the migration, and take the pooler URI.
+3. Create the database, apply both migrations, and take the pooler URI.
 4. Add the secrets and the two variables.
 5. **Merge this to main.** GitHub lists a `workflow_dispatch` workflow only
    when the file is on the default branch, and a schedule only runs there. You
@@ -588,6 +618,10 @@ The bot keeps what it has seen in Postgres. Four tables, defined in
 - `pages` – the PostHog.com pages we have read, and which competitors they
   mention.
 - `claims` – the individual competitor-mentioning paragraphs we can cite.
+
+None of it is reachable over Supabase's Data API, by
+[`migrations/002_close_data_api.sql`](./migrations/002_close_data_api.sql). The
+only way in is `DATABASE_URL`.
 
 An item is only ever deduped once, which is why a failed post is retried for
 three days rather than dropped.
