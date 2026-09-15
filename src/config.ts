@@ -219,12 +219,12 @@ export function loadConfig(): Config {
     lookbackDays: int("LOOKBACK_DAYS", 7),
     maxItemsPerRun: int("MAX_ITEMS_PER_RUN", 12),
     maxItemsPerSource: int("MAX_ITEMS_PER_SOURCE", 8),
-    // PostHog publishes roughly 3,700 pages worth holding, and the coverage
-    // gate is only as good as the corpus behind it: a partial corpus blocks
-    // honest actions and misses others. So the budget covers the whole site
-    // rather than a slice of it, and conditional requests keep the steady-state
-    // cost to a few thousand 304s.
-    posthogMaxPages: int("POSTHOG_MAX_PAGES", 6_000),
+    // The sitemap lists about 3,500 docs pages and `llms.txt` names a couple
+    // of thousand more, so discovery lands around 6,600. The budget clears
+    // that with room, because the coverage gate is only as good as the corpus
+    // behind it: a partial corpus blocks honest actions and misses others.
+    // Conditional requests keep the steady-state cost to a few thousand 304s.
+    posthogMaxPages: int("POSTHOG_MAX_PAGES", 8_000),
     posthogRefreshDays: int("POSTHOG_REFRESH_DAYS", 14),
     docsHotRefreshDays: int("DOCS_HOT_REFRESH_DAYS", 3),
     skipPosthogIndex: bool("SKIP_POSTHOG_INDEX", false),

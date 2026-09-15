@@ -62,6 +62,22 @@ describe("classifyCorpusUrl", () => {
     expect(classifyCorpusUrl("https://posthog.com/careers/engineer")).toBeNull();
   });
 
+  it("keeps out generated API and SDK reference, which is half of what llms.txt lists", () => {
+    // 2,800 pages of near-identical endpoint and type stubs. They would double
+    // the corpus, skew the lexical index, and rank as strong matches for
+    // generic words, which blocks honest actions on evidence nobody read.
+    expect(classifyCorpusUrl("https://posthog.com/docs/api/account-notes")).toBeNull();
+    expect(classifyCorpusUrl("https://posthog.com/docs/open-api-spec/account_notes_list")).toBeNull();
+    expect(classifyCorpusUrl("https://posthog.com/docs/references/posthog-ios")).toBeNull();
+  });
+
+  it("keeps the prose docs that say what PostHog ships, including the long tails", () => {
+    // One page per CDP destination and per warehouse source is how "does
+    // PostHog export to BigQuery?" gets an answer.
+    expect(classifyCorpusUrl("https://posthog.com/docs/cdp/batch-exports/bigquery")).toBe("docs");
+    expect(classifyCorpusUrl("https://posthog.com/docs/data-warehouse/cutting-costs")).toBe("docs");
+  });
+
   it("keeps out section indexes and anything that is not a page", () => {
     expect(classifyCorpusUrl("https://posthog.com/docs")).toBeNull();
     expect(classifyCorpusUrl("https://posthog.com/")).toBeNull();

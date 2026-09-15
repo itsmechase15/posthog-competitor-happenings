@@ -49,6 +49,36 @@ interface ParsedMarkdown {
 
 const MARKDOWN_LINK = /\[[^\]]*\]\(([^)\s]+)[^)]*\)/g;
 
+/**
+ * Chrome posthog.com puts on every markdown page: a blockquote telling an
+ * agent where the docs index is, and the label of the "copy page" button.
+ *
+ * Worth removing rather than tolerating. The banner is on 3,400 pages and it
+ * is the first line of all of them, so without this it becomes the lead
+ * sentence of every excerpt the analyst is handed – and the lead sentence is
+ * the one `bestExcerpt` always keeps, because it is supposed to say what the
+ * page is about.
+ */
+const PAGE_CHROME = [/^>\s*AI agents:\s*this is one page from PostHog/i, /^Copy page$/i];
+
+/** Drop the chrome, then any line that just repeats the last one that said anything. */
+function stripChrome(markdown: string): string {
+  const kept: string[] = [];
+  let lastMeaningful = "";
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (PAGE_CHROME.some((pattern) => pattern.test(trimmed))) continue;
+    // posthog.com prints the page title twice, once either side of the button,
+    // so the repeat is only adjacent once the button's label has gone.
+    if (trimmed !== "" && trimmed === lastMeaningful) continue;
+    if (trimmed !== "") lastMeaningful = trimmed;
+    kept.push(line);
+  }
+
+  return kept.join("\n");
+}
+
 /** Every link target in a markdown body, resolved against the page it sits on. */
 export function markdownLinks(markdown: string, baseUrl: string): string[] {
   const found: string[] = [];
@@ -75,7 +105,7 @@ export function markdownLinks(markdown: string, baseUrl: string): string[] {
  * is where a page's own map of the docs site goes to die.
  */
 export function parseDocMarkdown(markdown: string, baseUrl = ""): ParsedMarkdown {
-  let body = markdown;
+  let body = stripChrome(markdown);
   let title = "";
 
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(body);

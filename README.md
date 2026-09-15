@@ -5,9 +5,10 @@ ships something.
 
 It reads both competitors' changelogs, their blogs, their X accounts, and a
 newsletter inbox. One run, every morning around 7am PT. Anything new goes to
-Opus with PostHog's own docs in front of it, and comes back as one to three
-recommended actions: enhance a PostHog product, build one, or fix a page that
-is now wrong.
+Opus with the whole of PostHog's docs searchable underneath it, and comes back
+as zero to three recommended actions: enhance a PostHog product, build one, or
+fix a page that is now wrong. Zero is a normal answer – plenty of launches are
+worth knowing about and ask nothing of PostHog.
 
 Each action opens its own GitHub issue, and the Slack message links it. Nothing
 is posted twice, and nothing is posted as raw JSON.
@@ -120,15 +121,42 @@ approximates it from the words a launch post uses, for runs with no
 A launch is easy to summarize. Saying what PostHog should do about it is the
 part that can be wrong, and a wrong one wastes somebody's afternoon.
 
-Each new item goes to `claude-opus-5` through the Cursor SDK with three kinds
-of context: the claims indexed from PostHog's own pages, which find stale
-marketing copy; the canonical docs for the products the signal touches, which
-are the only evidence for what PostHog ships; and the competitor's own compare
-page about PostHog, read fresh once per competitor per run.
+### The corpus is what the bot knows about PostHog
 
-The reply is parsed into a fixed shape – impact, one sentence, key points, one
-to three actions, citations limited to URLs the model was given, and any open
-questions. Then three guards run over it.
+The `pages` table holds every page PostHog publishes about the product: all of
+`/docs`, the compare pages, the product marketing pages, the blog, the
+tutorials, and PostHog's own changelog. Around 3,700 pages.
+
+Discovery is the union of four inputs – the sitemap, `llms.txt`, the links the
+pages we already hold carry, and the product catalog, which pins the overview
+pages the bot routes to. No single one decides what the corpus contains,
+because a sitemap lags a launch and `llms.txt` is a subset somebody curated for
+another purpose.
+
+Freshness is a content hash in two tiers: a page an analyst read in the last
+three days is re-read every three days, the rest every fortnight, and a URL the
+corpus has never held is read the run it turns up. Most of those re-reads cost
+nothing, because posthog.com answers `If-None-Match` with a 304 and no body. A
+URL no source has offered for two runs running is retired, and so is one
+answering 404 or 410.
+
+A changelog entry is held as its own kind of evidence: proof PostHog shipped
+something, and no proof at all that the docs mention it. PostHog ships several
+things a week and the docs lag, so an analyst that cannot tell those apart will
+either invent a gap or wave one away.
+
+### One analyst run, with the corpus under it
+
+Every run writes the corpus to `.docs-workspace/` as markdown, one file per
+page plus a table of contents, and the analyst gets read-only tools over it:
+read, grep, glob, list. A BM25 search pre-loads the ten best excerpts for the
+launch as a starting point, capped at four per docs section. The files the
+analyst opens are recorded from its own tool calls, not from its account of
+itself.
+
+There is no second model pass that reads the first reply and corrects it. A
+model shown its own unsupported claim argues for it better rather than going to
+check.
 
 **Actions come in four types**, and the type decides who owns the issue:
 
@@ -139,15 +167,30 @@ questions. Then three guards run over it.
 | `update_pages` | A PostHog page is now wrong, understated, or unanswered | Marketing |
 | `new_compare_page` | There is no page covering this comparison at all | Marketing |
 
-**A gap has to be shown in the docs.** An action may only say PostHog cannot do
-something when a docs excerpt in front of the model shows that gap.
+**Every product action carries its evidence, and the evidence is checked.** An
+action names the gap in one line, cites the docs page it read the gap off, and
+quotes it. `gateActions` in
+[`src/analysis/evidence.ts`](./src/analysis/evidence.ts) checks each part
+against the stored corpus: the page has to be in it, it has to be product
+documentation rather than marketing copy or a changelog entry, and the quote
+has to be on the stored copy. Then the corpus is searched again with the gap's
+own words, and the action is dropped when the docs answer it on a page the
+analysis never opened.
+
+That last check is the one the others cannot do. Every other check asks whether
+the evidence offered is real; this one asks whether it was the relevant
+evidence. A gap claim whose words lead straight to a page nobody opened is a
+gap claim about a page nobody opened.
+
+Pricing and packaging are not capability gaps, "document this" is not an
+action, and a compare page PostHog already publishes is not one to write.
+Anything that fails becomes an open question, and no GitHub issue is opened for
+it. A failed check is never a correction: there is no way to rewrite a claim
+whose basis we cannot find without inventing one.
+
 `verifyAgainstDocs` in [`src/analysis/verify.ts`](./src/analysis/verify.ts)
-re-checks the reply. A `consider_building` the docs contradict becomes a
-`consider_enhancing` against the product that already exists. A gap claim with
-no docs page behind it gets one, or an open question saying it was never
-verified. When the reply names a product the signal's own words never matched,
-that product's overview page is read too, so an action is never verified
-against nothing.
+still runs first, retyping a `consider_building` the pre-loaded docs contradict
+and naming the feature an enhancement is about.
 
 **A page edit has to be about the launch that found it.** "Customers might ask"
 and "the page could be stronger" are not reasons. `enforceUpdatePagesTopic`
@@ -168,9 +211,17 @@ and editing it are not the same permission.
 Last, `enforceActionLead` makes each surviving action open with the work rather
 than the gap behind it.
 
+**Zero actions is an answer.** Slack renders **None** with one sentence saying
+why: what PostHog already ships, or why this does not matter here. An empty
+section would read as a broken alert, and a missing one as an alert nobody
+finished.
+
 **Without `CURSOR_API_KEY` the bot still posts.** Analysis falls back to
 restating the source, and those messages are labeled "not model-analyzed" so
-nobody mistakes one for a recommendation.
+nobody mistakes one for a recommendation. The fallback recommends nothing at
+all: it knows no PostHog product facts, so it cannot establish a gap and cannot
+establish that a page is wrong. It names the pages a person would start from,
+as open questions.
 
 ## Where the signals come from
 

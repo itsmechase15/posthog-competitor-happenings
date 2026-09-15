@@ -21,6 +21,25 @@ const CHANGELOG_PREFIX = "/changelog";
 const DOCS_PREFIX = "/docs";
 
 /**
+ * Docs paths that are generated reference rather than prose about the product.
+ *
+ * `/docs/api` and `/docs/open-api-spec` are one page per REST operation, and
+ * `/docs/references` is one page per SDK type. Together they are 2,800 pages
+ * of near-identical boilerplate, and holding them costs three ways: they
+ * double the corpus and the workspace, they skew a lexical index by shifting
+ * the document frequency of every common word, and they rank as strong matches
+ * for generic vocabulary, which blocks honest actions on evidence nobody could
+ * have read. What PostHog ships is written in the prose docs; an endpoint stub
+ * that says "for instructions on how to authenticate, see API overview"
+ * establishes nothing either way.
+ */
+const GENERATED_REFERENCE_PREFIXES = [
+  "/docs/api",
+  "/docs/open-api-spec",
+  "/docs/references",
+];
+
+/**
  * Marketing sections that run deeper than one path segment.
  *
  * This is the same set the claims indexer has always read, so the pages that
@@ -95,7 +114,9 @@ export function classifyCorpusUrl(raw: string): PageKind | null {
   if (NOT_CORPUS_ROOTS.has(path)) return null;
 
   if (underPrefix(path, [CHANGELOG_PREFIX])) return "changelog";
-  if (path.startsWith(`${DOCS_PREFIX}/`)) return "docs";
+  if (path.startsWith(`${DOCS_PREFIX}/`)) {
+    return underPrefix(path, GENERATED_REFERENCE_PREFIXES) ? null : "docs";
+  }
   if (underPrefix(path, MARKETING_PREFIXES)) return "marketing";
   // A product page is one segment deep, which is also how the catalog links it.
   return path.split("/").filter(Boolean).length === 1 ? "marketing" : null;
