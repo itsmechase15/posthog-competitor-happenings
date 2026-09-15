@@ -3,6 +3,7 @@ import type { Config } from "../src/config.js";
 import { MemoryStore } from "../src/db/memory.js";
 import { createStore } from "../src/db/index.js";
 import type { CandidateItem } from "../src/types.js";
+import { page } from "./helpers.js";
 
 function item(externalId: string): CandidateItem {
   return {
@@ -110,6 +111,65 @@ describe("MemoryStore", () => {
     await store.replaceClaimsForUrl(url, [claim]);
     await store.replaceClaimsForUrl(url, [{ ...claim, paragraph: "two" }]);
     expect((await store.getClaims("mixpanel", 5)).map((c) => c.paragraph)).toEqual(["two"]);
+  });
+});
+
+describe("MemoryStore as a corpus", () => {
+  const url = "https://posthog.com/docs/experiments";
+
+  it("holds a page and hands it back as the live corpus", async () => {
+    const store = new MemoryStore();
+    await store.savePage(page({ url, text: "Experiments test a change." }));
+
+    expect((await store.loadCorpus()).map((entry) => entry.url)).toEqual([url]);
+    expect((await store.listPageMeta())[0]).not.toHaveProperty("text");
+  });
+
+  it("loads only the kinds it was asked for", async () => {
+    const store = new MemoryStore();
+    await store.savePage(page({ url, text: "docs" }));
+    await store.savePage(
+      page({ url: "https://posthog.com/pricing", kind: "marketing", text: "copy" }),
+    );
+
+    expect(await store.loadCorpus(["marketing"])).toHaveLength(1);
+  });
+
+  it("keeps the last-used stamp when a page is re-read", async () => {
+    // It is what puts a page in the short refresh tier, and a fresh read
+    // carries no opinion about when something last reasoned against it.
+    const store = new MemoryStore();
+    const used = new Date("2026-02-01T00:00:00Z");
+    await store.savePage(page({ url, text: "one" }));
+    await store.recordCorpusRun({ seen: [], missing: [], retired: [], used: [url], at: used });
+    await store.savePage(page({ url, text: "two" }));
+
+    expect((await store.listPageMeta())[0]?.lastUsedAt).toEqual(used);
+  });
+
+  it("takes a retired page out of the corpus and puts it back when it returns", async () => {
+    const store = new MemoryStore();
+    const at = new Date("2026-02-01T00:00:00Z");
+    await store.savePage(page({ url, text: "one" }));
+    await store.recordCorpusRun({ seen: [], missing: [], retired: [url], used: [], at });
+
+    expect(await store.loadCorpus()).toEqual([]);
+    expect(await store.listPageMeta()).toHaveLength(1);
+
+    await store.savePage(page({ url, text: "it is back" }));
+    expect(await store.loadCorpus()).toHaveLength(1);
+  });
+
+  it("records a check that found nothing changed without touching the body", async () => {
+    const store = new MemoryStore();
+    await store.savePage(page({ url, text: "the stored body" }));
+    const at = new Date("2026-02-01T00:00:00Z");
+
+    await store.touchPage(url, at);
+
+    const [stored] = await store.loadCorpus();
+    expect(stored?.text).toBe("the stored body");
+    expect(stored?.fetchedAt).toEqual(at);
   });
 });
 

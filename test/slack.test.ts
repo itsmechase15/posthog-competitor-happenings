@@ -80,6 +80,13 @@ const withActions = (...actions: RecommendedAction[]): Alert => ({
   analysis: { ...base.analysis, actions },
 });
 
+/** The text of every section block, in order, for the cases that read them. */
+function sectionTexts(message: { blocks: unknown[] }): string[] {
+  return (message.blocks as Array<{ type?: string; text?: { text?: string } }>)
+    .filter((block) => block.type === "section")
+    .map((block) => block.text?.text ?? "");
+}
+
 describe("buildSlackMessage", () => {
   const alert = withIssues(base);
   const message = buildSlackMessage(alert);
@@ -511,6 +518,56 @@ describe("buildSlackMessage", () => {
       issueNote: "GitHub issues not created — skipped (dry run)",
     });
     expect(JSON.stringify(message)).not.toContain("not created");
+  });
+
+  describe("when there is nothing to do", () => {
+    const nothing: Alert = {
+      ...base,
+      issues: [],
+      analysis: {
+        ...base.analysis,
+        actions: [],
+        noActionReason: "PostHog already schedules experiment stops, so this asks nothing of us.",
+      },
+    };
+
+    it("renders None with the reason, rather than a blank section", () => {
+      // A launch that asks nothing of PostHog is a normal outcome, and a
+      // useful one: it says somebody looked.
+      const texts = sectionTexts(buildSlackMessage(nothing));
+      expect(texts).toContain(`*${ACTION_HEADING}*`);
+      expect(texts.join("\n")).toContain("*None*");
+      expect(texts.join("\n")).toContain("PostHog already schedules experiment stops");
+    });
+
+    it("still says None when the analysis gave no reason", () => {
+      const message = buildSlackMessage({
+        ...nothing,
+        analysis: { ...nothing.analysis, noActionReason: undefined },
+      });
+      expect(JSON.stringify(message)).toContain("*None*");
+      expect(JSON.stringify(message)).toContain("no reason was recorded");
+    });
+
+    it("keeps the dry-run note off an alert that never asked for an issue", () => {
+      // `every` on an empty list is true, which used to put "GitHub issues not
+      // created" under an alert with no actions in it.
+      const message = buildSlackMessage({
+        ...nothing,
+        issueNote: "GitHub issues not created — skipped (dry run)",
+      });
+      expect(JSON.stringify(message)).not.toContain("not created");
+    });
+
+    it("cuts a reason long enough to break the section block", () => {
+      const message = buildSlackMessage({
+        ...nothing,
+        analysis: { ...nothing.analysis, noActionReason: "word ".repeat(400) },
+      });
+      const reason = sectionTexts(message).find((text) => text.includes("*None*")) ?? "";
+      expect(reason.length).toBeLessThan(700);
+      expect(reason).toContain("…");
+    });
   });
 
   it("keeps source and analyzer in a small footer, with a link to the source", () => {
