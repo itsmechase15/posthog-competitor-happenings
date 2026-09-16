@@ -282,6 +282,9 @@ function bullets(values: string[], empty: string): string {
  * The long form of one recommended action. Everything Slack cannot carry –
  * the full detail, page citations, suggested edits, open questions – lives
  * here, scoped to the one job this issue is asking for.
+ *
+ * What the competitor shipped comes first and the ask comes second, because
+ * somebody who opens this cold needs the news before a job makes sense.
  */
 export function buildIssueBody(
   alert: AnalyzedItem,
@@ -295,10 +298,10 @@ export function buildIssueBody(
   const sections = [
     `**${competitor.label}** · ${SOURCE_LABEL[item.source]} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
+    `## What you need to know\n${analysis.summary}`,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     evidenceSection(action),
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
-    `## What you need to know\n${analysis.summary}`,
     `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     pagesSection(alert, action),

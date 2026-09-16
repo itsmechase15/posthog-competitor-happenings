@@ -220,6 +220,25 @@ describe("buildIssueDraft", () => {
     }
   });
 
+  it("leads with the news, then the ask, then what the ask stands on", () => {
+    for (const body of [draft.body, buildIssueDraft(analyzed, image, productAction).body]) {
+      const headings = [...body.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+      expect(headings.slice(0, 2)).toEqual(["What you need to know", "Recommended action"]);
+      expect(headings.indexOf("Impact")).toBeGreaterThan(headings.indexOf("Recommended action"));
+    }
+
+    const withGap = buildIssueBody(analyzed, image, {
+      ...productAction,
+      gap: "PostHog experiments have no scheduled stop.",
+    });
+    const gapHeadings = [...withGap.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+    expect(gapHeadings.slice(0, 3)).toEqual([
+      "What you need to know",
+      "Recommended action",
+      "The gap this closes",
+    ]);
+  });
+
   it("tags the source in the header and the sources link the way Slack does", () => {
     expect(draft.body).toContain("**Amplitude** · changelog · published 2026-01-15");
     expect(draft.body).toContain(
