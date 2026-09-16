@@ -124,6 +124,43 @@ contradicted, `update_pages` is left out and the other actions carry the alert.
 It is also not the fallback for a gap the docs could not settle: an unverified
 gap is an open question, not a page edit.
 
+## A page edit carries the words to put on the page
+
+"Update the pricing section to mention scheduled stops" is not a page edit. It
+is a request for one, and it hands whoever opens the issue the reading of the
+page, the writing, and the guess at what voice the page is in. The analyst had
+the page open. The analyst writes the copy.
+
+So every `update_pages` action carries `proposed_text` on the ref for the page
+it fixes: the exact words that should sit there, ready to paste. `claim` is
+what the page says today, quoted and checked against the stored copy;
+`proposed_text` is what should say it instead.
+
+- Good: "Amplitude schedules an experiment to stop on a date you pick. PostHog
+  experiments stop when you stop them, so a fixed-length test needs someone to
+  end it."
+- Bad: "Mention that Amplitude now schedules stops."
+- Also bad: "This section should say Amplitude schedules stops now."
+
+The second and third are notes about the edit. The first is the edit. It also
+matches the page it goes on – same voice, same sentence length, same names for
+things – because copy that reads as if it came from somewhere else is a rewrite
+somebody has to rewrite. `suggested_edit` stays the one line saying what is
+wrong, which the issue prints under the rewrite as the reason for it.
+
+[`rewriteProblem`](../src/analysis/rewrite.ts) is what tells the two apart, and
+[`checkPageEdit`](../src/analysis/evidence.ts) will not file an action whose
+rewrite fails it. It rejects copy that opens on an editing verb, copy that
+talks about "this page" or what the copy "should say", copy too short to stand
+where a paragraph stands, marketing filler the style guide rules out, and copy
+the page already carries. A failed check drops the action into an open question
+like every other failed check: there is no writing the copy for a page we could
+not read.
+
+The GitHub issue prints the pair – **On the page today**, then **Replace it
+with** – so the edit is a decision rather than an assignment. Slack shows the
+first 200 characters under the page name and leaves the rest to the issue.
+
 ## And only about the thing that shipped
 
 All three reasons are about *this* launch. A launch is not a licence to fix the
@@ -181,6 +218,11 @@ That is their sales copy, so it never settles what PostHog ships. The docs do.
 - [`enforceUpdatePagesTopic`](../src/analysis/relevance.ts) runs next and drops
   a page edit that is not about the launch. It only ever removes an
   `update_pages` action: the other three types are left exactly as written.
+- [`rewriteProblem`](../src/analysis/rewrite.ts) decides whether an
+  `update_pages` action came back with the copy for the page or with another
+  instruction, and `checkPageEdit` in
+  [`src/analysis/evidence.ts`](../src/analysis/evidence.ts) drops the ones that
+  did not.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.

@@ -27,6 +27,8 @@ const valid = {
       url: "https://posthog.com/compare/best-mixpanel-alternatives",
       claim: "Neither tool syncs on a schedule.",
       suggested_edit: "Drop the claim; Mixpanel now schedules syncs.",
+      proposed_text:
+        "Mixpanel syncs a cohort on a schedule you set. PostHog exports run on ingest, so you pick the destination and the events go as they arrive.",
     },
   ],
   open_questions: ["Is it available on the free plan?"],
@@ -64,6 +66,45 @@ describe("parseAnalysis", () => {
     expect(analysis.openQuestions).toEqual(["Is it available on the free plan?"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe(
       "Drop the claim; Mixpanel now schedules syncs.",
+    );
+    expect(analysis.posthogRefs[0]?.proposedText).toContain("Mixpanel syncs a cohort on a schedule");
+  });
+
+  it("reads the exact rewrite under whichever name the model gave it", () => {
+    const copy =
+      "Mixpanel syncs a cohort on a schedule you set, and PostHog exports events as they arrive.";
+    for (const key of ["proposed_text", "proposedText", "replacement_text"]) {
+      const analysis = parseAnalysis(
+        JSON.stringify({
+          impact: "minor",
+          summary: "s",
+          actions: [],
+          no_action_reason: "n",
+          posthog_refs: [{ url: "u", claim: "c", [key]: copy }],
+        }),
+      );
+      expect(analysis.posthogRefs[0]?.proposedText).toBe(copy);
+    }
+  });
+
+  it("punctuates the rewrite PostHog's way, because it is headed for a PostHog page", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        impact: "minor",
+        summary: "s",
+        actions: [],
+        no_action_reason: "n",
+        posthog_refs: [
+          {
+            url: "u",
+            claim: "c",
+            proposed_text: "Mixpanel schedules a sync—PostHog exports on ingest.",
+          },
+        ],
+      }),
+    );
+    expect(analysis.posthogRefs[0]?.proposedText).toBe(
+      "Mixpanel schedules a sync \u2013 PostHog exports on ingest.",
     );
   });
 
@@ -615,6 +656,23 @@ describe("buildAnalysisPrompt", () => {
     expect(withRefs).toContain('"teams" is 1 to 3 PostHog small teams');
     expect(withRefs).toContain('"Product", "Engineering", "Platform", and "Core" are not teams');
     expect(withRefs).toContain("an experiments gap is for Experiments");
+  });
+
+  it("asks every page edit for the copy to put on the page, not a note about it", () => {
+    expect(withRefs).toContain("Every update_pages action ships the rewrite with it");
+    expect(withRefs).toContain('"proposed_text" on the ref for the page it fixes');
+    expect(withRefs).toContain("Open the page first");
+    expect(withRefs).toContain("ready to paste onto the page");
+    expect(withRefs).toContain("Match the page you just read");
+    // The instruction shape the gate drops, named so the model can avoid it.
+    expect(withRefs).toContain('"Mention that Amplitude now schedules stops" is a note');
+    expect(withRefs).toContain(
+      '"suggested_edit" stays what it always was: one line saying what is wrong',
+    );
+  });
+
+  it("puts proposed_text in the response shape it asks for", () => {
+    expect(withRefs).toContain('"proposed_text": "string (the exact copy to put on the page');
   });
 
   it("asks for an action detail that opens with one short sentence", () => {

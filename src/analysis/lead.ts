@@ -63,7 +63,13 @@ function namesCitedPage(lead: string, refs: PostHogRef[]): boolean {
  */
 function pageToName(refs: PostHogRef[]): PostHogRef | undefined {
   const editable = refs.filter((ref) => isMarketingTarget(ref.url));
-  return editable.find((ref) => ref.suggestedEdit) ?? editable[0];
+  // The page carrying the rewrite is the page the action is fixing, whatever
+  // else the analysis cited alongside it.
+  return (
+    editable.find((ref) => ref.proposedText) ??
+    editable.find((ref) => ref.suggestedEdit) ??
+    editable[0]
+  );
 }
 
 function productLead(action: RecommendedAction): string {

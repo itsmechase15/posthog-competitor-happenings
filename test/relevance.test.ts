@@ -398,6 +398,8 @@ describe("the guard inside a run", () => {
               url: compareUrl,
               claim: "Amplitude cannot schedule an experiment to stop on a date you pick",
               suggestedEdit: "Say they can now schedule a stop.",
+              proposedText:
+                "Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them.",
             },
           ],
         }),

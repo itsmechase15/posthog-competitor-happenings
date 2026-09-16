@@ -48,7 +48,8 @@ things a week and the docs lag, so an analyst that cannot tell those apart will
 either invent a gap or wave one away.
 
 Pages that mention Mixpanel or Amplitude still have their claims extracted, for
-the URL + claim + suggested edit a page action needs.
+the URL + claim a page action needs. The rewrite that goes with it is written
+against the stored page, which is the same copy the check runs on.
 
 The catalog is now a route into the corpus rather than the boundary of it. It
 does three jobs: naming (a model writes "A/B testing", an issue has to say
@@ -155,6 +156,19 @@ PostHog's side.
   `enforceUpdatePagesTopic` in [`src/analysis/relevance.ts`](./src/analysis/relevance.ts)
   drops a page action whose detail and suggested edit never touch the launch's
   own vocabulary, which can leave an alert with no action, and that is fine
+- Update pages carries the copy, not the instruction. The ref for the page it
+  fixes holds `claim`, the words on the page today, and `proposed_text`, the
+  exact words that should replace them, written in that page's own voice and
+  ready to paste. "Update the pricing section to mention scheduled stops" is a
+  job with the writing left in it, so `checkPageEdit` in
+  [`src/analysis/evidence.ts`](./src/analysis/evidence.ts) will not file an
+  action without a rewrite, and `rewriteProblem` in
+  [`src/analysis/rewrite.ts`](./src/analysis/rewrite.ts) rejects one that opens
+  on an editing verb, talks about "this page" or what the copy "should say",
+  is too short to stand where a paragraph stands, uses marketing filler the
+  style guide rules out, or repeats what the page already carries. The issue
+  prints **On the page today** and **Replace it with** as a pair; Slack shows
+  the first 200 characters under the page it goes on
 - Update pages and new compare page only ever target a page marketing writes:
   a compare page, a product marketing page, a blog post, pricing. Never a
   `/docs/` page. The docs are the evidence an action is checked against, and a
@@ -200,11 +214,13 @@ One short, pretty message per new signal, in this order and nothing else:
    that action's own issue ("Access GitHub issue #12"). No single issue link
    stands for the whole alert. That sentence leads with the work: the change to
    make for consider enhancing and consider building, the page and the update
-   for update pages and new compare page
+   for update pages and new compare page. An update pages action adds one
+   quoted line under that sentence: the start of the exact new copy, named for
+   the page it goes on, with the rest in the issue
 6. Small footer – competitor · source · model · source link
 
-PostHog page citations, suggested edits, and open questions are not in Slack.
-They live in the issue.
+PostHog page citations, one-line suggested edits, and open questions are not in
+Slack. They live in the issue, and so does the whole rewrite.
 
 ### GitHub issues
 Moved into the daily flow from Phase 2, because Slack got short and the detail
@@ -219,7 +235,8 @@ Title is competitor + feature + the action. Each body is scoped to its own
 action: that action in full, the summary, key points, the whole impact scale
 with each level's meaning next to it, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
-to update (url, claim, suggested edit); product's carry only the docs that back
+to update (url, the copy on the page today, the exact copy to replace it with,
+and the one line saying why); product's carry only the docs that back
 that action, without the edits or the compare-page copy. Neither lists the
 sibling actions: each one is its own issue. Labelled by competitor, source,
 impact, action, owner, and the PostHog product when the action names one. Uses the
