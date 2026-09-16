@@ -423,7 +423,9 @@ each layer able to stand on its own:
    sidebar, the page's own type, the illustration next to the paragraph.
    Stacked rather than side by side, because an issue column is about 830
    pixels wide and two pictures of a 1280-wide page next to each other are
-   unreadable.
+   unreadable. The proposed copy is highlighted in the after shot and only
+   there, so the words that changed are the ones the eye lands on rather than
+   a sentence somewhere in a page of prose.
 4. **A `diff` block, then the copy to paste.** The replacement text whole and
    never truncated, in a fence wide enough to survive backticks in the copy
    itself.

@@ -10,7 +10,8 @@ only renders an image it can fetch, so the PNGs are committed here and the
 issue body embeds them from these paths.
 
 The after shot is taken with the copy put into a headless browser's own copy of
-the document, between two screenshots, in a tab that is then thrown away.
+the document – highlighted, so the recommendation is the part of the picture
+that reads first – between two screenshots, in a tab that is then thrown away.
 Nothing in this folder was ever published to posthog.com, and the caption in
 the issue says so.
 
