@@ -136,7 +136,11 @@ export interface NoAction {
   kind: NoActionKind;
   /** One sentence: what the launch does, and what PostHog ships or why it does not matter. */
   reason: string;
-  /** Docs pages. Non-empty for `already_covered`, which is downgraded without them. */
+  /**
+   * The pages the verdict rests on, docs unless the answer is a page PostHog
+   * publishes. Non-empty for `already_covered`, which is downgraded without
+   * them rather than published as a claim nobody can check.
+   */
   evidence: NoActionEvidence[];
 }
 

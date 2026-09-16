@@ -600,7 +600,7 @@ function coveredReason(entry: BlockedAction, evidence: NoActionEvidence[]): stri
 
   switch (entry.cause) {
     case "page_exists":
-      return `PostHog already publishes the comparison page this asks for, so there is nothing to write.`;
+      return "PostHog already publishes the comparison page this asks for, so there is nothing to write.";
     case "wrong_page_ranked":
       return `PostHog documents this already: searching the docs for "${gap}" ranks ${pages} above the page the analysis read it off.`;
     default:
@@ -666,7 +666,9 @@ export function checkNoActionEvidence(
   index: CorpusIndex,
 ): { analysis: Analysis; notes: string[] } {
   const verdict = noActionOf(analysis);
-  if (verdict.kind !== "already_covered") return { analysis: withNoAction(analysis, verdict), notes: [] };
+  if (verdict.kind !== "already_covered") {
+    return { analysis: withNoAction(analysis, verdict), notes: [] };
+  }
 
   const notes: string[] = [];
   const kept: NoActionEvidence[] = [];
