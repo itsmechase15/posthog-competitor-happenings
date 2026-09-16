@@ -4,6 +4,7 @@ import type { Config } from "../config.js";
 import { buildIssueBody, buildIssueLabels, buildIssueTitle, type IssueEditor } from "../github/issue.js";
 import { actionLabel, REVIEW_LABEL, REVIEW_PASS_DONE } from "../labels.js";
 import { createLogger } from "../log.js";
+import type { EditCardMaker } from "../media/cards.js";
 import { topUpDocsForActions } from "../posthog/docs.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { bestExcerpt, terms, type CorpusIndex } from "../posthog/retrieval.js";
@@ -79,6 +80,13 @@ export interface ReviewPassInput {
   reviewer: Reviewer | null;
   /** Null for the same reason. A revise with no writer is left as an unconfirmed review. */
   writer: ActionWriter | null;
+  /**
+   * Where a revised page edit gets its before/after from. Absent leaves the
+   * rewritten issue with its text layers, which is the safe half: the picture
+   * of a revised edit is re-rendered from the new copy or it is not there at
+   * all, and an issue never keeps an image of copy it no longer asks for.
+   */
+  cards?: EditCardMaker;
   index: CorpusIndex;
   workspace: DocsWorkspace | null;
   budget: ReviewBudget;
@@ -313,9 +321,15 @@ async function revise(
   };
   const revisedAlert: AnalyzedItem = { ...alert, analysis: revised };
 
+  // Re-rendered from the copy that survived the checks, never carried over:
+  // the old PNG shows the paragraph the analyst wrote, and leaving it under a
+  // revised diff would be the one wrong picture this whole thing exists to
+  // avoid. A render that fails leaves the body with its text layers.
+  const revisedCards = (await input.cards?.cardsFor(revisedAlert, checked.action)) ?? [];
+
   const landed = await input.editor.update(target.issue, {
     title: buildIssueTitle(revisedAlert, checked.action),
-    body: buildIssueBody(revisedAlert, input.image, checked.action),
+    body: buildIssueBody(revisedAlert, input.image, checked.action, revisedCards),
     labels: withLabels(
       buildIssueLabels(revisedAlert, checked.action),
       REVIEW_LABEL.revised,

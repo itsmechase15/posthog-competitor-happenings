@@ -149,6 +149,52 @@ export interface IssueRef {
   number: number;
 }
 
+/**
+ * One page edit as a marketer should see it: the copy on the page today, the
+ * copy to put there, and the copy around both.
+ *
+ * Built from the stored corpus page rather than from the live site, because
+ * the corpus copy is the one the evidence gate matched the claim against. See
+ * `src/media/pageEdit.ts`.
+ */
+export interface PageEditPlan {
+  url: string;
+  /** The page's own title, which is how a marketer knows which page this is. */
+  pageTitle: string;
+  /** Where on posthog.com the copy sits, e.g. `/compare/mixpanel`. */
+  path: string;
+  /** What the edit does, in one line. */
+  summary: string;
+  /** Whether the quoted line is being replaced, or kept with copy added after it. */
+  mode: "replace" | "insert";
+  /** The page's own sentence above the edit, for bearings. Empty when there is none. */
+  contextAbove: string;
+  contextBelow: string;
+  /** The copy on the page today, as the stored page reads it. */
+  oldLine: string;
+  /** The copy to put there, one entry per paragraph. */
+  newLines: string[];
+  /** The rewrite whole and uncut, which is what somebody pastes. */
+  proposedText: string;
+  /** A `diff` block body, `-`/`+` for a replace and context/`+` for an insert. */
+  diff: string;
+  /** Opens the live page scrolled to today's line. Null when the line is too short to match. */
+  highlightUrl: string | null;
+}
+
+/**
+ * A page edit with wherever its picture ended up.
+ *
+ * `imageUrl` is null whenever the PNG could not be rendered or committed, and
+ * an issue with a null there is opened with its text layers alone. The image
+ * is the point of the card and it is never the only copy of it: a card that
+ * lost its picture still carries the diff and the copy to paste.
+ */
+export interface PageEditCard extends PageEditPlan {
+  imageUrl: string | null;
+  altText: string;
+}
+
 /** Who picks the work up. Marketing owns the pages, product owns the roadmap. */
 export const ACTION_OWNERS = ["marketing", "product"] as const;
 export type ActionOwner = (typeof ACTION_OWNERS)[number];

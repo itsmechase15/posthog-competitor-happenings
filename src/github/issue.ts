@@ -12,6 +12,7 @@ import {
   type FeatureImage,
   type Impact,
   type IssueRef,
+  type PageEditCard,
   type PostHogRef,
   type RecommendedAction,
 } from "../types.js";
@@ -179,11 +180,62 @@ function pageToEdit(ref: PostHogRef): string {
 }
 
 /**
+ * A fence long enough to hold `text`, so copy with backticks in it still comes
+ * out as one block somebody can select and paste.
+ */
+function fence(text: string): string {
+  const longest = [...text.matchAll(/`+/g)].reduce((max, run) => Math.max(max, run[0].length), 0);
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+/**
+ * One page edit, with the picture of it.
+ *
+ * The order is the reading order: which page and where on it, what the edit
+ * does, then the before/after as an image, then the same edit as a diff, then
+ * the copy to paste. Every layer under the image says the same thing in text,
+ * which is what makes a missing image survivable: a card whose PNG could not
+ * be rendered or committed opens the issue with the diff and the copy, and
+ * nobody is left with a broken image and no idea what to type.
+ *
+ * The full replacement copy is never truncated. It is the deliverable.
+ */
+function pageEditCard(card: PageEditCard): string {
+  const lines = [
+    `### ${card.pageTitle}${SPACED_EN_DASH}${card.path}`,
+    "",
+    `**What this edit does**${SPACED_EN_DASH}${card.summary}`,
+  ];
+
+  if (card.imageUrl) {
+    lines.push("", `![${card.altText}](${card.imageUrl})`);
+  }
+
+  lines.push("", "```diff", card.diff, "```");
+
+  const wrap = fence(card.proposedText);
+  lines.push("", "**Paste this**", "", `${wrap}text`, card.proposedText, wrap);
+
+  lines.push(
+    "",
+    card.highlightUrl
+      ? `[Open ${card.path} with today's line highlighted](${card.highlightUrl})`
+      : `[Open ${card.path}](${card.url})`,
+  );
+
+  return lines.join("\n");
+}
+
+/**
  * The cited pages. Marketing gets the pages to edit with the copy to put on
  * them, because editing the page is the job; product gets the docs that speak
  * to the action it is being asked to take, and nothing else.
  */
-function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
+function pagesSection(
+  alert: AnalyzedItem,
+  action: RecommendedAction,
+  cards: PageEditCard[],
+): string {
   const heading = isPageAction(action)
     ? "## PostHog pages to update"
     : "## PostHog pages for context";
@@ -197,9 +249,15 @@ function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   }
 
   const pages = refs
-    .map((ref) =>
-      isPageAction(action) ? pageToEdit(ref) : `### ${ref.url}\n- **Claim today:** ${ref.claim}`,
-    )
+    .map((ref) => {
+      if (!isPageAction(action)) return `### ${ref.url}\n- **Claim today:** ${ref.claim}`;
+      // A card is the richer version of the same section: it names the page by
+      // its title, shows the change, and carries the copy. A ref with no card
+      // – a page the corpus does not hold, a `new_compare_page` with no
+      // current copy – keeps the quoted-copy shape.
+      const card = cards.find((entry) => entry.url === ref.url);
+      return card ? pageEditCard(card) : pageToEdit(ref);
+    })
     .join("\n\n");
 
   const note =
@@ -285,11 +343,18 @@ function bullets(values: string[], empty: string): string {
  *
  * What the competitor shipped comes first and the ask comes second, because
  * somebody who opens this cold needs the news before a job makes sense.
+ *
+ * `cards` are the before/after cards for an `update_pages` action, already
+ * rendered and committed by the caller, because building this body is
+ * synchronous and screenshotting a page is not. None is a normal answer: an
+ * action of any other type has no cards, and a card whose picture failed still
+ * arrives here carrying its diff and its copy.
  */
 export function buildIssueBody(
   alert: AnalyzedItem,
   image: FeatureImage | null,
   action: RecommendedAction,
+  cards: PageEditCard[] = [],
 ): string {
   const { item, analysis, model } = alert;
   const competitor = COMPETITORS[item.competitor];
@@ -304,7 +369,7 @@ export function buildIssueBody(
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
     `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    pagesSection(alert, action),
+    pagesSection(alert, action, action.type === "update_pages" ? cards : []),
     docsThatWouldChangeSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${SOURCE_LABEL[item.source]}](${entryUrl(item)})${
@@ -320,10 +385,11 @@ export function buildIssueDraft(
   alert: AnalyzedItem,
   image: FeatureImage | null,
   action: RecommendedAction,
+  cards: PageEditCard[] = [],
 ): IssueDraft {
   return {
     title: buildIssueTitle(alert, action),
-    body: buildIssueBody(alert, image, action),
+    body: buildIssueBody(alert, image, action, cards),
     labels: buildIssueLabels(alert, action),
   };
 }
@@ -332,6 +398,10 @@ export function buildIssueDraft(
  * One draft per recommended action. An alert that says "enhance Experiments,
  * enhance feature flags, and fix the compare page" is three issues, so nobody
  * has to read someone else's work to find their own.
+ *
+ * No cards: a card needs a render and an upload per page, so the pipeline
+ * builds the drafts one action at a time with the cards for that action. This
+ * is the shape for everything that only needs the text.
  */
 export function buildIssueDrafts(
   alert: AnalyzedItem,
@@ -349,16 +419,23 @@ export interface IssueCreator {
   create(draft: IssueDraft): Promise<IssueRef | null>;
 }
 
-interface GitHubRequest {
-  method: "POST" | "PATCH";
+export interface GitHubRequest {
+  method: "GET" | "POST" | "PATCH" | "PUT";
   path: string;
   token: string;
   timeoutMs: number;
-  payload: Record<string, unknown>;
+  /** Omitted on a GET, which is the only method here that sends no body. */
+  payload?: Record<string, unknown>;
 }
 
-/** One call to the issues API. Throws with the status in the message, which is what the label retry reads. */
-async function githubRequest(request: GitHubRequest): Promise<IssueResponse> {
+/**
+ * One call to the GitHub API. Throws with the status in the message, which is
+ * what the label retry reads, and what tells the card uploader a file it tried
+ * to write is already there.
+ */
+export async function githubRequest<T extends { message?: string } = IssueResponse>(
+  request: GitHubRequest,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.timeoutMs);
   try {
@@ -370,11 +447,11 @@ async function githubRequest(request: GitHubRequest): Promise<IssueResponse> {
         "content-type": "application/json",
         "x-github-api-version": "2022-11-28",
       },
-      body: JSON.stringify(request.payload),
+      ...(request.payload === undefined ? {} : { body: JSON.stringify(request.payload) }),
       signal: controller.signal,
     });
 
-    const body = (await response.json().catch(() => ({}))) as IssueResponse;
+    const body = (await response.json().catch(() => ({}))) as T;
     if (!response.ok) {
       throw new Error(
         `${request.method} ${request.path} returned ${response.status}: ${body.message ?? "no detail"}`,
