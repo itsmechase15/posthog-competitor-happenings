@@ -7,11 +7,11 @@ import {
 } from "../src/github/files.js";
 
 /**
- * Committing a card's PNG to this repo, which is the only way a GitHub issue
+ * Committing a screenshot to this repo, which is the only way a GitHub issue
  * will render an image it did not get from a browser upload.
  *
  * The rule under every case: a file that cannot be written costs the issue its
- * picture and nothing else, so `put` returns null rather than throwing.
+ * pictures and nothing else, so `put` returns null rather than throwing.
  */
 
 const PNG = Buffer.from("fake png bytes");
@@ -44,7 +44,7 @@ describe("GitHubFileStore", () => {
     const spy = freshRepo();
     vi.stubGlobal("fetch", spy);
 
-    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card");
+    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel");
 
     expect(url).toBe(`https://raw.githubusercontent.com/o/r/main/${PATH}`);
     const put = spy.mock.calls.find((call) => call[1]?.method === "PUT") as [string, RequestInit];
@@ -52,7 +52,7 @@ describe("GitHubFileStore", () => {
     const payload = JSON.parse(put[1].body as string) as Record<string, string>;
     expect(payload.content).toBe(PNG.toString("base64"));
     expect(payload.branch).toBe("main");
-    expect(payload.message).toBe("Add a card");
+    expect(payload.message).toBe("Add the before of /compare/mixpanel");
   });
 
   it("writes to whichever branch the repo calls its default", async () => {
@@ -65,22 +65,22 @@ describe("GitHubFileStore", () => {
       }),
     );
 
-    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card");
+    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel");
     expect(url).toBe(`https://raw.githubusercontent.com/o/r/trunk/${PATH}`);
   });
 
   /**
-   * The file name is a hash of the card, so a path that exists already holds
-   * these exact bytes. Writing it again would be a commit that changes nothing.
+   * The file name is a hash of the edit and the day, so a path that exists
+   * already holds these exact bytes. Writing it again changes nothing.
    */
-  it("re-uses a card that is already committed instead of writing it twice", async () => {
+  it("re-uses a shot that is already committed instead of writing it twice", async () => {
     const spy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/repos/o/r")) return json(200, { default_branch: "main" });
       return json(200, { content: { path: PATH } });
     });
     vi.stubGlobal("fetch", spy);
 
-    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card");
+    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel");
 
     expect(url).toBe(`https://raw.githubusercontent.com/o/r/main/${PATH}`);
     expect(spy.mock.calls.some((call) => call[1]?.method === "PUT")).toBe(false);
@@ -96,7 +96,7 @@ describe("GitHubFileStore", () => {
       }),
     );
 
-    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card");
+    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel");
     expect(url).toBe(`https://raw.githubusercontent.com/o/r/main/${PATH}`);
   });
 
@@ -110,7 +110,7 @@ describe("GitHubFileStore", () => {
       }),
     );
 
-    expect(await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card")).toBeNull();
+    expect(await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel")).toBeNull();
   });
 
   it("falls back to main when the repo will not say what its default branch is", async () => {
@@ -123,17 +123,17 @@ describe("GitHubFileStore", () => {
       }),
     );
 
-    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add a card");
+    const url = await new GitHubFileStore("o/r", "ghs-test", 5_000).put(PATH, PNG, "Add the before of /compare/mixpanel");
     expect(url).toBe(`https://raw.githubusercontent.com/o/r/main/${PATH}`);
   });
 
-  it("looks the default branch up once, however many cards a run commits", async () => {
+  it("looks the default branch up once, however many shots a run commits", async () => {
     const spy = freshRepo();
     vi.stubGlobal("fetch", spy);
 
     const store = new GitHubFileStore("o/r", "ghs-test", 5_000);
-    await store.put(PATH, PNG, "Add a card");
-    await store.put(PATH.replace("abcd1234", "beef5678"), PNG, "Add a card");
+    await store.put(PATH, PNG, "Add the before of /compare/mixpanel");
+    await store.put(PATH.replace("abcd1234", "beef5678"), PNG, "Add the before of /compare/mixpanel");
 
     expect(spy.mock.calls.filter((call) => call[0].endsWith("/repos/o/r"))).toHaveLength(1);
   });
@@ -149,7 +149,7 @@ describe("createFileStore", () => {
       ...overrides,
     }) as Config;
 
-  it("commits cards when there is a token", () => {
+  it("commits screenshots when there is a token", () => {
     const store = createFileStore(config({ githubToken: "ghs-test" }));
     expect(store).toBeInstanceOf(GitHubFileStore);
     expect(store.description).toContain("artifacts/update-pages");
@@ -158,7 +158,7 @@ describe("createFileStore", () => {
   it("writes nothing during a dry run, and says where the card would have gone", async () => {
     const store = createFileStore(config({ dryRun: true, githubToken: "ghs-test" }));
     expect(store).toBeInstanceOf(DisabledFileStore);
-    expect(await store.put(PATH, PNG, "Add a card")).toBeNull();
+    expect(await store.put(PATH, PNG, "Add the before of /compare/mixpanel")).toBeNull();
   });
 
   it("names the missing secret when there is no token", () => {

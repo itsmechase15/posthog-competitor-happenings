@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IssueEditor, IssuePatch } from "../src/github/issue.js";
 import { REVIEW_LABEL, REVIEW_PASS_DONE } from "../src/labels.js";
-import { CorpusEditCardMaker, type EditCardMaker } from "../src/media/cards.js";
+import { BrowserPageVisualMaker, type PageVisualMaker } from "../src/media/visual.js";
 import {
   createReviewBudget,
   reviewActions,
@@ -214,15 +214,15 @@ interface RunOptions {
   budget?: number;
   editor?: RecordingEditor;
   alert?: AnalyzedItem;
-  cards?: EditCardMaker;
+  visuals?: PageVisualMaker;
 }
 
 /**
- * A card maker that commits nothing and names the file after the copy on it,
- * so a test can tell a re-rendered card from the one the analyst's copy got.
+ * A visual maker that opens no browser and names each file after the copy in
+ * it, so a test can tell a re-photographed edit from the analyst's one.
  */
-function cardMaker(): EditCardMaker {
-  return new CorpusEditCardMaker(
+function visualMaker(): PageVisualMaker {
+  return new BrowserPageVisualMaker(
     index,
     {
       description: "test store",
@@ -230,8 +230,13 @@ function cardMaker(): EditCardMaker {
         return `https://raw.invalid/${path}`;
       },
     },
-    async () => Buffer.from("png"),
-    () => new Date("2026-09-16T09:00:00Z"),
+    "test-agent",
+    async (plans) =>
+      plans.map(() => ({
+        status: "captured" as const,
+        before: Buffer.from("before png"),
+        after: Buffer.from("after png"),
+      })),
   );
 }
 
@@ -247,7 +252,7 @@ async function run(
     editor,
     reviewer: options.reviewer === undefined ? fakeReviewer("agree") : options.reviewer,
     writer: options.writer === undefined ? fakeWriter(goodRewrite) : options.writer,
-    ...(options.cards ? { cards: options.cards } : {}),
+    ...(options.visuals ? { visuals: options.visuals } : {}),
     index,
     workspace: null,
     budget: createReviewBudget({ reviewMaxPerRun: options.budget ?? 12 } as never),
@@ -377,14 +382,14 @@ describe("revise", () => {
   const pageRun = (
     revision: Revision,
     changes = ["Say what Amplitude now does, in its voice."],
-    cards?: EditCardMaker,
+    visuals?: PageVisualMaker,
   ) =>
     run({
       targets: [{ action: pageAction, issue, labels: openedLabels }],
       alert: { ...alert, analysis: { ...alert.analysis, actions: [pageAction] } },
       reviewer: fakeReviewer("revise", { changes }),
       writer: fakeWriter(revision),
-      ...(cards ? { cards } : {}),
+      ...(visuals ? { visuals } : {}),
     });
 
   const rewritten =
@@ -415,23 +420,24 @@ describe("revise", () => {
   });
 
   /**
-   * A revised page edit gets a new before/after, rendered from the copy that
-   * survived the checks. The old picture shows the paragraph the analyst wrote,
-   * and leaving it under a rewritten diff is the one wrong image this is all
-   * meant to avoid.
+   * A revised page edit gets a new before/after, photographed from the copy
+   * that survived the checks. The old pair shows the paragraph the analyst
+   * wrote, and leaving it under a rewritten diff is the one wrong picture this
+   * is all meant to avoid.
    */
-  it("re-renders the before/after from the copy that survived the checks", async () => {
+  it("re-photographs the before/after from the copy that survived the checks", async () => {
     const { editor } = await pageRun(
       {
         pageEdits: [{ url: COMPARE, proposedText: rewritten }],
       },
       ["Say where the schedule is set."],
-      cardMaker(),
+      visualMaker(),
     );
 
     const body = editor.edits.find((edit) => edit.kind === "update")?.patch?.body ?? "";
-    expect(body).toContain("![Before and after for /compare/amplitude-vs-posthog");
-    expect(body).toContain("https://raw.invalid/artifacts/update-pages/2026-09-16/");
+    expect(body).toContain("**Before** \u2013 the live page on");
+    expect(body).toContain("https://raw.invalid/artifacts/update-pages/");
+    expect(body).toContain("-after.png)");
     expect(body).toContain(`+ ${rewritten}`);
     expect(body).toContain(`**Paste this**\n\n\`\`\`text\n${rewritten}`);
     // The copy the analyst filed is gone from the issue, picture included.
@@ -440,11 +446,11 @@ describe("revise", () => {
     );
   });
 
-  /** No maker, no picture: a rewritten issue is never left showing the old one. */
-  it("patches the body with its text layers when there is nothing to render with", async () => {
+  /** No maker, no pictures: a rewritten issue is never left showing the old ones. */
+  it("patches the body with its text layers when there is nothing to photograph with", async () => {
     const { editor } = await pageRun({ pageEdits: [{ url: COMPARE, proposedText: rewritten }] });
     const body = editor.edits.find((edit) => edit.kind === "update")?.patch?.body ?? "";
-    expect(body).not.toContain("![Before and after");
+    expect(body).not.toContain("**Before**");
     expect(body).toContain(rewritten);
   });
 

@@ -166,13 +166,13 @@ describe("workflow environments", () => {
   });
 
   /**
-   * The before/after card on an `update_pages` issue is a Chromium screenshot,
-   * and `playwright-core` ships no browser, so a workflow that runs the
-   * pipeline has to install one. It also has to install the version the app
-   * depends on: a mismatch means a browser revision `playwright-core` will not
-   * look for, which is a silent fall back to issues with no pictures.
+   * The before/after on an `update_pages` issue is two Chromium screenshots of
+   * the live page, and `playwright-core` ships no browser, so a workflow that
+   * runs the pipeline has to install one. It also has to install the version
+   * the app depends on: a mismatch means a browser revision `playwright-core`
+   * will not look for, which is a silent fall back to issues with no pictures.
    */
-  describe("the browser the cards are rendered with", () => {
+  describe("the browser the before/after is taken with", () => {
     const pinned = (
       JSON.parse(readFileSync("package.json", "utf8")) as {
         dependencies: Record<string, string>;
@@ -195,15 +195,26 @@ describe("workflow environments", () => {
     );
 
     /**
-     * The PNG is committed to this repo, because a GitHub issue renders an
+     * Both PNGs are committed to this repo, because a GitHub issue renders an
      * image from a URL and nothing else.
      */
     it.each(workflows.filter(({ text }) => pipelineSteps(text).length > 0))(
-      "$name may write the card it commits",
+      "$name may write the screenshots it commits",
       ({ text }) => {
         expect(text).toContain("contents: write");
       },
     );
+
+    /**
+     * CI runs no pipeline, but it does run the tests that drive the browser
+     * side of the capture. Without a browser those skip themselves, and the
+     * code that finds the line on a page and swaps the copy in it goes
+     * unchecked until a morning run finds out.
+     */
+    it("is installed in CI too, so the browser tests actually run", () => {
+      const ci = workflows.find(({ name }) => name === "ci.yml");
+      expect(ci?.text).toContain(`playwright@${pinned} install --with-deps chromium-headless-shell`);
+    });
   });
 
   /**
