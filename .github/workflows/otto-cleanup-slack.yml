@@ -1,7 +1,9 @@
 name: One-shot Slack cleanup (Otto)
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/otto-cleanup-slack.yml"]
 
 permissions:
   contents: write
@@ -19,46 +21,20 @@ jobs:
           set -euo pipefail
           CHANNEL="${SLACK_CHANNEL_ID:-C0C07A1DM09}"
           TS="1789511525.285309"
-          echo "Deleting Slack message channel=$CHANNEL ts=$TS"
-          RESP=$(curl -sS -X POST https://slack.com/api/chat.delete \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json; charset=utf-8" \
-            -d "{\"channel\":\"$CHANNEL\",\"ts\":\"$TS\"}")
-          echo "$RESP"
-          echo "$RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print("SLACK_DELETE_OK" if d.get("ok") else "SLACK_DELETE_FAILED: "+str(d))'
-
-          # Also search recent history for cookie-consent leftovers and delete bot posts
-          HIST=$(curl -sS "https://slack.com/api/conversations.history?channel=$CHANNEL&limit=30" \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN")
-          python3 <<'PY'
-          import json, os, re, urllib.request
-          hist = json.loads('''HIST_PLACEHOLDER''')
-          PY
+          RESP=$(curl -sS -X POST https://slack.com/api/chat.delete -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H "Content-Type: application/json; charset=utf-8" -d "{\"channel\":\"$CHANNEL\",\"ts\":\"$TS\"}")
+          echo "exact_ts_delete=$RESP"
+          HIST=$(curl -sS "https://slack.com/api/conversations.history?channel=$CHANNEL&limit=30" -H "Authorization: Bearer $SLACK_BOT_TOKEN")
           python3 - "$HIST" "$SLACK_BOT_TOKEN" "$CHANNEL" <<'PY'
           import json, sys, urllib.request
-          hist = json.loads(sys.argv[1])
-          token = sys.argv[2]
-          channel = sys.argv[3]
+          hist, token, channel = json.loads(sys.argv[1]), sys.argv[2], sys.argv[3]
           if not hist.get("ok"):
-              print("history failed", hist)
-              raise SystemExit(0)
+              print("history failed", hist); raise SystemExit(0)
           keys = ("cookie consent", "cookie-consent", "web-experiment-cookie-consent")
           for m in hist.get("messages", []):
-              blob = json.dumps(m).lower()
-              if any(k in blob for k in keys):
-                  ts = m["ts"]
-                  body = json.dumps({"channel": channel, "ts": ts}).encode()
-                  req = urllib.request.Request(
-                      "https://slack.com/api/chat.delete",
-                      data=body,
-                      headers={
-                          "Authorization": f"Bearer {token}",
-                          "Content-Type": "application/json; charset=utf-8",
-                      },
-                      method="POST",
-                  )
-                  with urllib.request.urlopen(req) as resp:
-                      print(ts, resp.read().decode())
+              if any(k in json.dumps(m).lower() for k in keys):
+                  body = json.dumps({"channel": channel, "ts": m["ts"]}).encode()
+                  req = urllib.request.Request("https://slack.com/api/chat.delete", data=body, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}, method="POST")
+                  with urllib.request.urlopen(req) as resp: print("history_delete", m["ts"], resp.read().decode())
           PY
 
       - uses: actions/checkout@v4
@@ -71,9 +47,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f .github/workflows/otto-cleanup-slack.yml
           git add -A
-          if git diff --cached --quiet; then
-            echo "Already removed"
-            exit 0
-          fi
           git commit -m "chore: remove one-shot otto slack cleanup workflow"
           git push
