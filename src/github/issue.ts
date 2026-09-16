@@ -197,7 +197,9 @@ function fence(text: string): string {
  *
  * The after shot is of a page with words on it that nobody has published, so
  * its caption says exactly that. Somebody scrolling an issue about a
- * posthog.com page must not come away thinking the edit is live.
+ * posthog.com page must not come away thinking the edit is live. It also says
+ * where to look: the proposed copy is the highlighted run, and saying so is
+ * cheaper than making a reader compare two pages of prose.
  */
 function beforeAndAfter(visual: PageEditVisual): string[] {
   if (!visual.shots) {
@@ -215,7 +217,7 @@ function beforeAndAfter(visual: PageEditVisual): string[] {
     `**Before**${SPACED_EN_DASH}the live page on ${visual.capturedOn}`,
     `![${beforeAlt}](${beforeUrl})`,
     "",
-    `**After**${SPACED_EN_DASH}the same page with the proposed copy staged in a browser only. Nothing was published.`,
+    `**After**${SPACED_EN_DASH}the same page with the proposed copy highlighted in yellow, staged in a browser only. Nothing was published.`,
     `![${afterAlt}](${afterUrl})`,
   ];
 }
