@@ -205,12 +205,12 @@ export interface IssueRef {
 }
 
 /**
- * One page edit as a marketer should see it: the copy on the page today, the
- * copy to put there, and the copy around both.
+ * One page edit as a marketer should see it: which page, the copy on it
+ * today, the copy to put there, and where the two screenshots of it go.
  *
- * Built from the stored corpus page rather than from the live site, because
- * the corpus copy is the one the evidence gate matched the claim against. See
- * `src/media/pageEdit.ts`.
+ * The line to change is read off the stored corpus page, because the corpus
+ * copy is the one the evidence gate matched the claim against. The pictures
+ * are of the live page. See `src/media/pageEdit.ts`.
  */
 export interface PageEditPlan {
   url: string;
@@ -222,9 +222,6 @@ export interface PageEditPlan {
   summary: string;
   /** Whether the quoted line is being replaced, or kept with copy added after it. */
   mode: "replace" | "insert";
-  /** The page's own sentence above the edit, for bearings. Empty when there is none. */
-  contextAbove: string;
-  contextBelow: string;
   /** The copy on the page today, as the stored page reads it. */
   oldLine: string;
   /** The copy to put there, one entry per paragraph. */
@@ -235,19 +232,46 @@ export interface PageEditPlan {
   diff: string;
   /** Opens the live page scrolled to today's line. Null when the line is too short to match. */
   highlightUrl: string | null;
+  beforeAlt: string;
+  afterAlt: string;
+  /** Where the two PNGs go, relative to the repo root. */
+  beforePath: string;
+  afterPath: string;
+  /** The day the pair is taken on, which is the day the before shot is true for. */
+  capturedOn: string;
+  /**
+   * Whether the stored copy of the page still has the quoted line on it. It is
+   * what makes a line the live page does not have worth saying out loud: the
+   * page has moved on since the corpus read it, and the recommendation may
+   * have moved with it.
+   */
+  quotedOnStoredPage: boolean;
+}
+
+/** A before/after pair an issue body can embed, once something has committed the PNGs. */
+export interface PageShots {
+  /** Where the reader's browser fetches each image from. See `src/github/files.ts`. */
+  beforeUrl: string;
+  afterUrl: string;
+  beforeAlt: string;
+  afterAlt: string;
 }
 
 /**
- * A page edit with wherever its picture ended up.
+ * A page edit with whatever the camera came back with.
  *
- * `imageUrl` is null whenever the PNG could not be rendered or committed, and
- * an issue with a null there is opened with its text layers alone. The image
- * is the point of the card and it is never the only copy of it: a card that
- * lost its picture still carries the diff and the copy to paste.
+ * `shots` is null whenever the pair could not be taken or committed, and an
+ * issue with a null there is opened with its text layers alone. The pictures
+ * are the point and they are never the only copy of the edit: an edit that
+ * lost them still carries the diff and the copy to paste.
+ *
+ * `copyMissingLive` is the one absence worth a line in the issue rather than
+ * only in the log: the quoted line is on the stored page and is not on the
+ * live one, so the page has moved on since the corpus read it.
  */
-export interface PageEditCard extends PageEditPlan {
-  imageUrl: string | null;
-  altText: string;
+export interface PageEditVisual extends PageEditPlan {
+  shots: PageShots | null;
+  copyMissingLive: boolean;
 }
 
 /** Who picks the work up. Marketing owns the pages, product owns the roadmap. */

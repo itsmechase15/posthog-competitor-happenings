@@ -310,34 +310,48 @@ Title is competitor + feature + the action. Each body is scoped to its own
 action: that action in full, the summary, key points, the whole impact scale
 with each level's meaning next to it, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
-to update, each as a before/after card (see below); product's carry only the
-docs that back that action, without the edits or the compare-page copy. Neither lists the
+to update, each photographed before and after (see below); product's carry only
+the docs that back that action, without the edits or the compare-page copy. Neither lists the
 sibling actions: each one is its own issue. Labelled by competitor, source,
 impact, action, owner, and the PostHog product when the action names one. Uses the
 `GITHUB_TOKEN` Actions provides; with no token the run skips issue creation and
 keeps posting.
 
 ### Show a page edit, do not describe it
-`update_pages` only, one card per page the action names. Each card is a section
-headed with the page's title and path, one line saying what the edit does, a
-720px PNG of the paragraph today above the paragraph it should read instead
-(old line amber, new line green, a caret instead of a `-` when the edit adds
-rather than replaces), the same edit as a `diff`, and the replacement copy
-whole in a fence somebody pastes from. Every layer stands on its own.
+`update_pages` only, one pair of screenshots per page the action names. Each
+section is headed with the page's title and path, one line saying what the edit
+does, two shots of the page stacked – it as it reads today, then the same page
+with the proposed copy in it – the same edit as a `diff`, and the replacement
+copy whole in a fence somebody pastes from. Every layer stands on its own.
 
-Rendered from the corpus copy the evidence gate already matched, never from the
-live page: a browser pointed at posthog.com screenshots cookie banners and
-neighbouring paragraphs, and the PNG gives a reader no way to tell. So it is a
-Chromium screenshot of a static HTML template with Inter bundled in – no
-network, no scripts, no model, no tokens – which makes the same edit render the
-same bytes and lets a card's file name be a hash of it.
+Taken off the live page, and publishing nothing. A headless browser opens it,
+shoots the window, puts the copy into that tab's own DOM, and shoots the window
+again from the same scroll offset; the tab is thrown away, no form is
+submitted, and the caption under the after shot says so. The line is found by
+its text, folded to letters and digits the way the evidence gate folds it, in
+the deepest block that holds all of it, so a redesign does not break it and a
+table of contents cannot win against the prose. posthog.com hydrates after it
+loads, so nothing is marked on the page until the DOM stops changing.
 
-GitHub Issues renders an image from a URL and nothing else, so the PNG is
-committed to `artifacts/update-pages/<date>/` here and the body embeds the raw
-URL. A render or a commit that fails costs the picture only: the issue opens
-with the diff and the copy. A revised page edit is re-rendered from the copy
-that survived the checks and the body is patched, because an old picture under
-a new diff is the one wrong image this whole thing guards against.
+This replaced a card drawn from the stored corpus text. A card of a paragraph
+is a text mock of a page, and the page is what somebody is being asked to edit.
+The corpus is still what the claim is checked against, which happens long
+before any of this; a line the live page no longer has drops the pictures and
+adds one line to the issue saying the page has moved on, because that is news
+the person opening it needs and there is nothing honest to photograph.
+
+GitHub Issues renders an image from a URL and nothing else, so both PNGs are
+committed to `artifacts/update-pages/<date>/` here and the body embeds their
+raw URLs. Each name is a hash of the page, both sides of the edit, and the day:
+a re-run the same morning reuses the pair, a run next week photographs the page
+as it is then, and a rewrite gets its own pair. If one of the two will not
+commit, both are dropped.
+
+Every step gives up quietly. No browser, a page that will not load, a bot check
+served instead of it, no token, a dry run, a refused commit: the issue is filed
+in text, saying the same thing in words. A dry run still takes both shots to a
+temp directory and logs the paths. `SKIP_PAGE_VISUALS=true` turns it off. A
+revise re-photographs, because the copy is what a revise changes.
 
 A private channel first; a PostHog channel later. Whichever it is, the id lives
 in `SLACK_CHANNEL_ID`, never in the code.
@@ -357,7 +371,8 @@ TypeScript on GitHub. Cron via GitHub Actions (~7am PT).
 - Optional: AgentMail API, `X_BEARER_TOKEN` if Actions cannot use other X access
 - Optional, all with defaults in [`src/config.ts`](./src/config.ts):
   `REVIEW_MODEL` (`claude-fable-5-1`), `UPDATER_MODEL` (`CURSOR_MODEL`),
-  `REVIEW_MAX_PER_RUN` (12), and `SKIP_REVIEW` for a local run
+  `REVIEW_MAX_PER_RUN` (12), `SKIP_REVIEW` for a local run, and
+  `SKIP_PAGE_VISUALS` where there is no Chromium
 
 ## Taking it to PostHog marketing
 1. Prove it in a private channel, with a screenshot

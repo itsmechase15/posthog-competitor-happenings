@@ -12,7 +12,7 @@ import {
   type FeatureImage,
   type Impact,
   type IssueRef,
-  type PageEditCard,
+  type PageEditVisual,
   type PostHogRef,
   type RecommendedAction,
 } from "../types.js";
@@ -189,38 +189,67 @@ function fence(text: string): string {
 }
 
 /**
- * One page edit, with the picture of it.
+ * The two screenshots of the page, stacked and captioned.
+ *
+ * Stacked rather than side by side: an issue column is about 830 pixels wide,
+ * so two pictures of a 1280-wide page next to each other are unreadable, and
+ * being readable is the whole point of them.
+ *
+ * The after shot is of a page with words on it that nobody has published, so
+ * its caption says exactly that. Somebody scrolling an issue about a
+ * posthog.com page must not come away thinking the edit is live.
+ */
+function beforeAndAfter(visual: PageEditVisual): string[] {
+  if (!visual.shots) {
+    return visual.copyMissingLive
+      ? [
+          "",
+          `_The quoted copy was not on the live page on ${visual.capturedOn}, so there is no before and after of it. The page may already have been changed${SPACED_EN_DASH}read it before you edit it._`,
+        ]
+      : [];
+  }
+
+  const { beforeUrl, afterUrl, beforeAlt, afterAlt } = visual.shots;
+  return [
+    "",
+    `**Before**${SPACED_EN_DASH}the live page on ${visual.capturedOn}`,
+    `![${beforeAlt}](${beforeUrl})`,
+    "",
+    `**After**${SPACED_EN_DASH}the same page with the proposed copy staged in a browser only. Nothing was published.`,
+    `![${afterAlt}](${afterUrl})`,
+  ];
+}
+
+/**
+ * One page edit, with the pictures of it.
  *
  * The order is the reading order: which page and where on it, what the edit
- * does, then the before/after as an image, then the same edit as a diff, then
- * the copy to paste. Every layer under the image says the same thing in text,
- * which is what makes a missing image survivable: a card whose PNG could not
- * be rendered or committed opens the issue with the diff and the copy, and
- * nobody is left with a broken image and no idea what to type.
+ * does, then the page photographed before and after, then the same edit as a
+ * diff, then the copy to paste. Every layer under the pictures says the same
+ * thing in text, which is what makes a missing pair survivable: an edit whose
+ * PNGs could not be taken or committed opens the issue with the diff and the
+ * copy, and nobody is left with a broken image and no idea what to type.
  *
  * The full replacement copy is never truncated. It is the deliverable.
  */
-function pageEditCard(card: PageEditCard): string {
+function pageEditSection(visual: PageEditVisual): string {
   const lines = [
-    `### ${card.pageTitle}${SPACED_EN_DASH}${card.path}`,
+    `### ${visual.pageTitle}${SPACED_EN_DASH}${visual.path}`,
     "",
-    `**What this edit does**${SPACED_EN_DASH}${card.summary}`,
+    `**What this edit does**${SPACED_EN_DASH}${visual.summary}`,
+    ...beforeAndAfter(visual),
   ];
 
-  if (card.imageUrl) {
-    lines.push("", `![${card.altText}](${card.imageUrl})`);
-  }
+  lines.push("", "```diff", visual.diff, "```");
 
-  lines.push("", "```diff", card.diff, "```");
-
-  const wrap = fence(card.proposedText);
-  lines.push("", "**Paste this**", "", `${wrap}text`, card.proposedText, wrap);
+  const wrap = fence(visual.proposedText);
+  lines.push("", "**Paste this**", "", `${wrap}text`, visual.proposedText, wrap);
 
   lines.push(
     "",
-    card.highlightUrl
-      ? `[Open ${card.path} with today's line highlighted](${card.highlightUrl})`
-      : `[Open ${card.path}](${card.url})`,
+    visual.highlightUrl
+      ? `[Open ${visual.path} with today's line highlighted](${visual.highlightUrl})`
+      : `[Open ${visual.path}](${visual.url})`,
   );
 
   return lines.join("\n");
@@ -234,7 +263,7 @@ function pageEditCard(card: PageEditCard): string {
 function pagesSection(
   alert: AnalyzedItem,
   action: RecommendedAction,
-  cards: PageEditCard[],
+  visuals: PageEditVisual[],
 ): string {
   const heading = isPageAction(action)
     ? "## PostHog pages to update"
@@ -251,12 +280,12 @@ function pagesSection(
   const pages = refs
     .map((ref) => {
       if (!isPageAction(action)) return `### ${ref.url}\n- **Claim today:** ${ref.claim}`;
-      // A card is the richer version of the same section: it names the page by
-      // its title, shows the change, and carries the copy. A ref with no card
-      // – a page the corpus does not hold, a `new_compare_page` with no
-      // current copy – keeps the quoted-copy shape.
-      const card = cards.find((entry) => entry.url === ref.url);
-      return card ? pageEditCard(card) : pageToEdit(ref);
+      // A photographed edit is the richer version of the same section: it
+      // names the page by its title, shows the page with the change on it, and
+      // carries the copy. A ref with none – a page the corpus does not hold, a
+      // `new_compare_page` with no current copy – keeps the quoted-copy shape.
+      const visual = visuals.find((entry) => entry.url === ref.url);
+      return visual ? pageEditSection(visual) : pageToEdit(ref);
     })
     .join("\n\n");
 
@@ -344,17 +373,17 @@ function bullets(values: string[], empty: string): string {
  * What the competitor shipped comes first and the ask comes second, because
  * somebody who opens this cold needs the news before a job makes sense.
  *
- * `cards` are the before/after cards for an `update_pages` action, already
- * rendered and committed by the caller, because building this body is
- * synchronous and screenshotting a page is not. None is a normal answer: an
- * action of any other type has no cards, and a card whose picture failed still
+ * `visuals` are the photographed page edits for an `update_pages` action,
+ * already taken and committed by the caller, because building this body is
+ * synchronous and photographing a page is not. None is a normal answer: an
+ * action of any other type has none, and an edit whose pictures failed still
  * arrives here carrying its diff and its copy.
  */
 export function buildIssueBody(
   alert: AnalyzedItem,
   image: FeatureImage | null,
   action: RecommendedAction,
-  cards: PageEditCard[] = [],
+  visuals: PageEditVisual[] = [],
 ): string {
   const { item, analysis, model } = alert;
   const competitor = COMPETITORS[item.competitor];
@@ -369,7 +398,7 @@ export function buildIssueBody(
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
     `## Impact\n${impactScale(analysis.impact)}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    pagesSection(alert, action, action.type === "update_pages" ? cards : []),
+    pagesSection(alert, action, action.type === "update_pages" ? visuals : []),
     docsThatWouldChangeSection(alert, action),
     `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
     `## Sources\n- [${competitor.label} ${SOURCE_LABEL[item.source]}](${entryUrl(item)})${
@@ -385,11 +414,11 @@ export function buildIssueDraft(
   alert: AnalyzedItem,
   image: FeatureImage | null,
   action: RecommendedAction,
-  cards: PageEditCard[] = [],
+  visuals: PageEditVisual[] = [],
 ): IssueDraft {
   return {
     title: buildIssueTitle(alert, action),
-    body: buildIssueBody(alert, image, action, cards),
+    body: buildIssueBody(alert, image, action, visuals),
     labels: buildIssueLabels(alert, action),
   };
 }
@@ -399,8 +428,8 @@ export function buildIssueDraft(
  * enhance feature flags, and fix the compare page" is three issues, so nobody
  * has to read someone else's work to find their own.
  *
- * No cards: a card needs a render and an upload per page, so the pipeline
- * builds the drafts one action at a time with the cards for that action. This
+ * No pictures: a pair needs a browser and an upload per page, so the pipeline
+ * builds the drafts one action at a time with the shots for that action. This
  * is the shape for everything that only needs the text.
  */
 export function buildIssueDrafts(

@@ -27,9 +27,9 @@ concurrency:
   group: competitor-happenings
   cancel-in-progress: false
 
-# `contents: write` is for the before/after cards: a GitHub issue renders an
-# image from a URL and nothing else, so an update_pages card's PNG is committed
-# to artifacts/update-pages/ and the issue embeds its raw URL.
+# `contents: write` is for the before/after screenshots: a GitHub issue renders
+# an image from a URL and nothing else, so both PNGs of an update_pages edit are
+# committed to artifacts/update-pages/ and the issue embeds their raw URLs.
 permissions:
   contents: write
   issues: write
@@ -68,16 +68,16 @@ jobs:
 
       - run: npm run build
 
-      # The same browser the daily job renders its before/after cards with.
+      # The same browser the daily job photographs its before/after with.
       # `playwright-core` ships no browser, and a run without one still opens
-      # every issue, with the diff and the copy to paste and no picture.
-      - name: Cache the browser the cards are rendered with
+      # every issue, with the diff and the copy to paste and no pictures.
+      - name: Cache the browser the before/after is taken with
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ms-playwright-chromium-headless-shell-1.63.0
 
-      - name: Install the browser the cards are rendered with
+      - name: Install the browser the before/after is taken with
         run: npx --yes playwright@1.63.0 install chromium-headless-shell
 
       # Names a missing secret before anything reaches a vendor. DRY_RUN is set

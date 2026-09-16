@@ -1,5 +1,9 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Config } from "../config.js";
 import { createLogger } from "../log.js";
+import { SPACED_EN_DASH } from "../util/text.js";
 import { githubRequest } from "./issue.js";
 
 const log = createLogger("github-files");
@@ -9,18 +13,20 @@ const log = createLogger("github-files");
  *
  * GitHub Issues renders an image from a URL and nothing else: an attachment
  * needs a browser upload, and a body that says "open this link to see the
- * before/after" is the handoff the card exists to avoid. So a card's PNG is
- * committed to the repo that files the issues, and the issue embeds the raw
- * URL of the committed file.
+ * before/after" is the handoff the pictures exist to avoid. So each screenshot
+ * is committed to the repo that files the issues, and the issue embeds the raw
+ * URL of the committed file. This repo is public, so a `raw.githubusercontent`
+ * address renders for everybody who opens the issue, with no token in it and
+ * nothing to expire.
  *
- * The file name carries a hash of the card, so a path always holds the same
- * bytes. That is what makes a branch-pinned raw URL safe to embed, makes a
- * re-render of an unchanged edit free, and makes a revised edit a new file
- * rather than an old URL quietly showing new copy.
+ * The file name carries a hash of the edit and the day it was taken, so a path
+ * always holds the same bytes. That is what makes a branch-pinned raw URL safe
+ * to embed, makes a second run the same morning free, and makes a revised edit
+ * a new file rather than an old URL quietly showing new copy.
  */
 
-/** Where the cards live. Stable, so a raw URL keeps working. */
-export const CARD_DIR = "artifacts/update-pages";
+/** Where the screenshots live. Stable, so a raw URL keeps working. */
+export const VISUAL_DIR = "artifacts/update-pages";
 
 export const RAW_BASE = "https://raw.githubusercontent.com";
 
@@ -28,7 +34,7 @@ export interface FileStore {
   readonly description: string;
   /**
    * Commit `bytes` at `path` and return a URL that renders it, or null when
-   * nothing could be written. Never throws: a card with no picture is the
+   * nothing could be written. Never throws: an issue with no pictures is the
    * fallback, and an unwritable file is not a reason to skip the issue.
    */
   put(path: string, bytes: Buffer, message: string): Promise<string | null>;
@@ -55,7 +61,7 @@ export class GitHubFileStore implements FileStore {
     private readonly token: string,
     private readonly timeoutMs: number,
   ) {
-    this.description = `commits cards to ${repo}/${CARD_DIR}`;
+    this.description = `commits screenshots to ${repo}/${VISUAL_DIR}`;
   }
 
   async put(path: string, bytes: Buffer, message: string): Promise<string | null> {
@@ -77,7 +83,7 @@ export class GitHubFileStore implements FileStore {
           payload: { message, content: bytes.toString("base64"), branch },
         });
       } catch (error) {
-        // Two cards for the same edit in one run, or a retry of a run that got
+        // Two pairs for the same edit in one run, or a retry of a run that got
         // as far as the commit: the path already holds these bytes, and the
         // URL is good either way.
         const conflict = error instanceof Error && /\b(409|422)\b/.test(error.message);
@@ -128,16 +134,35 @@ export class GitHubFileStore implements FileStore {
   }
 }
 
-/** Used in a dry run and when there is no token. Writes nothing, says so. */
+/**
+ * Used in a dry run and when there is no token. Commits nothing, and writes
+ * each file to a temp directory so a dry run can be looked at.
+ *
+ * One directory for the whole run, so a before shot and its after land
+ * together and flipping between them is opening two files in one folder.
+ */
 export class DisabledFileStore implements FileStore {
   readonly description: string;
 
+  private directory: Promise<string> | null = null;
+
   constructor(readonly reason: string) {
-    this.description = `skipped (${reason})`;
+    this.description = `writes to a temp directory (${reason})`;
   }
 
   async put(path: string, bytes: Buffer, _message: string): Promise<string | null> {
-    log.info(`[${this.reason}] would commit ${path} (${bytes.length} bytes)`);
+    try {
+      this.directory ??= mkdtemp(join(tmpdir(), "update-pages-"));
+      const file = join(await this.directory, path.split("/").pop() ?? "before-after.png");
+      await writeFile(file, bytes);
+      log.info(`[${this.reason}] would commit ${path}${SPACED_EN_DASH}wrote it to ${file} instead`);
+    } catch (error) {
+      log.info(
+        `[${this.reason}] would commit ${path} (${bytes.length} bytes), and could not write it locally either: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    // Null either way. A temp file is not an address an issue can embed, and
+    // the whole point of a dry run is that nothing reaches an issue.
     return null;
   }
 }

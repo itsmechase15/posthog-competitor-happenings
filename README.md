@@ -361,8 +361,8 @@ scale, a task list of `Minor`, `Notable`, `Major` with this alert's level
 checked and each level carrying what it means, so a reader sees where it sits,
 and why, without holding the scale in their head.
 
-Marketing's issues get the PostHog pages to update, each one as
-[a before/after card](#the-beforeafter-on-a-page-edit). Product's get only the
+Marketing's issues get the PostHog pages to update, each one
+[photographed before and after](#the-beforeafter-on-a-page-edit). Product's get only the
 docs that back the action they are being asked to take: no suggested edits, no
 compare-page copy, and no docs page for a product some other action in the same
 alert named. Nothing lists the sibling actions, because each one is its own
@@ -418,12 +418,12 @@ each layer able to stand on its own:
 1. **The page, by name.** Its title and the path the copy sits on, not a bare
    URL.
 2. **One line saying what the edit does**, in the analyst's own words.
-3. **A PNG, inline.** 720px wide, the paragraph as it reads today above the
-   paragraph it should read instead, the old line in amber and the new one in
-   green, with the page's own sentences either side for bearings. An edit that
-   adds a line rather than replacing one shows a caret where the new copy goes
-   and leaves the old line unmarked, because a `-` against copy nobody asked to
-   delete is a wrong instruction rendered in red.
+3. **Two screenshots of the page, stacked.** **Before**, the page as it reads
+   today, and **After**, the same page with the proposed copy in it: header,
+   sidebar, the page's own type, the illustration next to the paragraph.
+   Stacked rather than side by side, because an issue column is about 830
+   pixels wide and two pictures of a 1280-wide page next to each other are
+   unreadable.
 4. **A `diff` block, then the copy to paste.** The replacement text whole and
    never truncated, in a fence wide enough to survive backticks in the copy
    itself.
@@ -432,35 +432,66 @@ Then a link that opens the live page scrolled to today's line, using a
 [text fragment](https://developer.mozilla.org/en-US/docs/Web/URI/Fragment/Text_fragments)
 built from the line as the corpus holds it.
 
-**The card is rendered from the corpus, never from the live page.** The two
-paragraphs on it are the strings the evidence gate already checked: the copy it
-found on the stored page, and the rewrite it accepted. Driving a browser at
-posthog.com to highlight the real paragraph would mean a card that is a cookie
-banner on a bad day and the wrong paragraph on a quiet one, and no way to tell
-which from the PNG.
+**They are taken off the live page, and publish nothing.** A headless browser
+opens the page, photographs the window, puts the proposed copy into that tab's
+own document, and photographs the window again from the same scroll offset, so
+flipping between the two moves only the words that changed. The edit exists in
+one throwaway tab for the second between the shots. No form is submitted, no
+request is made to posthog.com beyond the GET that loads the page, and the
+caption under the after shot says so, because somebody scrolling past a picture
+of a posthog.com page must not come away thinking the change is live.
 
-So the render is a Chromium screenshot of a static HTML template with Inter
-bundled into it: no network, no scripts, no webfont request. Same edit, same
-bytes, which is why a card's file name can be a hash of it. No model is asked
-anything, so a card costs nothing in tokens.
+**The line is found by its text, never by a CSS selector.** The sentence is the
+thing this bot quoted and the class names are not, so the deepest block whose
+letters and digits contain the quoted line is the one edited: a table of
+contents that repeats the sentence loses to the prose, and a redesign does not
+break it. A line that runs across two blocks is left alone rather than guessed
+at. posthog.com is server-rendered and then hydrated, which throws away the
+nodes the server sent about a second in, so nothing is marked on the page until
+the DOM has stopped changing.
 
-**A card that loses its picture is still a card.** GitHub Issues renders an
-image from a URL and nothing else, so the PNG is committed to
-`artifacts/update-pages/<date>/<page>-<hash>.png` in this repo and the body
-embeds its raw URL. When the render or the commit fails – no browser on the
-runner, a token without `contents: write` – the issue is opened anyway with the
-diff and the copy to paste, and the log says why there is no image. Nothing
-about a picture is allowed to cost an issue.
+The corpus is still what the claim is **checked** against – the evidence gate
+runs long before any of this, on the same text the analyst read. It is no
+longer what the picture is *of*. A line that is on the stored page and not on
+the live one drops the pictures and puts one line in the issue saying the page
+has moved on since the corpus read it, which is something the person opening it
+needs to know. The earlier version of this drew the paragraph into a card from
+the stored text, and a card of a page reads as a text mock rather than as the
+page somebody is being asked to edit.
 
-**A revised page edit is re-rendered.** When [the review](#the-review-pass)
-rewrites the copy, the new card is rendered from the copy that survived the
-checks and the body is patched with it. The old PNG is never carried over: an
-image of the paragraph the analyst wrote, sitting under a diff of the one the
+Only `update_pages` gets a pair. `consider_enhancing` and `consider_building`
+are asking for a feature, and there is no before and after of a feature that
+does not exist yet.
+
+**An edit that loses its pictures still says what to do.** GitHub Issues
+renders an image from a URL and nothing else, so both PNGs are committed to
+`artifacts/update-pages/<date>/<page>-<hash>-before.png` and `-after.png` in
+this repo and the body embeds their raw URLs. This repo is public, so a plain
+`raw.githubusercontent.com` address renders for everybody who opens the issue,
+with no token in it and nothing to expire. Each name covers the page, both
+sides of the edit and the day: a second run the same morning reuses the pair,
+next week's run photographs the page as it is next week, and a rewritten edit
+gets its own pair rather than changing the pictures an open issue points at.
+One of the two failing to commit drops both, because half a comparison is worse
+than none.
+
+Everything about it fails soft. No Chromium, a page that will not load, a bot
+check served instead of it, no token, a dry run, a refused commit, a page edit
+with no proposed copy: each costs the pictures and none of them costs the
+issue, which says the same thing in words. A dry run takes them anyway, writes
+both to one temp directory, and logs where. `SKIP_PAGE_VISUALS=true` turns it
+off.
+
+**A revised page edit is re-photographed.** When [the review](#the-review-pass)
+rewrites the copy, the page is shot again from the copy that survived the
+checks and the body is patched with it. The old pair is never carried over: a
+picture of the paragraph the analyst wrote, sitting under a diff of the one the
 reviewer asked for, is the one wrong picture this is all here to avoid.
 
-A page the corpus does not hold gets no card, and its section falls back to the
-current copy and the replacement as quoted blocks. The surrounding copy has to
-come off a page we have actually read.
+A page the corpus does not hold gets no pair, and its section falls back to the
+current copy and the replacement as quoted blocks. The line to look for on the
+live page is the sentence the gate matched on the stored one, and there is no
+such sentence for a page we have never read.
 
 ### Related team(s)
 
@@ -588,11 +619,12 @@ that one posts as normal.
 | `src/review/` | The review pass: the reviewer, the writer that applies a revise, and the code that decides what reaches the issue. |
 | `src/teams.ts` | Routes an action to PostHog's small teams. |
 | `src/media/image.ts` | The feature image chain. |
-| `src/media/pageEdit.ts` | A page edit as a before/after, built from the corpus copy, and the HTML the card is rendered from. |
-| `src/media/render.ts` | The Chromium screenshot, with Inter bundled in. |
-| `src/media/cards.ts` | Plan, render, commit: the cards one action's issue gets. |
+| `src/media/pageEdit.ts` | What the edit is, read off the corpus copy, and where the two PNGs go. No browser, no network. |
+| `src/media/livePage.ts` | Opens the page, finds the line on it, stages the copy in the browser, takes both shots. |
+| `src/media/browser.ts` | The headless Chromium the shots are taken in, and what to do when there is not one. |
+| `src/media/visual.ts` | Which edits get photographed, and every path that gives up on it quietly. |
 | `src/github/issue.ts` | One issue draft per action, with its labels, and the editor a verdict writes through. |
-| `src/github/files.ts` | Commits a card's PNG to this repo, so an issue can embed it. |
+| `src/github/files.ts` | Commits both PNGs to this repo, so an issue can embed them. |
 | `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
@@ -805,9 +837,11 @@ secret that expired or was never set fails in the first few seconds, naming the
 variable, rather than twenty minutes in as a database timeout.
 
 Both also install the headless Chromium the
-[before/after cards](#the-beforeafter-on-a-page-edit) are screenshotted with,
-cached between runs, and both carry `contents: write` so a card's PNG can be
-committed. The version installed is the `playwright-core` version in
+[before/after](#the-beforeafter-on-a-page-edit) is photographed with, cached
+between runs, and both carry `contents: write` so the two PNGs can be
+committed. CI installs it too, because the code that finds the line on a page
+and swaps the copy in it runs inside the browser, and without one those tests
+skip themselves. The version installed is the `playwright-core` version in
 `package.json`, and a test holds the two together: a mismatch is a browser
 revision the library never looks for, which would be a silent slide back to
 issues with no pictures.
@@ -936,9 +970,10 @@ action with its labels and owner, claim extraction from PostHog's pages and the
 competitors' compare pages, the relevance guard that keeps a page edit on the
 launch that found it, team routing, the review pass end to end against fake
 models – agree, revise, a rewrite the gate refuses, drop, the budget, and the
-one-pass guard – the before/after card on a page edit, from the corpus text it
-reads to the diff, the paste block, and what an issue looks like when the render
-or the commit failed, dedupe behavior, the setup check that names a missing
+one-pass guard – the before/after on a page edit, from the corpus text it reads
+to the diff, the paste block, the browser finding the line on a real page and
+swapping the copy in it, and what an issue looks like when the capture or the
+commit failed, dedupe behavior, the setup check that names a missing
 secret, and the Slack message shape. The fixtures under
 `test/fixtures/` are synthetic and marked as such. They exercise the shapes
 real feeds use, and are not copies of real competitor announcements.
