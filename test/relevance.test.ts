@@ -254,8 +254,9 @@ describe("enforceUpdatePagesTopic", () => {
     );
 
     expect(guarded.analysis.actions).toEqual([]);
-    expect(guarded.analysis.openQuestions).toHaveLength(1);
-    expect(guarded.analysis.openQuestions[0]).toContain("no page edit");
+    expect(guarded.analysis.noAction?.kind).toBe("not_a_gap");
+    expect(guarded.analysis.noAction?.reason).toContain("no page to fix");
+    expect(guarded.analysis.noAction?.reason).toContain("schedul");
   });
 
   it("judges only page edits, and leaves the other action types alone", () => {
@@ -365,9 +366,11 @@ describe("the guard inside a run", () => {
     );
 
     // The tangent goes for being off topic, and the enhancement goes for
-    // carrying no evidence. Both are blocks, and neither is a rewrite.
+    // carrying no evidence. Both are blocks, and neither is a rewrite. What is
+    // left is a verdict saying which check the last one failed.
     expect(analyzed?.analysis.actions).toEqual([]);
-    expect(analyzed?.analysis.openQuestions.join(" ")).toContain("nothing to check");
+    expect(analyzed?.analysis.noAction?.kind).toBe("unverified");
+    expect(analyzed?.analysis.noAction?.reason).toContain("nothing to check");
   });
 
   it("keeps a page edit that is about the launch and quotes copy the page carries", async () => {

@@ -607,26 +607,93 @@ describe("buildSlackMessage", () => {
       analysis: {
         ...base.analysis,
         actions: [],
+        noAction: {
+          kind: "already_covered",
+          reason: "PostHog already schedules experiment stops, so this asks nothing of us.",
+          evidence: [
+            {
+              url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+              title: "Scheduled flag changes",
+            },
+          ],
+        },
         noActionReason: "PostHog already schedules experiment stops, so this asks nothing of us.",
       },
     };
 
-    it("renders None with the reason, rather than a blank section", () => {
+    it("renders the verdict's own title, reason, and pages, rather than a blank section", () => {
       // A launch that asks nothing of PostHog is a normal outcome, and a
-      // useful one: it says somebody looked.
+      // useful one: it says somebody looked, and at what.
       const texts = sectionTexts(buildSlackMessage(nothing));
       expect(texts).toContain(`*${ACTION_HEADING}*`);
-      expect(texts.join("\n")).toContain("*None*");
+      expect(texts.join("\n")).toContain("*None – PostHog already does this*");
       expect(texts.join("\n")).toContain("PostHog already schedules experiment stops");
+      expect(texts.join("\n")).toContain(
+        "See: <https://posthog.com/docs/feature-flags/scheduled-flag-changes|Scheduled flag changes>",
+      );
     });
 
-    it("still says None when the analysis gave no reason", () => {
+    it("titles each kind of nothing differently", () => {
+      const titles = (
+        [
+          ["not_a_gap", "*None – not a product gap*"],
+          ["unverified", "*None – the gap could not be confirmed*"],
+          ["dropped_on_review", "*None – dropped on review*"],
+          ["unanalyzed", "*None – not analyzed this run*"],
+        ] as const
+      ).map(([kind, title]) => {
+        const message = buildSlackMessage({
+          ...nothing,
+          analysis: {
+            ...nothing.analysis,
+            noAction: { kind, reason: "One specific sentence about this launch.", evidence: [] },
+          },
+        });
+        return [JSON.stringify(message).includes(title.replace(/\*/g, "*")), title] as const;
+      });
+
+      for (const [found, title] of titles) expect(found, title).toBe(true);
+    });
+
+    it("names what is missing when a stored row carries no verdict at all", () => {
       const message = buildSlackMessage({
         ...nothing,
-        analysis: { ...nothing.analysis, noActionReason: undefined },
+        analysis: { ...nothing.analysis, noAction: undefined, noActionReason: undefined },
       });
-      expect(JSON.stringify(message)).toContain("*None*");
-      expect(JSON.stringify(message)).toContain("no reason was recorded");
+      expect(JSON.stringify(message)).toContain("*None – the gap could not be confirmed*");
+      expect(JSON.stringify(message)).toContain("cited no PostHog page");
+    });
+
+    it("reads a row stored before the verdict had a shape as the sentence it kept", () => {
+      const message = buildSlackMessage({
+        ...nothing,
+        analysis: {
+          ...nothing.analysis,
+          noAction: undefined,
+          noActionReason: "PostHog already schedules experiment stops.",
+        },
+      });
+      expect(JSON.stringify(message)).toContain("PostHog already schedules experiment stops.");
+    });
+
+    it("links at most three pages, so the block stays an alert", () => {
+      const message = buildSlackMessage({
+        ...nothing,
+        analysis: {
+          ...nothing.analysis,
+          noAction: {
+            kind: "already_covered",
+            reason: "PostHog ships all of this.",
+            evidence: [1, 2, 3, 4, 5].map((index) => ({
+              url: `https://posthog.com/docs/page-${index}`,
+              title: `Page ${index}`,
+            })),
+          },
+        },
+      });
+      const rendered = JSON.stringify(message);
+      expect(rendered).toContain("Page 3");
+      expect(rendered).not.toContain("Page 4");
     });
 
     it("keeps the dry-run note off an alert that never asked for an issue", () => {
@@ -642,9 +709,12 @@ describe("buildSlackMessage", () => {
     it("cuts a reason long enough to break the section block", () => {
       const message = buildSlackMessage({
         ...nothing,
-        analysis: { ...nothing.analysis, noActionReason: "word ".repeat(400) },
+        analysis: {
+          ...nothing.analysis,
+          noAction: { kind: "unverified", reason: "word ".repeat(400), evidence: [] },
+        },
       });
-      const reason = sectionTexts(message).find((text) => text.includes("*None*")) ?? "";
+      const reason = sectionTexts(message).find((text) => text.includes("*None")) ?? "";
       expect(reason.length).toBeLessThan(700);
       expect(reason).toContain("…");
     });

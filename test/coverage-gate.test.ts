@@ -103,8 +103,8 @@ describe("the chain from a reply to an alert", () => {
     const analysis = run(reply([wrong]));
 
     expect(analysis.actions).toEqual([]);
-    expect(analysis.openQuestions.join(" ")).toContain("cites no PostHog docs page");
-    expect(analysis.noActionReason).toContain("survived the evidence checks");
+    expect(analysis.noAction?.kind).toBe("unverified");
+    expect(analysis.noAction?.reason).toContain("cites no PostHog docs page");
   });
 
   it("blocks a gap whose evidence is real but is about the wrong page", () => {
@@ -120,7 +120,10 @@ describe("the chain from a reply to an alert", () => {
     const analysis = run({ ...reply([misread]), readUrls: [LIFECYCLE] });
 
     expect(analysis.actions).toEqual([]);
-    expect(analysis.openQuestions.join(" ")).toContain(PROXY);
+    // The page the gap's own words lead to is the answer, so it is what the
+    // verdict links rather than a line about checks nothing passed.
+    expect(analysis.noAction?.kind).toBe("already_covered");
+    expect(analysis.noAction?.evidence.map((page) => page.url)).toContain(PROXY);
   });
 
   it("keeps an alert that recommends nothing, with the reason it gave", () => {
@@ -130,6 +133,59 @@ describe("the chain from a reply to an alert", () => {
 
     expect(analysis.actions).toEqual([]);
     expect(analysis.noActionReason).toBe("PostHog already schedules experiment stops.");
+  });
+
+  it("keeps an already-covered verdict whose quote is on the page it cites", () => {
+    const analysis = run(
+      reply([], {
+        noAction: {
+          kind: "already_covered",
+          reason: "PostHog masks every input in a session recording by default.",
+          evidence: [
+            { url: REPLAY_PRIVACY, quote: "Mask every input and all text" },
+          ],
+        },
+      }),
+    );
+
+    expect(analysis.noAction?.kind).toBe("already_covered");
+    expect(analysis.noAction?.evidence[0]?.title).toBe("Session replay privacy controls");
+  });
+
+  it("downgrades an already-covered verdict whose quote is not on the page", () => {
+    // "PostHog already does this" is a claim about the product like any other,
+    // so an unverifiable one becomes an unconfirmed answer rather than a
+    // confident wrong one.
+    const analysis = run(
+      reply([], {
+        noAction: {
+          kind: "already_covered",
+          reason: "PostHog schedules an experiment stop already.",
+          evidence: [{ url: LIFECYCLE, quote: "Experiments can be scheduled to stop" }],
+        },
+      }),
+    );
+
+    expect(analysis.noAction?.kind).toBe("unverified");
+    expect(analysis.noAction?.evidence).toEqual([]);
+    expect(analysis.noAction?.reason).toContain(LIFECYCLE);
+  });
+
+  it("drops a page the corpus does not hold from an already-covered verdict", () => {
+    const analysis = run(
+      reply([], {
+        noAction: {
+          kind: "already_covered",
+          reason: "PostHog masks inputs in a session recording.",
+          evidence: [
+            { url: "https://posthog.com/docs/invented", quote: "This page does not exist at all" },
+            { url: REPLAY_PRIVACY, quote: "Masking is on by default for password fields" },
+          ],
+        },
+      }),
+    );
+
+    expect(analysis.noAction?.evidence.map((page) => page.url)).toEqual([REPLAY_PRIVACY]);
   });
 
   it("keeps the good action and drops the bad one from the same reply", () => {

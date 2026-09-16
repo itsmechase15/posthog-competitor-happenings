@@ -1,4 +1,5 @@
 import { FALLBACK_MODEL } from "../analysis/fallback.js";
+import { noActionOf, renderNoAction } from "../analysis/noAction.js";
 import { COMPETITORS } from "../config.js";
 import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
 import { entryUrl } from "../sources/link.js";
@@ -201,10 +202,6 @@ export function actionEntries(alert: Alert): ActionIssue[] {
   }));
 }
 
-/** What the action section says when there is nothing to do. */
-export const NO_ACTION_TITLE = "None";
-const FALLBACK_NO_ACTION_REASON =
-  "Nothing here asks anything of PostHog, and no reason was recorded.";
 /** A Slack section block stops rendering past this, so the reason is cut first. */
 const MAX_NO_ACTION_CHARS = 600;
 
@@ -212,13 +209,17 @@ const MAX_NO_ACTION_CHARS = 600;
  * Zero actions rendered as an answer rather than as a blank.
  *
  * A launch that asks nothing of PostHog is a normal outcome and a useful one:
- * it says somebody looked. An empty section would read as a broken alert, and
- * a missing one would read as an alert nobody finished, so the reason goes
- * where the actions would have been.
+ * it says somebody looked. What makes it useful is the specifics, so the title
+ * says which kind of nothing this is, the sentence names the capability and
+ * what PostHog does about it, and the docs pages it rests on are linked. See
+ * `src/analysis/noAction.ts`, which every surface renders the verdict through.
  */
 export function noActionSectionText(alert: Alert): string {
-  const reason = alert.analysis.noActionReason?.trim() || FALLBACK_NO_ACTION_REASON;
-  return [`*${NO_ACTION_TITLE}*`, escape(truncate(reason, MAX_NO_ACTION_CHARS))].join("\n");
+  return renderNoAction(noActionOf(alert.analysis), {
+    flavor: "slack",
+    escape,
+    maxChars: MAX_NO_ACTION_CHARS,
+  });
 }
 
 /**

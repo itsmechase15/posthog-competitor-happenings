@@ -242,22 +242,57 @@ describe("gateActions", () => {
 
   it("turns what it blocked into an open question rather than a correction", () => {
     const result = gateActions(
-      analysis({ actions: [{ ...goodGap, evidenceQuote: undefined }] }),
+      analysis({
+        actions: [goodGap, { ...goodGap, evidenceQuote: undefined }],
+      }),
       context([LIFECYCLE]),
     );
 
+    expect(result.analysis.actions).toEqual([goodGap]);
     expect(result.analysis.openQuestions).toHaveLength(1);
     expect(result.analysis.openQuestions[0]).toContain("without quoting what the page says");
   });
 
-  it("says why there is nothing to do once everything is blocked", () => {
+  it("says which check failed once everything is blocked, rather than saying nothing survived", () => {
     const result = gateActions(
       analysis({ actions: [{ ...goodGap, gap: undefined }] }),
       context([LIFECYCLE]),
     );
 
     expect(result.analysis.actions).toEqual([]);
-    expect(result.analysis.noActionReason).toContain("survived the evidence checks");
+    expect(result.analysis.noAction?.kind).toBe("unverified");
+    expect(result.analysis.noAction?.reason).toContain("does not say what PostHog cannot do today");
+    // The verdict is the answer, so it is not repeated as a question as well.
+    expect(result.analysis.openQuestions).toEqual([]);
+  });
+
+  it("calls it already covered, with the pages, when the docs answer the gap", () => {
+    const wrongPage: RecommendedAction = {
+      type: "consider_building",
+      feature: "Session replay",
+      detail: "Build masking for session recordings so nothing typed is captured.",
+      gap: "no way to mask inputs and text in a session recording",
+      evidenceUrl: LIFECYCLE,
+      evidenceQuote: "There is no end date field on an experiment",
+    };
+
+    const result = gateActions(analysis({ actions: [wrongPage] }), context([LIFECYCLE]));
+
+    expect(result.analysis.noAction?.kind).toBe("already_covered");
+    expect(result.analysis.noAction?.reason).toContain("PostHog documents this already");
+    expect(result.analysis.noAction?.evidence.map((page) => page.url)).toContain(
+      "https://posthog.com/docs/session-replay/privacy",
+    );
+  });
+
+  it("calls a pricing complaint what it is, rather than an unconfirmed gap", () => {
+    const result = gateActions(
+      analysis({ actions: [{ ...goodGap, gap: "their plan price is lower" }] }),
+      context([LIFECYCLE]),
+    );
+
+    expect(result.analysis.noAction?.kind).toBe("not_a_gap");
+    expect(result.analysis.noAction?.reason).toContain("pricing is not a capability");
   });
 
   it("keeps the actions that pass and drops only the ones that do not", () => {
@@ -267,6 +302,7 @@ describe("gateActions", () => {
     );
 
     expect(result.analysis.actions).toEqual([goodGap]);
+    expect(result.analysis.noAction).toBeUndefined();
     expect(result.analysis.noActionReason).toBeUndefined();
   });
 
@@ -409,10 +445,11 @@ describe("gateActions", () => {
         expect(result.blocked[0]?.reason).toContain("what the page already says");
       });
 
-      it("turns a missing rewrite into an open question rather than a silent drop", () => {
+      it("says the rewrite was missing rather than dropping the action in silence", () => {
         const result = gateActions(withRef({}), context());
         expect(result.analysis.actions).toEqual([]);
-        expect(result.analysis.openQuestions[0]).toContain("not the words to put there");
+        expect(result.analysis.noAction?.kind).toBe("unverified");
+        expect(result.analysis.noAction?.reason).toContain("not the words to put there");
       });
 
       it("takes the rewrite off the page whose current copy checked out", () => {

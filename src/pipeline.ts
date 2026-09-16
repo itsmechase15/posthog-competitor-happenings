@@ -183,7 +183,12 @@ async function prepareAlert(
   // the moment the issue is opened.
   for (const action of analyzed.analysis.actions) {
     const draft = buildIssueDraft(analyzed, image, action, await cards.cardsFor(analyzed, action));
-    targets.push({ action, issue: await issues.create(draft), labels: draft.labels });
+    targets.push({
+      action,
+      issue: await issues.create(draft),
+      labels: draft.labels,
+      body: draft.body,
+    });
   }
 
   const reviewed = await reviewActions({
