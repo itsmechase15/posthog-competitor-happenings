@@ -3,6 +3,7 @@ import { matchProducts } from "../posthog/products.js";
 import { terms, type CorpusIndex, type RetrievalHit } from "../posthog/retrieval.js";
 import type { Analysis, PostHogRef, RecommendedAction } from "../types.js";
 import { firstSentence, truncate } from "../util/text.js";
+import { isExactRewrite, repeatsCurrentCopy, rewriteProblem } from "./rewrite.js";
 
 /**
  * The checks an action has to survive before anyone is asked to do it.
@@ -244,6 +245,13 @@ function checkEvidence(action: RecommendedAction, context: CoverageContext): Blo
  * A page edit has to name a page somebody owns and say what it should say. The
  * copy it quotes has to be on that page, too: a compare page that no longer
  * says the thing being corrected has already been fixed.
+ *
+ * And it has to carry the rewrite. An `update_pages` issue that says "update
+ * the pricing section to mention scheduled stops" hands the reader the page,
+ * the reading of it, and the writing, which is the whole job minus the noticing
+ * – so the words that go on the page are part of the recommendation, checked
+ * here the same way everything else is. `src/analysis/rewrite.ts` says what
+ * counts as the words rather than a note about them.
  */
 function checkPageEdit(
   action: RecommendedAction,
@@ -255,19 +263,66 @@ function checkPageEdit(
     return block(action, "it names no PostHog marketing, product, or compare page to edit");
   }
 
-  const withEdit = editable.find((ref) => ref.suggestedEdit);
+  const withEdit = editable.find((ref) => ref.suggestedEdit ?? ref.proposedText);
   if (!withEdit) {
     return block(action, "it names a page but not what the page should say instead");
   }
 
-  const verified = editable.some((ref) => refClaimHolds(ref, context));
-  if (!verified) {
+  const grounded = editable.filter((ref) => refClaimHolds(ref, context));
+  if (grounded.length === 0) {
     return block(
       action,
       `the copy it quotes is not on ${editable.map((ref) => ref.url).join(" or ")} as stored, so the page may already say something else`,
     );
   }
-  return null;
+
+  return checkRewrite(action, grounded, context);
+}
+
+/**
+ * The rewrite itself, on one of the pages whose current copy we just verified.
+ *
+ * Only those pages are candidates. A rewrite attached to copy that is no longer
+ * on the page replaces nothing, and the reader has no way to tell which of the
+ * two is stale.
+ */
+function checkRewrite(
+  action: RecommendedAction,
+  grounded: PostHogRef[],
+  context: CoverageContext,
+): BlockedAction | null {
+  const usable = grounded.find(
+    (ref) =>
+      isExactRewrite(ref.proposedText) &&
+      !repeatsCurrentCopy(ref) &&
+      !alreadyOnPage(ref, context),
+  );
+  if (usable) return null;
+
+  const offered = grounded.filter((ref) => ref.proposedText);
+  if (offered.length === 0) {
+    return block(
+      action,
+      `it says what to change on ${grounded.map((ref) => ref.url).join(" or ")} but not the words to put there, and an edit nobody can paste is a job, not a recommendation`,
+    );
+  }
+
+  const first = offered[0] as PostHogRef;
+  if (repeatsCurrentCopy(first) || alreadyOnPage(first, context)) {
+    return block(
+      action,
+      `the copy it proposes for ${first.url} is what the page already says, so there is nothing to change`,
+    );
+  }
+  return block(action, rewriteProblem(first.proposedText) ?? "its replacement copy is unusable");
+}
+
+/** A rewrite already sitting on the stored page is a page that has been fixed. */
+function alreadyOnPage(ref: PostHogRef, context: CoverageContext): boolean {
+  const proposed = ref.proposedText;
+  if (!proposed) return false;
+  const page = context.index.page(ref.url);
+  return page ? quoteAppearsOn(proposed, page.text) : false;
 }
 
 /**
