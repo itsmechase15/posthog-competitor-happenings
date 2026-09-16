@@ -59,6 +59,7 @@ a secret **by name** – "set `CURSOR_API_KEY`" – is the whole job.
 | --- | --- |
 | `npm run check-env -- --strict` | Name every variable that is missing |
 | `DRY_RUN=true FORCE_ANALYZE=true npm run run` | Full pipeline, prints the payloads, posts nothing, writes nothing |
+| `SKIP_REVIEW=true DRY_RUN=true … npm run run` | The same without the review pass, for when you only care about the analysis |
 | `npm run run -- --url <url>` | Push one named announcement through the whole pipeline |
 | `npm run run -- --check-slack` | Ask Slack what the bot token can do |
 | `npm test` / `npm run typecheck` | What CI runs |
@@ -68,6 +69,12 @@ the fastest way to see what a change does to a message. It builds the whole
 corpus first, which takes a few minutes and leaves it in `.docs-workspace/` –
 worth opening, because it is exactly what the analyst sees. `SKIP_POSTHOG_INDEX=true`
 skips the rebuild when you only care about the message.
+
+A dry run reviews too. The reviewer and the writer both run, the payload shows
+the revised actions and omits the dropped ones, and the issue editor logs what
+it would have written instead of writing it – so a dry run shows the whole
+outcome, not the half of it that needs no credentials. `SKIP_REVIEW=true` turns
+the pass off when you are iterating on something else.
 
 ## House rules for changes
 
@@ -89,6 +96,16 @@ skips the rebuild when you only care about the message.
 - **Do not add a guess-then-fix model pass.** A model shown its own unsupported
  claim argues for it better rather than going to check. One analyst run, with
  the corpus under it, then code.
+- **The review pass is not that pass.** Once an action's issue is open, a
+ different model reads the same corpus and says agree, revise, or drop, and a
+ revise is rewritten once and re-gated by the same code. Five things make it a
+ review rather than a model marking its own homework: it is a **different
+ model** from the analyst, it is **shown the analyst's claim** rather than its
+ own, it has the **corpus underneath it** rather than a memory of one, the
+ rewrite is **re-checked by code** and not by another model, and it happens
+ **once** – an unconfirmed rewrite is never applied. Take away any one of those
+ and it becomes the forbidden pass. See [`src/review/`](./src/review/) and the
+ [Review section of PLAN.md](./PLAN.md#review-every-action-once).
 - **Zero actions is a normal answer**, rendered as **None** with a reason. Do
  not reintroduce a rule that an alert has to recommend something.
 - **New environment variable?** Add it to [`src/config.ts`](./src/config.ts),

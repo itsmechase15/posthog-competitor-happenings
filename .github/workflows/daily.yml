@@ -28,8 +28,11 @@ jobs:
     # The analyst reads its way around a few thousand docs pages per item now,
     # rather than answering one prompt, so a full run of new items takes longer
     # than it used to. The first run of a fresh database is the slow one: it
-    # builds the whole corpus, where later runs mostly collect 304s.
-    timeout-minutes: 60
+    # builds the whole corpus, where later runs mostly collect 304s. Every action
+    # it files then gets a reviewer run of its own over the same corpus, and the
+    # ones that need correcting get a rewrite too, which is where the extra
+    # quarter of an hour goes.
+    timeout-minutes: 75
     steps:
       - name: Check it is not before 07:00 in America/Los_Angeles
         id: window
@@ -86,7 +89,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          # Provided by Actions; opens the issue each Slack message links to.
+          # The review pass. Both are optional: unset falls back to the defaults
+          # in src/config.ts, which are claude-fable-5-1 reviewing and the
+          # analyst's own model rewriting.
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+          UPDATER_MODEL: ${{ vars.UPDATER_MODEL }}
+          REVIEW_MAX_PER_RUN: ${{ vars.REVIEW_MAX_PER_RUN }}
+          # Provided by Actions; opens the issue each Slack message links to, and
+          # writes the review verdict back onto it.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Bot token is the preferred delivery path; the webhook is a fallback.
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

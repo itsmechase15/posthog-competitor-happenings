@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkAnalysis, type RunContext } from "../src/analysis/analyze.js";
+import { checkAction, checkAnalysis, type RunContext } from "../src/analysis/analyze.js";
 import type { AnalyzerOutput } from "../src/analysis/analyzer.js";
 import type { Analysis, PostHogDoc, RecommendedAction, StoredItem } from "../src/types.js";
 import { corpus } from "./helpers.js";
@@ -153,6 +153,84 @@ describe("the chain from a reply to an alert", () => {
 
     expect(analysis.actions.map((action) => action.type)).toEqual(["consider_enhancing"]);
     expect(analysis.noActionReason).toBeUndefined();
+  });
+
+  /**
+   * The review pass rewrites one action after its issue is already open, and it
+   * earns nothing for having been reviewed: the rewrite goes past the same five
+   * checks the original did, or it does not reach the issue at all.
+   */
+  describe("one action, checked again after the fact", () => {
+    const check = (action: RecommendedAction, readUrls: string[] = []) =>
+      checkAction({
+        analysis: reply([action]).analysis,
+        action,
+        refs: [],
+        impact: "notable",
+        docs: [],
+        item,
+        coverage: { index: context.index, seenUrls: new Set(readUrls) },
+        model: "claude-opus-5",
+      });
+
+    it("keeps a rewrite that lands on the page the corpus ranks for its gap", () => {
+      const rewritten: RecommendedAction = {
+        type: "consider_enhancing",
+        feature: "Experiments",
+        detail: "Add a scheduled end time on experiments so a test can stop on its own.",
+        gap: "no end date field on an experiment, so stopping is a manual step",
+        evidenceUrl: LIFECYCLE,
+        evidenceQuote: "There is no end date field on an experiment",
+      };
+
+      const checked = check(rewritten, [LIFECYCLE]);
+      expect(checked.action?.evidenceUrl).toBe(LIFECYCLE);
+      expect(checked.notes).toEqual([]);
+    });
+
+    it("refuses a rewrite whose quote is not on the page it cites", () => {
+      const invented: RecommendedAction = {
+        type: "consider_enhancing",
+        feature: "Experiments",
+        detail: "Add a scheduled end time on experiments so a test can stop on its own.",
+        gap: "no end date field on an experiment, so stopping is a manual step",
+        evidenceUrl: LIFECYCLE,
+        evidenceQuote: "Experiments can be scheduled to stop at a time you choose",
+      };
+
+      const checked = check(invented, [LIFECYCLE]);
+      expect(checked.action).toBeNull();
+      expect(checked.notes.join(" ")).toContain("its quote is not on");
+    });
+
+    it("refuses a rewrite that moved the gap onto a page nobody read", () => {
+      const misread: RecommendedAction = {
+        type: "consider_building",
+        feature: "Managed reverse proxy",
+        detail: "Build a managed proxy so events reach PostHog through a customer's own domain.",
+        gap: "no managed reverse proxy on a subdomain the customer owns",
+        evidenceUrl: LIFECYCLE,
+        evidenceQuote: "There is no end date field on an experiment",
+      };
+
+      const checked = check(misread, [LIFECYCLE]);
+      expect(checked.action).toBeNull();
+      expect(checked.notes.join(" ")).toContain(PROXY);
+    });
+
+    it("shapes the surviving rewrite's opening sentence, the same as the first time", () => {
+      const backwards: RecommendedAction = {
+        type: "consider_enhancing",
+        feature: "Experiments",
+        detail:
+          "PostHog stops an experiment by hand. Add a scheduled end time so a test can stop on its own.",
+        gap: "no end date field on an experiment, so stopping is a manual step",
+        evidenceUrl: LIFECYCLE,
+        evidenceQuote: "There is no end date field on an experiment",
+      };
+
+      expect(check(backwards, [LIFECYCLE]).action?.detail).toMatch(/^Close this gap in Experiments/);
+    });
   });
 
   it("opens the action with the work, after the gate has finished dropping things", () => {
