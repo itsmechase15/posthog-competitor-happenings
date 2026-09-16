@@ -164,7 +164,7 @@ check.
 | --- | --- | --- |
 | `consider_enhancing` | PostHog has this, and the launch beats it. Names the feature | Product |
 | `consider_building` | PostHog has nothing like it | Product |
-| `update_pages` | A PostHog page is now wrong, understated, or unanswered | Marketing |
+| `update_pages` | A PostHog page is now wrong, understated, or unanswered. Carries the exact replacement copy | Marketing |
 | `new_compare_page` | There is no page covering this comparison at all | Marketing |
 
 **Every product action carries its evidence, and the evidence is checked.** An
@@ -198,6 +198,20 @@ drops a page action whose words never touch the launch's own vocabulary, even
 when that leaves the alert with no action at all. A signal about scheduling an
 experiment stop does not get to send someone off to answer an old "basic A/B
 testing" claim on the same page.
+
+**A page edit ships the words, not the job.** An `update_pages` action that
+says "update the pricing section to mention scheduled stops" has handed over
+the reading, the writing, and the guess at what voice the page is in, and kept
+only the noticing. So the analyst, which has the page open, writes the copy:
+`proposed_text` on the ref it is fixing is the exact replacement, in that
+page's own voice, ready to paste. `checkPageEdit` will not file the action
+without it, and `src/analysis/rewrite.ts` is what tells a rewrite from another
+instruction wearing the field's name – it rejects copy that opens "mention",
+"update", or "reword", copy that talks about "this page" or what the section
+"should say", copy too short to replace a paragraph, marketing filler the style
+guide rules out, and copy the page already carries. The GitHub issue shows what
+the page says today next to what it should say; Slack shows the first 200
+characters of the rewrite under the page it goes on.
 
 **Page actions never target a docs page.** Marketing writes compare pages,
 product marketing pages, blog posts, and pricing. `isMarketingTarget` in
