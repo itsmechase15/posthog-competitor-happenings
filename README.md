@@ -346,11 +346,12 @@ scale, a task list of `Minor`, `Notable`, `Major` with this alert's level
 checked and each level carrying what it means, so a reader sees where it sits,
 and why, without holding the scale in their head.
 
-Marketing's issues get the PostHog pages to update as url + claim today +
-suggested edit. Product's get only the docs that back the action they are being
-asked to take: no suggested edits, no compare-page copy, and no docs page for a
-product some other action in the same alert named. Nothing lists the sibling
-actions, because each one is its own issue.
+Marketing's issues get the PostHog pages to update, each one as
+[a before/after card](#the-beforeafter-on-a-page-edit). Product's get only the
+docs that back the action they are being asked to take: no suggested edits, no
+compare-page copy, and no docs page for a product some other action in the same
+alert named. Nothing lists the sibling actions, because each one is its own
+issue.
 
 A product issue ends with **Docs that would change if this ships**. Those are
 the same pages the issue already cites as evidence, read the other way round:
@@ -391,6 +392,60 @@ record.
 Inside Actions the built-in `GITHUB_TOKEN` is enough, with `issues: write`. No
 new secret. A failed issue never fails the run: that action's block goes out
 without a link, and the other actions keep theirs.
+
+### The before/after on a page edit
+
+An `update_pages` issue is read by somebody who has to open a page and change a
+paragraph, so it shows the change rather than describing it. Each page the
+action names gets a section, and the section is the same edit four times over,
+each layer able to stand on its own:
+
+1. **The page, by name.** Its title and the path the copy sits on, not a bare
+   URL.
+2. **One line saying what the edit does**, in the analyst's own words.
+3. **A PNG, inline.** 720px wide, the paragraph as it reads today above the
+   paragraph it should read instead, the old line in amber and the new one in
+   green, with the page's own sentences either side for bearings. An edit that
+   adds a line rather than replacing one shows a caret where the new copy goes
+   and leaves the old line unmarked, because a `-` against copy nobody asked to
+   delete is a wrong instruction rendered in red.
+4. **A `diff` block, then the copy to paste.** The replacement text whole and
+   never truncated, in a fence wide enough to survive backticks in the copy
+   itself.
+
+Then a link that opens the live page scrolled to today's line, using a
+[text fragment](https://developer.mozilla.org/en-US/docs/Web/URI/Fragment/Text_fragments)
+built from the line as the corpus holds it.
+
+**The card is rendered from the corpus, never from the live page.** The two
+paragraphs on it are the strings the evidence gate already checked: the copy it
+found on the stored page, and the rewrite it accepted. Driving a browser at
+posthog.com to highlight the real paragraph would mean a card that is a cookie
+banner on a bad day and the wrong paragraph on a quiet one, and no way to tell
+which from the PNG.
+
+So the render is a Chromium screenshot of a static HTML template with Inter
+bundled into it: no network, no scripts, no webfont request. Same edit, same
+bytes, which is why a card's file name can be a hash of it. No model is asked
+anything, so a card costs nothing in tokens.
+
+**A card that loses its picture is still a card.** GitHub Issues renders an
+image from a URL and nothing else, so the PNG is committed to
+`artifacts/update-pages/<date>/<page>-<hash>.png` in this repo and the body
+embeds its raw URL. When the render or the commit fails – no browser on the
+runner, a token without `contents: write` – the issue is opened anyway with the
+diff and the copy to paste, and the log says why there is no image. Nothing
+about a picture is allowed to cost an issue.
+
+**A revised page edit is re-rendered.** When [the review](#the-review-pass)
+rewrites the copy, the new card is rendered from the copy that survived the
+checks and the body is patched with it. The old PNG is never carried over: an
+image of the paragraph the analyst wrote, sitting under a diff of the one the
+reviewer asked for, is the one wrong picture this is all here to avoid.
+
+A page the corpus does not hold gets no card, and its section falls back to the
+current copy and the replacement as quoted blocks. The surrounding copy has to
+come off a page we have actually read.
 
 ### Related team(s)
 
@@ -518,7 +573,11 @@ that one posts as normal.
 | `src/review/` | The review pass: the reviewer, the writer that applies a revise, and the code that decides what reaches the issue. |
 | `src/teams.ts` | Routes an action to PostHog's small teams. |
 | `src/media/image.ts` | The feature image chain. |
+| `src/media/pageEdit.ts` | A page edit as a before/after, built from the corpus copy, and the HTML the card is rendered from. |
+| `src/media/render.ts` | The Chromium screenshot, with Inter bundled in. |
+| `src/media/cards.ts` | Plan, render, commit: the cards one action's issue gets. |
 | `src/github/issue.ts` | One issue draft per action, with its labels, and the editor a verdict writes through. |
+| `src/github/files.ts` | Commits a card's PNG to this repo, so an issue can embed it. |
 | `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
@@ -730,6 +789,14 @@ Both `daily.yml` and `force-post.yml` run `check-env` before the pipeline. A
 secret that expired or was never set fails in the first few seconds, naming the
 variable, rather than twenty minutes in as a database timeout.
 
+Both also install the headless Chromium the
+[before/after cards](#the-beforeafter-on-a-page-edit) are screenshotted with,
+cached between runs, and both carry `contents: write` so a card's PNG can be
+committed. The version installed is the `playwright-core` version in
+`package.json`, and a test holds the two together: a mismatch is a browser
+revision the library never looks for, which would be a silent slide back to
+issues with no pictures.
+
 Run **Check secrets** after a fork, and any time an alert stops arriving. It
 reports which secrets are set, never their values.
 
@@ -854,8 +921,10 @@ action with its labels and owner, claim extraction from PostHog's pages and the
 competitors' compare pages, the relevance guard that keeps a page edit on the
 launch that found it, team routing, the review pass end to end against fake
 models – agree, revise, a rewrite the gate refuses, drop, the budget, and the
-one-pass guard – dedupe behavior, the setup check that names a missing secret,
-and the Slack message shape. The fixtures under
+one-pass guard – the before/after card on a page edit, from the corpus text it
+reads to the diff, the paste block, and what an issue looks like when the render
+or the commit failed, dedupe behavior, the setup check that names a missing
+secret, and the Slack message shape. The fixtures under
 `test/fixtures/` are synthetic and marked as such. They exercise the shapes
 real feeds use, and are not copies of real competitor announcements.
 

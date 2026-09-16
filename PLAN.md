@@ -300,13 +300,34 @@ Title is competitor + feature + the action. Each body is scoped to its own
 action: that action in full, the summary, key points, the whole impact scale
 with each level's meaning next to it, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
-to update (url, the copy on the page today, the exact copy to replace it with,
-and the one line saying why); product's carry only the docs that back
-that action, without the edits or the compare-page copy. Neither lists the
+to update, each as a before/after card (see below); product's carry only the
+docs that back that action, without the edits or the compare-page copy. Neither lists the
 sibling actions: each one is its own issue. Labelled by competitor, source,
 impact, action, owner, and the PostHog product when the action names one. Uses the
 `GITHUB_TOKEN` Actions provides; with no token the run skips issue creation and
 keeps posting.
+
+### Show a page edit, do not describe it
+`update_pages` only, one card per page the action names. Each card is a section
+headed with the page's title and path, one line saying what the edit does, a
+720px PNG of the paragraph today above the paragraph it should read instead
+(old line amber, new line green, a caret instead of a `-` when the edit adds
+rather than replaces), the same edit as a `diff`, and the replacement copy
+whole in a fence somebody pastes from. Every layer stands on its own.
+
+Rendered from the corpus copy the evidence gate already matched, never from the
+live page: a browser pointed at posthog.com screenshots cookie banners and
+neighbouring paragraphs, and the PNG gives a reader no way to tell. So it is a
+Chromium screenshot of a static HTML template with Inter bundled in – no
+network, no scripts, no model, no tokens – which makes the same edit render the
+same bytes and lets a card's file name be a hash of it.
+
+GitHub Issues renders an image from a URL and nothing else, so the PNG is
+committed to `artifacts/update-pages/<date>/` here and the body embeds the raw
+URL. A render or a commit that fails costs the picture only: the issue opens
+with the diff and the copy. A revised page edit is re-rendered from the copy
+that survived the checks and the body is patched, because an old picture under
+a new diff is the one wrong image this whole thing guards against.
 
 A private channel first; a PostHog channel later. Whichever it is, the id lives
 in `SLACK_CHANNEL_ID`, never in the code.
