@@ -24,6 +24,8 @@ const action: RecommendedAction = {
   evidenceQuote: "PostHog doesn't capture any events until after consent is either given or denied.",
 };
 
+const COMPARE = "https://posthog.com/compare/best-amplitude-alternatives";
+
 const alert: AnalyzedItem = {
   item,
   model: "claude-opus-5",
@@ -34,13 +36,20 @@ const alert: AnalyzedItem = {
     actions: [action],
     posthogRefs: [
       {
-        url: "https://posthog.com/compare/best-amplitude-alternatives",
+        url: COMPARE,
         claim: "Both tools require manual consent handling.",
+        proposedText:
+          "Amplitude gates its Web Experiment script on consent. PostHog captures nothing until a visitor gives or denies it.",
         suggestedEdit: "Note that Amplitude gates its experiment script on consent.",
       },
     ],
     openQuestions: [],
   },
+};
+
+const pageAction: RecommendedAction = {
+  type: "update_pages",
+  detail: `On the best amplitude alternatives page, say Amplitude gates its experiment script on consent.`,
 };
 
 const docs = [
@@ -67,7 +76,34 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       'Evidence quote: "PostHog doesn\'t capture any events until after consent is either given or denied."',
     );
-    expect(prompt).toContain("suggested edit: \"Note that Amplitude gates its experiment script on consent.\"");
+  });
+
+  it("shows the copy proposed for a page, which is what a page action is judged on", () => {
+    expect(prompt).toContain(`- ${COMPARE}`);
+    expect(prompt).toContain('on the page today: "Both tools require manual consent handling."');
+    expect(prompt).toContain(
+      'copy proposed for it: "Amplitude gates its Web Experiment script on consent.',
+    );
+    expect(prompt).toContain('why: "Note that Amplitude gates its experiment script on consent."');
+  });
+
+  it("says an update_pages action with no copy for the page is a revise on its own", () => {
+    const noCopy = buildReviewPrompt({
+      alert: {
+        ...alert,
+        analysis: {
+          ...alert.analysis,
+          posthogRefs: [{ url: COMPARE, claim: "Both tools require manual consent handling." }],
+        },
+      },
+      action: pageAction,
+      workspace,
+      docs,
+    });
+    expect(noCopy).toContain("(none, which is a revise on its own for update_pages)");
+    expect(prompt).toContain(
+      "An update_pages action with no proposed copy at all is a revise, not a drop",
+    );
   });
 
   it("names the three verdicts and the bar for each", () => {

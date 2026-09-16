@@ -36,11 +36,17 @@ const lines = z.preprocess(
   z.array(z.string().min(1)).max(8),
 );
 
+/** A paragraph of replacement copy, which runs longer than a one-line instruction. */
+const proposedText = optionalText(1_200);
+
 const refSchema = z.object({
   url: z.string().min(1),
   claim: z.string().min(1),
   suggested_edit: optionalText(600),
   suggestedEdit: optionalText(600),
+  proposed_text: proposedText,
+  proposedText,
+  replacement_text: proposedText,
 });
 
 /** A citation with no page or no claim says nothing, so it goes rather than throws. */
@@ -213,10 +219,15 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
     ...(noActionReason ? { noActionReason } : {}),
     posthogRefs: refs.map((ref) => {
       const suggestedEdit = ref.suggested_edit ?? ref.suggestedEdit;
+      const proposed = ref.proposed_text ?? ref.proposedText ?? ref.replacement_text;
       return {
         url: ref.url.trim(),
         claim: clean(ref.claim),
         ...(suggestedEdit ? { suggestedEdit: clean(suggestedEdit) } : {}),
+        // Punctuated PostHog's way like everything else the bot publishes:
+        // this string is destined for a posthog.com page, so an em dash the
+        // model slipped in is fixed here rather than pasted onto the site.
+        ...(proposed ? { proposedText: clean(proposed) } : {}),
       };
     }),
     openQuestions: openQuestions.map(clean).filter(Boolean),

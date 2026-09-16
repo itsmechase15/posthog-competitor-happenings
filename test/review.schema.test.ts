@@ -116,8 +116,56 @@ describe("parseRevision", () => {
       gap: "Capture waits for a consent decision, so pending-window exposures are lost.",
       evidenceUrl: "https://posthog.com/docs/privacy/data-collection",
       evidenceQuote: "integrate it with PostHog's opt in and out controls",
-      suggestedEdits: [],
+      pageEdits: [],
     });
+  });
+
+  it("reads the copy for a page under whichever key the writer used", () => {
+    const copy = "Amplitude schedules an experiment stop. PostHog experiments stop by hand.";
+    for (const key of ["proposed_text", "proposedText", "replacement_text"]) {
+      const parsed = parseRevision(
+        JSON.stringify({ page_edits: [{ url: "https://posthog.com/pricing", [key]: copy }] }),
+      );
+      expect(parsed.pageEdits, key).toEqual([
+        { url: "https://posthog.com/pricing", proposedText: copy },
+      ]);
+    }
+  });
+
+  it("reads page edits sent under the older suggested_edits key", () => {
+    const parsed = parseRevision(
+      JSON.stringify({
+        suggested_edits: [
+          { url: "https://posthog.com/pricing", suggested_edit: "Name the schedule." },
+        ],
+      }),
+    );
+    expect(parsed.pageEdits).toEqual([
+      { url: "https://posthog.com/pricing", suggestedEdit: "Name the schedule." },
+    ]);
+  });
+
+  it("drops a page edit carrying neither the copy nor a reason", () => {
+    expect(
+      parseRevision(JSON.stringify({ page_edits: [{ url: "https://posthog.com/pricing" }] }))
+        .pageEdits,
+    ).toEqual([]);
+  });
+
+  it("punctuates the page copy PostHog's way, because it is destined for posthog.com", () => {
+    const parsed = parseRevision(
+      JSON.stringify({
+        page_edits: [
+          {
+            url: "https://posthog.com/pricing",
+            proposed_text: "Amplitude schedules a stop\u2014PostHog stops by hand.",
+          },
+        ],
+      }),
+    );
+    expect(parsed.pageEdits[0]?.proposedText).toBe(
+      "Amplitude schedules a stop \u2013 PostHog stops by hand.",
+    );
   });
 
   it("leaves a quote exactly as the page has it, dashes and all", () => {
@@ -220,22 +268,55 @@ describe("mergeRevision", () => {
     expect(merged.notes).toEqual([]);
   });
 
+  it("replaces the copy for a page it may edit, which is what a page revise is", () => {
+    const copy =
+      "Amplitude buffers experiment exposures while consent is pending and flushes them on grant. PostHog captures nothing until a visitor decides.";
+    const merged = merge({
+      page_edits: [{ url: "https://posthog.com/compare/best-amplitude-alternatives", proposed_text: copy }],
+    });
+
+    expect(merged.refs[0]?.proposedText).toBe(copy);
+    // The one-line reason it was filed with survives a rewrite that only changed
+    // the copy, so the issue still says why.
+    expect(merged.refs[0]?.suggestedEdit).toBe(refs[0]?.suggestedEdit);
+    expect(merged.notes).toEqual([]);
+  });
+
+  it("takes copy that reads as an instruction, and leaves the gate to refuse it", () => {
+    // One judge of what counts as copy: `isExactRewrite`, through the gate. This
+    // merge only decides which page may be touched.
+    const merged = merge({
+      page_edits: [
+        {
+          url: "https://posthog.com/compare/best-amplitude-alternatives",
+          proposed_text: "Mention that Amplitude now gates on consent.",
+        },
+      ],
+    });
+    expect(merged.refs[0]?.proposedText).toBe("Mention that Amplitude now gates on consent.");
+    expect(merged.notes).toEqual([]);
+  });
+
   it("refuses an edit aimed at a docs page, which is evidence rather than a target", () => {
     const merged = merge({
-      suggested_edits: [
+      page_edits: [
         {
           url: "https://posthog.com/docs/privacy/data-collection",
+          proposed_text:
+            "PostHog captures nothing until a visitor gives or denies consent, so pending-window exposures are lost.",
           suggested_edit: "Mention experiment exposures.",
         },
       ],
     });
-    expect(merged.refs.some((ref) => ref.url.includes("/docs/") && ref.suggestedEdit)).toBe(false);
+    const docs = merged.refs.find((ref) => ref.url.includes("/docs/"));
+    expect(docs?.proposedText).toBeUndefined();
+    expect(docs?.suggestedEdit).toBeUndefined();
     expect(merged.notes.join(" ")).toContain("not a page marketing writes");
   });
 
   it("refuses an edit for a page this analysis never cited", () => {
     const merged = merge({
-      suggested_edits: [
+      page_edits: [
         { url: "https://posthog.com/pricing", suggested_edit: "Add a consent row." },
       ],
     });

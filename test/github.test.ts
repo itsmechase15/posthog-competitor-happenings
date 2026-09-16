@@ -49,6 +49,10 @@ const analyzed: AnalyzedItem = {
         url: "https://posthog.com/compare/best-amplitude-alternatives",
         claim: "Both tools require manual experiment management.",
         suggestedEdit: "Note that Amplitude now schedules stops.",
+        // The copy that goes on the page, which is what an update_pages issue
+        // is for. `src/analysis/rewrite.ts` is where it has to survive.
+        proposedText:
+          "Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them, so a fixed-length test needs someone to end it.",
       },
       {
         url: "https://posthog.com/docs/experiments/managing-lifecycle",
@@ -208,7 +212,7 @@ describe("buildIssueDraft", () => {
       "## Recommended action",
       "**Update pages** \u2013 PostHog has no end time. The compare page says neither tool does.",
       "https://posthog.com/compare/best-amplitude-alternatives",
-      "**Suggested edit:** Note that Amplitude now schedules stops.",
+      "**Why** \u2013 Note that Amplitude now schedules stops.",
       "Does this cover flags outside experiments?",
       "https://fixture.invalid/releases/schedule-experiment-stop",
     ]) {
@@ -245,10 +249,84 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("gives marketing the pages it can edit and the edits suggested for them", () => {
+  it("gives marketing the pages it can edit and the copy to put on them", () => {
     expect(draft.body).toContain("## PostHog pages to update");
     expect(draft.body).toContain("https://posthog.com/compare/best-amplitude-alternatives");
-    expect(draft.body).toContain("**Suggested edit:** Note that Amplitude now schedules stops.");
+    expect(draft.body).toContain("**Why** \u2013 Note that Amplitude now schedules stops.");
+  });
+
+  /**
+   * The whole point of an update_pages issue: the page as it reads now, and
+   * the words to put there instead, side by side and ready to paste.
+   */
+  describe("the exact rewrite", () => {
+    it("shows the current copy and the replacement as quoted blocks", () => {
+      expect(draft.body).toContain(
+        [
+          "### https://posthog.com/compare/best-amplitude-alternatives",
+          "",
+          "**On the page today**",
+          "> Both tools require manual experiment management.",
+          "",
+          "**Replace it with**",
+          "> Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them, so a fixed-length test needs someone to end it.",
+          "",
+          "**Why** \u2013 Note that Amplitude now schedules stops.",
+        ].join("\n"),
+      );
+    });
+
+    it("carries the rewrite whole, so nobody has to go and write the rest", () => {
+      const ref = analyzed.analysis.posthogRefs[0] as PostHogRef;
+      expect(draft.body).toContain(ref.proposedText as string);
+    });
+
+    it("keeps a multi-paragraph rewrite readable as a quote", () => {
+      const body = buildIssueBody(
+        {
+          ...analyzed,
+          analysis: {
+            ...analyzed.analysis,
+            posthogRefs: [
+              {
+                ...(analyzed.analysis.posthogRefs[0] as PostHogRef),
+                proposedText: "Amplitude schedules a stop.\nPostHog stops experiments by hand.",
+              },
+            ],
+          },
+        },
+        image,
+        pageAction,
+      );
+      expect(body).toContain("> Amplitude schedules a stop.\n>\n> PostHog stops experiments by hand.");
+    });
+
+    it("says so when an edit came back with no copy, rather than looking complete", () => {
+      const body = buildIssueBody(
+        {
+          ...analyzed,
+          analysis: {
+            ...analyzed.analysis,
+            posthogRefs: [
+              {
+                url: "https://posthog.com/compare/best-amplitude-alternatives",
+                claim: "Both tools require manual experiment management.",
+                suggestedEdit: "Note that Amplitude now schedules stops.",
+              },
+            ],
+          },
+        },
+        image,
+        pageAction,
+      );
+      expect(body).toContain("**Suggested edit:** Note that Amplitude now schedules stops.");
+      expect(body).toContain("the wording is still to write");
+    });
+
+    it("leaves the product issue alone: its docs are evidence, not copy to edit", () => {
+      const product = buildIssueDraft(analyzed, image, productAction).body;
+      expect(product).not.toContain("**Replace it with**");
+    });
   });
 
   it("never sends marketing to edit a docs page, however it was cited", () => {

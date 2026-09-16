@@ -165,7 +165,7 @@ rather than going to check. What happens instead, once the issues are open, is
 | --- | --- | --- |
 | `consider_enhancing` | PostHog has this, and the launch beats it. Names the feature | Product |
 | `consider_building` | PostHog has nothing like it | Product |
-| `update_pages` | A PostHog page is now wrong, understated, or unanswered | Marketing |
+| `update_pages` | A PostHog page is now wrong, understated, or unanswered. Carries the exact replacement copy | Marketing |
 | `new_compare_page` | There is no page covering this comparison at all | Marketing |
 
 **Every product action carries its evidence, and the evidence is checked.** An
@@ -199,6 +199,20 @@ drops a page action whose words never touch the launch's own vocabulary, even
 when that leaves the alert with no action at all. A signal about scheduling an
 experiment stop does not get to send someone off to answer an old "basic A/B
 testing" claim on the same page.
+
+**A page edit ships the words, not the job.** An `update_pages` action that
+says "update the pricing section to mention scheduled stops" has handed over
+the reading, the writing, and the guess at what voice the page is in, and kept
+only the noticing. So the analyst, which has the page open, writes the copy:
+`proposed_text` on the ref it is fixing is the exact replacement, in that
+page's own voice, ready to paste. `checkPageEdit` will not file the action
+without it, and `src/analysis/rewrite.ts` is what tells a rewrite from another
+instruction wearing the field's name – it rejects copy that opens "mention",
+"update", or "reword", copy that talks about "this page" or what the section
+"should say", copy too short to replace a paragraph, marketing filler the style
+guide rules out, and copy the page already carries. The GitHub issue shows what
+the page says today next to what it should say; Slack shows the first 200
+characters of the rewrite under the page it goes on.
 
 **Page actions never target a docs page.** Marketing writes compare pages,
 product marketing pages, blog posts, and pricing. `isMarketingTarget` in
@@ -245,18 +259,25 @@ tools and returns one of three verdicts:
 
 A `revise` is applied by `UPDATER_MODEL`, which defaults to the analyst's own
 model and runs text-only: no corpus, no tools, and only the pages either model
-already read in front of it. It may rewrite the detail, the gap, the evidence
-page, the quote, and the feature. It may move the impact only when the reviewer
-said the label is wrong, and switch the type only between `consider_building` and
-`consider_enhancing` – there is no path into `update_pages` or
-`new_compare_page`, because those send someone to edit posthog.com and that is a
-different recommendation, not a corrected one.
+already read in front of it. On a product action it may rewrite the detail, the
+gap, the evidence page, the quote, and the feature. On an `update_pages` action
+it rewrites `proposed_text` – the copy that goes on the page – and gets an
+excerpt of that page along with the same `PAGE_REWRITE_RULES` the analyst was
+given, because a rewrite has to read as if it came off the page and a model that
+has not seen the page writes in its own voice. It may move the impact only when
+the reviewer said the label is wrong, and switch the type only between
+`consider_building` and `consider_enhancing` – there is no path into
+`update_pages` or `new_compare_page`, because those send someone to edit
+posthog.com and that is a different recommendation, not a corrected one.
 
 Then the rewrite goes back through the whole chain above – the docs
-reconciliation, the page-target rule, the topic guard, the evidence gate, and the
-sentence shaper – with coverage counted as everything either model read. **A
-rewrite that fails any of it is thrown away and the original issue stands**,
-labelled `review:unconfirmed` for a person to settle. There is no second attempt.
+reconciliation, the page-target rule, the topic guard, the evidence gate
+(`rewriteProblem` included), and the sentence shaper – with coverage counted as
+everything either model read. So a rewritten page edit that turns out to be an
+instruction, or a restatement of what the page already says, is refused on
+exactly the terms the analyst's would have been. **A rewrite that fails any of it
+is thrown away and the original issue stands**, labelled `review:unconfirmed` for
+a person to settle. There is no second attempt.
 
 Why this is not the pass the last section rules out: it is a different model, it
 is shown somebody else's claim rather than its own, it has the corpus underneath

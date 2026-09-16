@@ -210,7 +210,7 @@ function isPageAction(action: RecommendedAction): boolean {
 export function enforcePageTargets(analysis: Analysis): TopicGuard {
   if (!analysis.actions.some(isPageAction)) return { analysis, notes: [] };
 
-  const edits = analysis.posthogRefs.filter((ref) => ref.suggestedEdit);
+  const edits = analysis.posthogRefs.filter((ref) => ref.suggestedEdit ?? ref.proposedText);
   if (edits.length === 0 || edits.some((ref) => isMarketingTarget(ref.url))) {
     return { analysis, notes: [] };
   }
@@ -229,15 +229,17 @@ export function enforcePageTargets(analysis: Analysis): TopicGuard {
 }
 
 /**
- * The words one page action is judged on: its own detail, plus the suggested
- * edits when it is the only page action in the analysis. Suggested edits live
- * on `posthog_refs`, not on the action, so with two page actions there is no
- * telling which edit belongs to which, and only the detail is safe to read.
+ * The words one page action is judged on: its own detail, plus the edits it
+ * asks for when it is the only page action in the analysis. Both the one-line
+ * suggested edit and the exact replacement copy count, because a rewrite is
+ * where the launch's own vocabulary ends up most plainly. Edits live on
+ * `posthog_refs`, not on the action, so with two page actions there is no
+ * telling which belongs to which, and only the detail is safe to read.
  */
 function actionText(analysis: Analysis, action: RecommendedAction, pageActions: number): string {
   if (pageActions > 1) return action.detail;
   const edits = analysis.posthogRefs
-    .map((ref) => ref.suggestedEdit)
+    .flatMap((ref) => [ref.suggestedEdit, ref.proposedText])
     .filter((edit): edit is string => Boolean(edit));
   return [action.detail, ...edits].join(" ");
 }

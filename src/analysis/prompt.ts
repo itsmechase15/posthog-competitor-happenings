@@ -132,6 +132,21 @@ https://posthog.com/handbook/wizard-and-docs/docs-style-guide and https://postho
 - No emojis in prose, and no filler openers. Lead with the concrete capability.
 - One exception to all of the above: "evidence_quote" is somebody else's words. Copy them verbatim.`;
 
+/**
+ * What makes an `update_pages` recommendation copy rather than a request for
+ * copy. Stated once because it is asked for twice: the analyst writes the
+ * rewrite, and the review pass rewrites it when a reviewer says the copy is
+ * wrong. `src/analysis/rewrite.ts` is the code half, and it judges both.
+ */
+export const PAGE_REWRITE_RULES = `Every update_pages action ships the rewrite with it, in "proposed_text" on the ref for the page it fixes. This is not optional and the action is dropped without it:
+1. Open the page first. It is in the corpus, so read the file, not your memory of posthog.com. "claim" is the copy that is on it today, quoted exactly; "proposed_text" is what should sit there instead.
+2. "proposed_text" is the copy itself, ready to paste onto the page. Not a note about it. "Amplitude schedules an experiment stop from the experiment settings. PostHog experiments stop by hand, so a fixed-length test needs someone to end it." is copy. "Mention that Amplitude now schedules stops" is a note, and so is anything that talks about "the page", "this section", "the comparison table", or what the copy "should say". A reply whose proposed_text starts with mention, note, say, add, update, clarify, or reword is a reply that wrote about the edit instead of writing it.
+3. Match the page you just read. Its voice, its sentence length, its headings, and its names for things: if it writes "PostHog vs Amplitude" and calls them experiments, so do you. Copy that reads as if it came from somewhere else is a rewrite somebody has to rewrite.
+4. Write a whole replacement, not a fragment. Enough to stand where the current copy stands: a sentence or two, or the paragraph, or the table row in the page's own table syntax.
+5. It has to change something. Copy that says what the page already says fails the same check a stale claim does.
+6. Everything in the PostHog writing style section below applies to it, and it is the string most likely to end up on posthog.com unedited.
+"suggested_edit" stays what it always was: one line saying what is wrong and what you are changing. It is the summary of the rewrite, never a substitute for it.`;
+
 export const SYSTEM_RULES = `You are a competitive-intelligence analyst for PostHog, an open-source product analytics platform.
 You read one thing a competitor shipped and decide what PostHog should do about it.
 
@@ -161,7 +176,7 @@ ${TEAM_RULES}
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
   - consider_enhancing and consider_building: name the change first, then the gap behind it if it still fits. Good: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand." The bad one is true and it is evidence, but it names no change, so it belongs in a later sentence.
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
-- "posthog_refs" cites PostHog URLs from the corpus. Only cite URLs that exist in it. Include "suggested_edit" when an action is update_pages or new_compare_page. Use an empty array when no cited page is genuinely relevant.
+- "posthog_refs" cites PostHog URLs from the corpus. Only cite URLs that exist in it. Include "suggested_edit" when an action is update_pages or new_compare_page, and "proposed_text" whenever the action is update_pages. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things that change what PostHog should do and that you could not settle. This is where an unproven gap goes. It is a better answer than an action, not a worse one.
 - Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and rate impact on what the post does show: a post with no feature visible in it is minor.
 
@@ -193,6 +208,8 @@ Do not recommend update_pages because customers might ask about the launch, beca
   The claim you put in "posthog_refs" is quoted from the page as it stands, and it is checked against the stored copy. A page that no longer says the thing you are correcting has already been fixed.
 A docs page is evidence for what PostHog ships, never a page to edit: update_pages and new_compare_page point at a PostHog marketing, product marketing, or compare page, and a "suggested_edit" on a /docs/ URL is always the wrong answer.
 
+${PAGE_REWRITE_RULES}
+
 ${STYLE_RULES}`;
 
 export const RESPONSE_SHAPE = `{
@@ -211,7 +228,14 @@ export const RESPONSE_SHAPE = `{
     }
   ],
   "no_action_reason": "string (one sentence; required when actions is empty)",
-  "posthog_refs": [{ "url": "string", "claim": "string", "suggested_edit": "string (optional)" }],
+  "posthog_refs": [
+    {
+      "url": "string",
+      "claim": "string (the copy on that page today, quoted exactly)",
+      "suggested_edit": "string (one line: what is wrong and what you are changing)",
+      "proposed_text": "string (the exact copy to put on the page, in the page's own voice; required for update_pages)"
+    }
+  ],
   "open_questions": ["string"]
 }`;
 

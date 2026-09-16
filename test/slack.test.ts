@@ -51,6 +51,10 @@ const base: Alert = {
         url: "https://posthog.com/compare/best-amplitude-alternatives",
         claim: "Both tools require manual experiment management.",
         suggestedEdit: "Note that Amplitude now schedules stops.",
+        // Every update_pages action carries the copy that goes on the page.
+        // Slack shows the start of it; the issue carries all of it.
+        proposedText:
+          "Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them, so a fixed-length test needs someone to end it.",
       },
     ],
     openQuestions: ["Does the schedule apply to feature flags outside experiments?"],
@@ -73,11 +77,19 @@ const withIssues = (alert: Alert): Alert => ({
   })),
 });
 
-/** A different set of actions, with no issues, for the title and link cases. */
+/**
+ * A different set of actions, with no issues, for the title and link cases.
+ * The exact rewrite goes with them: those cases are about what a title says
+ * and where it links, and the rewrite preview has tests of its own.
+ */
 const withActions = (...actions: RecommendedAction[]): Alert => ({
   ...base,
   issues: [],
-  analysis: { ...base.analysis, actions },
+  analysis: {
+    ...base.analysis,
+    actions,
+    posthogRefs: base.analysis.posthogRefs.map(({ proposedText: _, ...ref }) => ref),
+  },
 });
 
 /** The text of every section block, in order, for the cases that read them. */
@@ -255,7 +267,7 @@ describe("buildSlackMessage", () => {
     expect(actionBlocks(message)).toEqual([
       "*Recommended action(s)*",
       `*Consider enhancing <https://posthog.com/experiments|Experiments>*\nAdd a scheduled end time on experiments so a test can stop on its own \u2013 flags already schedule changes, experiments stop by hand.\n<${ISSUES_BASE}/7|Access GitHub issue #7>`,
-      `*Update pages*\nOn the best amplitude alternatives page, say Amplitude can now schedule an experiment stop.\n<${ISSUES_BASE}/8|Access GitHub issue #8>`,
+      `*Update pages*\nOn the best amplitude alternatives page, say Amplitude can now schedule an experiment stop.\n> New copy for the best amplitude alternatives page: "Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them, so a fixed-length test needs someone to end it."\n<${ISSUES_BASE}/8|Access GitHub issue #8>`,
     ]);
   });
 
@@ -298,6 +310,7 @@ describe("buildSlackMessage", () => {
         "",
         "*Update pages*",
         "On the best amplitude alternatives page, say Amplitude can now schedule an experiment stop.",
+        '> New copy for the best amplitude alternatives page: "Amplitude schedules an experiment to stop on a date you pick. PostHog experiments stop when you stop them, so a fixed-length test needs someone to end it."',
         `<${ISSUES_BASE}/8|Access GitHub issue #8>`,
       ].join("\n"),
     );
@@ -458,11 +471,78 @@ describe("buildSlackMessage", () => {
     expect(rendered).toContain(`<${ISSUES_BASE}/8|${ISSUE_LINK_LABEL} #8>`);
   });
 
-  it("keeps PostHog page citations and suggested edits out of Slack", () => {
+  it("keeps PostHog page citations and open questions out of Slack", () => {
     expect(rendered).not.toContain("/compare/best-amplitude-alternatives");
     expect(rendered).not.toContain("Suggested edit");
     expect(rendered).not.toContain("PostHog pages");
     expect(rendered).not.toContain("Does the schedule apply");
+  });
+
+  /**
+   * A page edit read in Slack is a decision about copy, so the copy is there
+   * to read. The lead sentence stays one sentence, the preview sits under it,
+   * and the issue is where the whole rewrite lives next to what the page says.
+   */
+  describe("the exact rewrite", () => {
+    const pageBlock = (from = message) =>
+      actionBlocks(from).find((block) => block.startsWith("*Update pages*")) ?? "";
+
+    it("quotes the new copy under the page it goes on", () => {
+      expect(pageBlock()).toContain(
+        '> New copy for the best amplitude alternatives page: "Amplitude schedules an experiment to stop on a date you pick.',
+      );
+    });
+
+    it("leads with the one sentence, then the copy, then the issue", () => {
+      const lines = pageBlock().split("\n");
+      expect(lines[0]).toBe("*Update pages*");
+      expect(lines[1]).toContain("On the best amplitude alternatives page");
+      expect(lines[2]?.startsWith("> New copy for")).toBe(true);
+      expect(lines[3]).toContain(ISSUE_LINK_LABEL);
+    });
+
+    it("sends a reader to the issue when the copy runs past the preview", () => {
+      const long = buildSlackMessage(
+        withIssues({
+          ...base,
+          analysis: {
+            ...base.analysis,
+            posthogRefs: [
+              {
+                url: "https://posthog.com/compare/best-amplitude-alternatives",
+                claim: "Both tools require manual experiment management.",
+                proposedText: `Amplitude schedules an experiment stop. ${"PostHog experiments stop when you stop them. ".repeat(8)}`,
+              },
+            ],
+          },
+        }),
+      );
+      expect(pageBlock(long)).toContain("(full copy in the issue)");
+    });
+
+    it("shows nothing when the action is not a page edit", () => {
+      const enhancing =
+        actionBlocks(message).find((block) => block.startsWith("*Consider enhancing")) ?? "";
+      expect(enhancing).not.toContain("New copy for");
+    });
+
+    it("holds back when two page edits share one list of refs", () => {
+      // Refs hang off the analysis, so with two page actions there is no
+      // telling whose copy this is, and the wrong page's copy is worse than none.
+      const two = buildSlackMessage(
+        withIssues({
+          ...base,
+          analysis: {
+            ...base.analysis,
+            actions: [
+              { type: "update_pages", detail: "On the best amplitude alternatives page, say so." },
+              { type: "update_pages", detail: "On the Amplitude pricing page, say the same." },
+            ],
+          },
+        }),
+      );
+      expect(actionBlocks(two).join("\n")).not.toContain("New copy for");
+    });
   });
 
   it("stays short: a break, one image, a handful of sections, one footer", () => {

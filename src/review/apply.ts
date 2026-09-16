@@ -5,6 +5,7 @@ import { buildIssueBody, buildIssueLabels, buildIssueTitle, type IssueEditor } f
 import { actionLabel, REVIEW_LABEL, REVIEW_PASS_DONE } from "../labels.js";
 import { createLogger } from "../log.js";
 import { topUpDocsForActions } from "../posthog/docs.js";
+import { isMarketingTarget } from "../posthog/pages.js";
 import { bestExcerpt, terms, type CorpusIndex } from "../posthog/retrieval.js";
 import type { DocsWorkspace } from "../posthog/workspace.js";
 import type {
@@ -15,6 +16,7 @@ import type {
   FeatureImage,
   IssueRef,
   PostHogDoc,
+  PostHogRef,
   RecommendedAction,
 } from "../types.js";
 import { SPACED_EN_DASH } from "../util/text.js";
@@ -145,13 +147,13 @@ async function reviewOne(
 
   if (target.review || target.labels.includes(REVIEW_PASS_DONE)) {
     notes.push(
-      `review: left a ${target.action.type} action alone, because it has already been past a reviewer`,
+      `review: left the ${target.action.type} action alone, because it has already been past a reviewer`,
     );
     return keep(target.review);
   }
 
   if (input.budget.remaining <= 0) {
-    notes.push(`review: skipped a ${target.action.type} action, over the budget for this run`);
+    notes.push(`review: skipped the ${target.action.type} action, over the budget for this run`);
     await input.editor.update(target.issue, {
       labels: withLabels(target.labels, REVIEW_LABEL.skipped),
     });
@@ -170,8 +172,8 @@ async function reviewOne(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    log.error(`the reviewer could not read a ${target.action.type} action`, message);
-    notes.push(`review: skipped a ${target.action.type} action (${message})`);
+    log.error(`the reviewer could not read the ${target.action.type} action`, message);
+    notes.push(`review: skipped the ${target.action.type} action (${message})`);
     await input.editor.update(target.issue, {
       labels: withLabels(target.labels, REVIEW_LABEL.skipped),
     });
@@ -186,7 +188,7 @@ async function reviewOne(
   };
 
   if (outcome.verdict === "agree") {
-    notes.push(`review: agreed with a ${target.action.type} action`);
+    notes.push(`review: agreed with the ${target.action.type} action`);
     await input.editor.comment(target.issue, agreedComment(outcome));
     await input.editor.update(target.issue, {
       labels: withLabels(target.labels, REVIEW_LABEL.agreed, REVIEW_PASS_DONE),
@@ -195,7 +197,7 @@ async function reviewOne(
   }
 
   if (outcome.verdict === "drop") {
-    notes.push(`review: dropped a ${target.action.type} action ${SPACED_EN_DASH}${outcome.reason}`);
+    notes.push(`review: dropped the ${target.action.type} action ${SPACED_EN_DASH}${outcome.reason}`);
     await input.editor.comment(target.issue, droppedComment(outcome));
     await input.editor.close(
       target.issue,
@@ -226,7 +228,7 @@ async function revise(
   notes: string[],
 ): Promise<OneOutcome> {
   const unconfirmed = async (why: string): Promise<OneOutcome> => {
-    notes.push(`review: could not confirm a rewrite of a ${target.action.type} action (${why})`);
+    notes.push(`review: could not confirm a rewrite of the ${target.action.type} action (${why})`);
     await input.editor.comment(target.issue, unconfirmedComment(outcome, why));
     await input.editor.update(target.issue, {
       labels: withLabels(target.labels, REVIEW_LABEL.unconfirmed, REVIEW_PASS_DONE),
@@ -243,7 +245,13 @@ async function revise(
 
   if (!input.writer) return unconfirmed("there is no writer configured to rewrite it");
 
-  const docs = rewriteDocs(input.index, target.action, alert.docs ?? [], outcome.readUrls);
+  const docs = rewriteDocs(
+    input.index,
+    target.action,
+    alert.analysis.posthogRefs,
+    alert.docs ?? [],
+    outcome.readUrls,
+  );
 
   let merged;
   try {
@@ -316,11 +324,11 @@ async function revise(
   });
   await input.editor.comment(
     target.issue,
-    revisedComment(outcome, input.writer.model, target.action, checked.action, merged.impact, alert),
+    revisedComment(outcome, input.writer.model, target.action, checked.action, revised, alert),
   );
 
   notes.push(
-    `review: revised a ${target.action.type} action ${SPACED_EN_DASH}${outcome.reason}`,
+    `review: revised the ${target.action.type} action ${SPACED_EN_DASH}${outcome.reason}`,
   );
   if (merged.impact !== alert.analysis.impact) {
     // The alert and the rewritten issue carry the corrected label. Any sibling
@@ -343,13 +351,18 @@ async function revise(
 
 /**
  * The pages a rewrite may quote: the excerpts the analysis was checked against,
- * plus every page the reviewer opened, cut down to the part that speaks to the
- * gap. The gate checks a quote against the whole stored page, so anything
- * verbatim from one of these excerpts passes.
+ * every page the reviewer opened, and, for a page action, the pages it is being
+ * asked to rewrite. Each is cut down to the part that speaks to the gap.
+ *
+ * The gate checks a quote against the whole stored page, so anything verbatim
+ * from one of these excerpts passes. The page being rewritten is here for a
+ * different reason: replacement copy has to read as if it came off that page,
+ * and a model that has not seen the page writes copy in its own voice.
  */
 export function rewriteDocs(
   index: CorpusIndex,
   action: RecommendedAction,
+  refs: PostHogRef[],
   docs: PostHogDoc[],
   readUrls: string[],
 ): PostHogDoc[] {
@@ -357,7 +370,12 @@ export function rewriteDocs(
   const seen = new Set(docs.map((doc) => doc.url));
   const found: PostHogDoc[] = [];
 
-  for (const url of readUrls) {
+  const targets =
+    action.type === "update_pages" || action.type === "new_compare_page"
+      ? refs.filter((ref) => isMarketingTarget(ref.url)).map((ref) => ref.url)
+      : [];
+
+  for (const url of [...targets, ...readUrls]) {
     if (seen.has(url)) continue;
     const page = index.page(url);
     if (!page) continue;
@@ -425,17 +443,39 @@ function unconfirmedComment(outcome: ReviewOutcome, why: string): string {
   ].join("\n");
 }
 
-function fields(action: RecommendedAction, impact: string): string {
-  return [
+/**
+ * One side of the before/after, as fields.
+ *
+ * A page action's substance is the copy proposed for the page, which lives on
+ * the refs rather than on the action, so it is shown here: the point of the
+ * comment is that a reader can see what changed, and for an `update_pages`
+ * revise the copy is usually the only thing that did.
+ */
+function fields(action: RecommendedAction, refs: PostHogRef[], impact: string): string {
+  const lines = [
     `- Title: ${actionLabel(action)}`,
     `- Type: ${action.type}`,
     `- Impact: ${impact}`,
-    `- Feature: ${action.feature ?? "(none)"}`,
-    `- Gap: ${action.gap ?? "(none)"}`,
-    `- Evidence: ${action.evidenceUrl ?? "(none)"}`,
-    `- Quote: ${action.evidenceQuote ? `"${action.evidenceQuote}"` : "(none)"}`,
-    `- Detail: ${action.detail}`,
-  ].join("\n");
+  ];
+
+  if (action.type === "update_pages" || action.type === "new_compare_page") {
+    for (const ref of refs.filter((entry) => isMarketingTarget(entry.url))) {
+      lines.push(
+        `- Page: ${ref.url}`,
+        `- Copy for it: ${ref.proposedText ? `"${ref.proposedText}"` : "(none proposed)"}`,
+      );
+    }
+  } else {
+    lines.push(
+      `- Feature: ${action.feature ?? "(none)"}`,
+      `- Gap: ${action.gap ?? "(none)"}`,
+      `- Evidence: ${action.evidenceUrl ?? "(none)"}`,
+      `- Quote: ${action.evidenceQuote ? `"${action.evidenceQuote}"` : "(none)"}`,
+    );
+  }
+
+  lines.push(`- Detail: ${action.detail}`);
+  return lines.join("\n");
 }
 
 function revisedComment(
@@ -443,7 +483,7 @@ function revisedComment(
   writerModel: string,
   before: RecommendedAction,
   after: RecommendedAction,
-  impact: string,
+  revised: Analysis,
   alert: AnalyzedItem,
 ): string {
   return [
@@ -455,11 +495,11 @@ function revisedComment(
     "",
     pagesLine(outcome, "Pages checked:"),
     "",
-    `**Before**\n${fields(before, alert.analysis.impact)}`,
+    `**Before**\n${fields(before, alert.analysis.posthogRefs, alert.analysis.impact)}`,
     "",
-    `**After**\n${fields(after, impact)}`,
+    `**After**\n${fields(after, revised.posthogRefs, revised.impact)}`,
     "",
-    `Rewritten with \`${writerModel}\`, then re-checked against the stored docs corpus by code: the cited page is in the corpus, it is product documentation, the quote is on it, and the gap's own words do not lead to a page neither model opened. A rewrite that failed any of those would have been thrown away with the original left standing.`,
+    `Rewritten with \`${writerModel}\`, then re-checked against the stored docs corpus by code: for a product action the cited page is in the corpus, it is product documentation, the quote is on it, and the gap's own words do not lead to a page neither model opened; for a page edit the copy it replaces is still on the page and the replacement is copy rather than a note about it. A rewrite that failed any of those would have been thrown away with the original left standing.`,
   ].join("\n");
 }
 

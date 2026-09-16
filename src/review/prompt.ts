@@ -1,7 +1,8 @@
 import { COMPETITORS } from "../config.js";
 import { actionLabel } from "../labels.js";
+import { isMarketingTarget } from "../posthog/pages.js";
 import { EVIDENCE_LABEL, TOC_FILENAME, type DocsWorkspace } from "../posthog/workspace.js";
-import { STYLE_RULES } from "../analysis/prompt.js";
+import { PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
 import { MAX_ACTION_CHARS } from "../slack/message.js";
 import type {
   AnalyzedItem,
@@ -50,6 +51,11 @@ export interface RewriteInput {
   docs: PostHogDoc[];
 }
 
+/** A page action's rewrite is copy for posthog.com; a product action's is a claim about it. */
+function isPageAction(action: RecommendedAction): boolean {
+  return action.type === "update_pages" || action.type === "new_compare_page";
+}
+
 function renderDocs(docs: PostHogDoc[]): string {
   if (docs.length === 0) {
     return "(nothing was pre-loaded, so search the workspace yourself)";
@@ -62,12 +68,30 @@ function renderDocs(docs: PostHogDoc[]): string {
     .join("\n");
 }
 
-/** The page edits this action carries, which are the only strings a rewrite may replace. */
-function renderEdits(refs: PostHogRef[]): string {
-  const edits = refs.filter((ref) => ref.suggestedEdit);
+/**
+ * The page edits this action carries: what the page says now, the copy proposed
+ * for it, and the one-line reason. These are the only strings a rewrite may
+ * replace, and for an `update_pages` action the proposed copy is the substance
+ * of the recommendation, so it is shown in full rather than summarized.
+ */
+function renderEdits(refs: PostHogRef[], action: RecommendedAction): string {
+  // For a page action, every page it could edit is listed whether or not copy
+  // came back for it, because a page action with no copy is itself the finding.
+  const edits = isPageAction(action)
+    ? refs.filter((ref) => isMarketingTarget(ref.url))
+    : refs.filter((ref) => ref.suggestedEdit ?? ref.proposedText);
   if (edits.length === 0) return "(none)";
   return edits
-    .map((ref) => `- ${ref.url}\n  current copy: "${ref.claim}"\n  suggested edit: "${ref.suggestedEdit ?? ""}"`)
+    .map((ref) => {
+      const lines = [`- ${ref.url}`, `  on the page today: "${ref.claim}"`];
+      lines.push(
+        ref.proposedText
+          ? `  copy proposed for it: "${ref.proposedText}"`
+          : "  copy proposed for it: (none, which is a revise on its own for update_pages)",
+      );
+      if (ref.suggestedEdit) lines.push(`  why: "${ref.suggestedEdit}"`);
+      return lines.join("\n");
+    })
     .join("\n");
 }
 
@@ -88,7 +112,7 @@ export function renderFiledAction(alert: AnalyzedItem, action: RecommendedAction
     `Gap claimed: ${action.gap ?? "(none)"}`,
     `Evidence page: ${action.evidenceUrl ?? "(none)"}`,
     `Evidence quote: ${action.evidenceQuote ? `"${action.evidenceQuote}"` : "(none)"}`,
-    `Suggested page edits:\n${renderEdits(alert.analysis.posthogRefs)}`,
+    `Pages it asks someone to edit:\n${renderEdits(alert.analysis.posthogRefs, action)}`,
   ].join("\n");
 }
 
@@ -127,7 +151,7 @@ One of three, and the middle one is the interesting one.
   - The feature named is the wrong PostHog product for the gap.
   - It says consider_building where PostHog has an adjacent product to enhance, or consider_enhancing where PostHog has nothing in the area at all.
   - The impact label does not match what the post shipped.
-  - A suggested page edit says the wrong thing, or does not read as a replacement for the copy it is replacing.
+  - For an update_pages action: the copy proposed for the page is wrong about what PostHog does, or is a note about the edit rather than the words to put on the page, or restates what the page already says, or does not read as if it came off that page. An update_pages action with no proposed copy at all is a revise, not a drop: the recommendation may be right and the writing is missing.
 - "drop": there is nothing to file. PostHog already does this and you can name the pages that show it, or the gap is about what a competitor charges rather than what the product does, or the action asks for documentation to be written.
 
 The bar, which matters more than the list:
@@ -197,7 +221,13 @@ export const REWRITE_RESPONSE_SHAPE = `{
   "evidence_url": "string (a PostHog docs URL from the excerpts below)",
   "evidence_quote": "string (words copied from that page, verbatim, punctuation untouched)",
   "impact": "minor | notable | major (only when the reviewer said the label is wrong)",
-  "suggested_edits": [{ "url": "string (a page already cited above)", "suggested_edit": "string (the replacement copy, in the page's own voice)" }]
+  "page_edits": [
+    {
+      "url": "string (a page already cited above, and one marketing writes)",
+      "proposed_text": "string (the exact copy to put on the page, in the page's own voice)",
+      "suggested_edit": "string (one line: what is wrong and what you are changing)"
+    }
+  ]
 }`;
 
 function renderReviewerAsk(review: ReviewDecision, impact: Impact): string {
@@ -217,8 +247,19 @@ function renderReviewerAsk(review: ReviewDecision, impact: Impact): string {
   return lines.join("\n");
 }
 
+const PRODUCT_CHECKS = `- "evidence_url" has to be a PostHog docs page, and it has to be one of the pages listed below.
+- "evidence_quote" has to appear on that page exactly as it is written there. Copy it. Do not paraphrase it, do not tidy its punctuation, do not join two sentences into one.
+- "gap" has to be the thing the cited page is actually about. If the gap's own words lead somewhere else in the docs, the cited page is the wrong one.
+- "feature" has to be PostHog's own name for the product, e.g. "Experiments", "Session replay", "AI observability". A name PostHog does not use is dropped and the old one kept.
+- Never change the type into update_pages or new_compare_page, and never out of one. Those ask marketing to edit posthog.com, which is a different recommendation.`;
+
+const PAGE_CHECKS = `- "proposed_text" is the words that go on the page, and the check on it is mechanical: copy that opens with mention, note, say, add, update, clarify, reword or the like, copy that talks about "the page" or "this section" or what the copy "should say", copy shorter than a sentence or two, and copy carrying marketing filler the handbook rules out are all thrown out. So is copy that restates what the page already says, and copy that is already on the stored page.
+- Only a page this action already cites, and only one marketing writes. A "/docs/" URL is always the wrong answer: the docs are the evidence, never the target.
+- "suggested_edit" is the one line saying what is wrong and what you are changing. It never stands in for "proposed_text".`;
+
 export function buildRewritePrompt(input: RewriteInput): string {
   const { alert, action, review } = input;
+  const pageWork = isPageAction(action);
 
   return `You are rewriting one recommended action for PostHog, after a second model read PostHog's own docs and said what is wrong with it.
 
@@ -228,14 +269,13 @@ Reply with a single JSON object and nothing else. No prose, no code fences. Leav
 
 ## What is checked after you write it
 Code re-runs the whole evidence gate on your answer before it reaches the issue, and a rewrite that fails it is thrown away with the original left standing. So:
-- "evidence_url" has to be a PostHog docs page, and it has to be one of the pages listed below.
-- "evidence_quote" has to appear on that page exactly as it is written there. Copy it. Do not paraphrase it, do not tidy its punctuation, do not join two sentences into one.
-- "gap" has to be the thing the cited page is actually about. If the gap's own words lead somewhere else in the docs, the cited page is the wrong one.
-- "detail" opens with one sentence under ${MAX_ACTION_CHARS} characters that leads with the work to do, not with what PostHog lacks. That sentence is all Slack shows. Good: "Add a scheduled end time on experiments so a test can stop on its own ${EN_DASH} flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand."
-- "feature" has to be PostHog's own name for the product, e.g. "Experiments", "Session replay", "AI observability". A name PostHog does not use is dropped and the old one kept.
-- "suggested_edit" is the replacement copy for a page, written in that page's voice, ready to paste in. Only for a page already cited on this action.
-- Never change the type into update_pages or new_compare_page, and never out of one. Those ask marketing to edit posthog.com, which is a different recommendation.
-
+${pageWork ? PAGE_CHECKS : PRODUCT_CHECKS}
+- "detail" opens with one sentence under ${MAX_ACTION_CHARS} characters that leads with the work to do, not with what PostHog lacks. That sentence is all Slack shows. Good: "Add a scheduled end time on experiments so a test can stop on its own ${EN_DASH} flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand."${
+    pageWork
+      ? ` For a page action it names the page and what it should say: "On the PostHog vs Amplitude compare, say Amplitude schedules an experiment stop and PostHog stops by hand."`
+      : ""
+  }
+${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}
 ## The action as filed
 ${renderFiledAction(alert, action)}
 
@@ -243,7 +283,11 @@ ${renderFiledAction(alert, action)}
 ${renderReviewerAsk(review, alert.analysis.impact)}
 
 ## The pages you may quote
-Every page here is in PostHog's corpus, so a verbatim quote from one of these excerpts passes the check. A quote from anywhere else does not.
+Every page here is in PostHog's corpus, so a verbatim quote from one of these excerpts passes the check. A quote from anywhere else does not.${
+    pageWork
+      ? " For the page you are rewriting, this is also where its voice comes from: read the excerpt and write in it."
+      : ""
+  }
 ${renderDocs(input.docs)}
 
 ${STYLE_RULES}

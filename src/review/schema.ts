@@ -101,10 +101,16 @@ export function parseReview(raw: string): ReviewDecision {
   };
 }
 
+/** A paragraph of replacement copy, which runs longer than a one-line instruction. */
+const proposedText = optionalText(1_200);
+
 const editSchema = z.object({
   url: z.string().min(1),
   suggested_edit: optionalText(600),
   suggestedEdit: optionalText(600),
+  proposed_text: proposedText,
+  proposedText,
+  replacement_text: proposedText,
 });
 
 export const revisionSchema = z.object({
@@ -118,7 +124,12 @@ export const revisionSchema = z.object({
   evidence_quote: optionalText(600),
   evidenceQuote: optionalText(600),
   impact: impactToken,
-  suggested_edits: z.preprocess(
+  suggested_edits: pageEdits(),
+  page_edits: pageEdits(),
+});
+
+function pageEdits() {
+  return z.preprocess(
     (value) =>
       Array.isArray(value)
         ? value.filter((entry) => {
@@ -127,8 +138,17 @@ export const revisionSchema = z.object({
           })
         : value,
     z.array(editSchema).max(4).optional(),
-  ),
-});
+  );
+}
+
+/** One page's copy as the writer sent it back: the words for the page, and why. */
+export interface PageEdit {
+  url: string;
+  /** The copy to put on the page. Judged by `isExactRewrite`, not here. */
+  proposedText?: string;
+  /** One line saying what is wrong and what is changing. */
+  suggestedEdit?: string;
+}
 
 /** One rewrite, as the writer sent it. Nothing here has been allowed onto the action yet. */
 export interface Revision {
@@ -139,7 +159,7 @@ export interface Revision {
   evidenceUrl?: string;
   evidenceQuote?: string;
   impact?: Impact;
-  suggestedEdits: Array<{ url: string; suggestedEdit: string }>;
+  pageEdits: PageEdit[];
 }
 
 export function parseRevision(raw: string): Revision {
@@ -159,9 +179,19 @@ export function parseRevision(raw: string): Revision {
     // rewriting its dashes would fail that check.
     ...(evidenceQuote ? { evidenceQuote: evidenceQuote.trim() } : {}),
     ...(parsed.impact ? { impact: toImpact(parsed.impact) } : {}),
-    suggestedEdits: (parsed.suggested_edits ?? []).flatMap((edit) => {
+    pageEdits: (parsed.suggested_edits ?? parsed.page_edits ?? []).flatMap((edit) => {
       const suggestedEdit = edit.suggested_edit ?? edit.suggestedEdit;
-      return suggestedEdit ? [{ url: edit.url.trim(), suggestedEdit: clean(suggestedEdit) }] : [];
+      const proposed = edit.proposed_text ?? edit.proposedText ?? edit.replacement_text;
+      if (!suggestedEdit && !proposed) return [];
+      return [
+        {
+          url: edit.url.trim(),
+          // Punctuated PostHog's way like everything else the bot publishes:
+          // this string is destined for a posthog.com page.
+          ...(proposed ? { proposedText: clean(proposed) } : {}),
+          ...(suggestedEdit ? { suggestedEdit: clean(suggestedEdit) } : {}),
+        },
+      ];
     }),
   };
 }
@@ -195,9 +225,13 @@ export interface MergeResult {
  *   title that names nothing.
  * - Impact moves only when the reviewer said it was wrong. The writer's own
  *   opinion about impact is not asked for and not taken.
- * - A suggested edit may only replace one on a page the analysis already cited,
- *   and only where that page is somewhere marketing writes. Inventing a page to
- *   edit is the mistake this whole pass exists to catch, in a smaller form.
+ * - A page edit may only replace one on a page the analysis already cited, and
+ *   only where that page is somewhere marketing writes. Inventing a page to edit
+ *   is the mistake this whole pass exists to catch, in a smaller form. Whether
+ *   the replacement copy is copy at all rather than a note about it is not
+ *   settled here: `isExactRewrite` in `src/analysis/rewrite.ts` settles that,
+ *   through the gate, so there is one judge of it and the analyst and the
+ *   reviewer are held to the same one.
  */
 export function mergeRevision(
   action: RecommendedAction,
@@ -242,24 +276,29 @@ export function mergeRevision(
   }
 
   const citedUrls = new Set(refs.map((ref) => ref.url));
-  const edits = new Map<string, string>();
-  for (const edit of revision.suggestedEdits) {
+  const edits = new Map<string, PageEdit>();
+  for (const edit of revision.pageEdits) {
     if (!citedUrls.has(edit.url)) {
-      notes.push(`dropped a suggested edit for ${edit.url}, which this analysis never cited`);
+      notes.push(`dropped a page edit for ${edit.url}, which this analysis never cited`);
       continue;
     }
     if (!isMarketingTarget(edit.url)) {
-      notes.push(`dropped a suggested edit for ${edit.url}, which is not a page marketing writes`);
+      notes.push(`dropped a page edit for ${edit.url}, which is not a page marketing writes`);
       continue;
     }
-    edits.set(edit.url, edit.suggestedEdit);
+    edits.set(edit.url, edit);
   }
 
   return {
     action: revised,
     refs: refs.map((ref) => {
-      const suggestedEdit = edits.get(ref.url);
-      return suggestedEdit ? { ...ref, suggestedEdit } : ref;
+      const edit = edits.get(ref.url);
+      if (!edit) return ref;
+      return {
+        ...ref,
+        ...(edit.proposedText ? { proposedText: edit.proposedText } : {}),
+        ...(edit.suggestedEdit ? { suggestedEdit: edit.suggestedEdit } : {}),
+      };
     }),
     impact: nextImpact,
     notes,

@@ -60,7 +60,7 @@ class CursorReviewer implements Reviewer {
 
     const decision = parseReview(reply.text);
     log.info(
-      `reviewed a ${input.action.type} action: ${decision.verdict} after opening ${readUrls.length} corpus pages`,
+      `reviewed the ${input.action.type} action: ${decision.verdict} after opening ${readUrls.length} corpus pages`,
     );
     return { ...decision, model: this.runner.model, readUrls };
   }

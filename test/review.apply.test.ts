@@ -98,6 +98,10 @@ const alert: AnalyzedItem = {
         url: COMPARE,
         claim: "Amplitude cannot schedule an experiment to stop on a date you pick.",
         suggestedEdit: "Say Amplitude schedules an experiment stop and PostHog stops by hand.",
+        // An update_pages action carries the copy for the page, not a note about
+        // it, so the fixture carries one the gate accepts.
+        proposedText:
+          "Amplitude schedules an experiment stop from the experiment settings. PostHog experiments stop by hand, so a fixed-length test needs someone to end it.",
       },
     ],
     openQuestions: [],
@@ -196,7 +200,7 @@ const goodRewrite: Revision = {
   gap: "no end date field on an experiment, so stopping is a manual step",
   evidenceUrl: LIFECYCLE,
   evidenceQuote: "There is no end date field on an experiment",
-  suggestedEdits: [],
+  pageEdits: [],
 };
 
 const issue: IssueRef = { number: 7, url: "https://github.com/o/r/issues/7" };
@@ -300,7 +304,7 @@ describe("revise", () => {
         gap: "no end date field on an experiment",
         evidenceUrl: PROXY,
         evidenceQuote: "PostHog runs a managed reverse proxy on a subdomain you own",
-        suggestedEdits: [],
+        pageEdits: [],
       }),
     });
 
@@ -348,31 +352,101 @@ describe("revise", () => {
     expect(unasked.result.analysis.impact).toBe("notable");
   });
 
-  it("replaces a page edit on a compare page and keeps the page action", async () => {
-    const { result, editor } = await run({
+  /** An update_pages action's substance is the copy for the page, so that is what a revise rewrites. */
+  const pageRun = (revision: Revision, changes = ["Say what Amplitude now does, in its voice."]) =>
+    run({
       targets: [{ action: pageAction, issue, labels: openedLabels }],
       alert: { ...alert, analysis: { ...alert.analysis, actions: [pageAction] } },
-      reviewer: fakeReviewer("revise", {
-        changes: ["Say what Amplitude now does, in the page's voice."],
-      }),
-      writer: fakeWriter({
-        suggestedEdits: [
-          {
-            url: COMPARE,
-            suggestedEdit:
-              "Amplitude schedules an experiment stop for a date you pick. PostHog stops by hand.",
-          },
-        ],
-      }),
+      reviewer: fakeReviewer("revise", { changes }),
+      writer: fakeWriter(revision),
+    });
+
+  const rewritten =
+    "Amplitude schedules an experiment stop from the experiment settings, on a date you pick. PostHog experiments stop by hand.";
+
+  it("replaces the copy proposed for a compare page and keeps the page action", async () => {
+    const { result, editor } = await pageRun({
+      pageEdits: [
+        {
+          url: COMPARE,
+          proposedText: rewritten,
+          suggestedEdit: "Name where the schedule is set, which the old copy left out.",
+        },
+      ],
     });
 
     expect(result.analysis.actions.map((action) => action.type)).toEqual(["update_pages"]);
+    expect(result.analysis.posthogRefs[0]?.proposedText).toBe(rewritten);
     expect(result.analysis.posthogRefs[0]?.suggestedEdit).toBe(
-      "Amplitude schedules an experiment stop for a date you pick. PostHog stops by hand.",
+      "Name where the schedule is set, which the old copy left out.",
     );
-    expect(editor.edits.find((edit) => edit.kind === "update")?.patch?.body).toContain(
-      "Amplitude schedules an experiment stop for a date you pick.",
+
+    const patch = editor.edits.find((edit) => edit.kind === "update")?.patch;
+    expect(patch?.body).toContain("**Replace it with**");
+    expect(patch?.body).toContain(rewritten);
+    // The before/after shows the copy, because on a page action it is the change.
+    expect(editor.comments[0]).toContain(`- Copy for it: "${rewritten}"`);
+  });
+
+  it("refuses a rewrite that writes about the edit instead of writing it", async () => {
+    const { result, editor } = await pageRun({
+      pageEdits: [
+        {
+          url: COMPARE,
+          proposedText: "Mention that Amplitude now schedules experiment stops on this page.",
+        },
+      ],
+    });
+
+    // The original copy stands: an instruction is not a page edit, and the same
+    // check that says so for the analyst says so for the rewrite.
+    expect(result.analysis.posthogRefs[0]?.proposedText).toBe(
+      alert.analysis.posthogRefs[0]?.proposedText,
     );
+    expect(editor.labelsOf()).toContain(REVIEW_LABEL.unconfirmed);
+    expect(editor.comments[0]).toContain("an instruction rather than the words to put on the page");
+  });
+
+  it("refuses a rewrite that restates what the page already says", async () => {
+    const { result, editor } = await pageRun({
+      pageEdits: [
+        {
+          url: COMPARE,
+          proposedText: "Amplitude cannot schedule an experiment to stop on a date you pick.",
+        },
+      ],
+    });
+
+    expect(result.analysis.posthogRefs[0]?.proposedText).toBe(
+      alert.analysis.posthogRefs[0]?.proposedText,
+    );
+    expect(editor.labelsOf()).toContain(REVIEW_LABEL.unconfirmed);
+    expect(editor.comments[0]).toContain("what the page already says");
+  });
+
+  it("refuses copy for a docs page, which is evidence rather than a target", async () => {
+    const cited = {
+      url: LIFECYCLE,
+      claim: "There is no end date field on an experiment",
+    };
+    const { result } = await run({
+      targets: [{ action: pageAction, issue, labels: openedLabels }],
+      alert: {
+        ...alert,
+        analysis: {
+          ...alert.analysis,
+          actions: [pageAction],
+          // Cited as evidence, which is what a docs page is for. Being cited is
+          // not permission to edit it.
+          posthogRefs: [...alert.analysis.posthogRefs, cited],
+        },
+      },
+      reviewer: fakeReviewer("revise"),
+      writer: fakeWriter({ pageEdits: [{ url: LIFECYCLE, proposedText: rewritten }] }),
+    });
+
+    expect(result.notes.join(" ")).toContain("not a page marketing writes");
+    expect(result.analysis.posthogRefs.find((ref) => ref.url === LIFECYCLE)).toEqual(cited);
   });
 });
 

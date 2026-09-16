@@ -124,6 +124,43 @@ contradicted, `update_pages` is left out and the other actions carry the alert.
 It is also not the fallback for a gap the docs could not settle: an unverified
 gap is an open question, not a page edit.
 
+## A page edit carries the words to put on the page
+
+"Update the pricing section to mention scheduled stops" is not a page edit. It
+is a request for one, and it hands whoever opens the issue the reading of the
+page, the writing, and the guess at what voice the page is in. The analyst had
+the page open. The analyst writes the copy.
+
+So every `update_pages` action carries `proposed_text` on the ref for the page
+it fixes: the exact words that should sit there, ready to paste. `claim` is
+what the page says today, quoted and checked against the stored copy;
+`proposed_text` is what should say it instead.
+
+- Good: "Amplitude schedules an experiment to stop on a date you pick. PostHog
+  experiments stop when you stop them, so a fixed-length test needs someone to
+  end it."
+- Bad: "Mention that Amplitude now schedules stops."
+- Also bad: "This section should say Amplitude schedules stops now."
+
+The second and third are notes about the edit. The first is the edit. It also
+matches the page it goes on – same voice, same sentence length, same names for
+things – because copy that reads as if it came from somewhere else is a rewrite
+somebody has to rewrite. `suggested_edit` stays the one line saying what is
+wrong, which the issue prints under the rewrite as the reason for it.
+
+[`rewriteProblem`](../src/analysis/rewrite.ts) is what tells the two apart, and
+[`checkPageEdit`](../src/analysis/evidence.ts) will not file an action whose
+rewrite fails it. It rejects copy that opens on an editing verb, copy that
+talks about "this page" or what the copy "should say", copy too short to stand
+where a paragraph stands, marketing filler the style guide rules out, and copy
+the page already carries. A failed check drops the action into an open question
+like every other failed check: there is no writing the copy for a page we could
+not read.
+
+The GitHub issue prints the pair – **On the page today**, then **Replace it
+with** – so the edit is a decision rather than an assignment. Slack shows the
+first 200 characters under the page name and leaves the rest to the issue.
+
 ## And only about the thing that shipped
 
 All three reasons are about *this* launch. A launch is not a licence to fix the
@@ -168,19 +205,30 @@ action to be revised. The rewrite that follows is copy that lands in a GitHub
 issue and in Slack, so it follows everything above, and the rules it can break
 are caught the same way the analyst's are.
 
-`STYLE_RULES` in [`src/analysis/prompt.ts`](../src/analysis/prompt.ts) is the one
-statement of the handbook that every prompt this bot sends carries – the
-analysis, the review, and the rewrite. The rewrite prompt adds the sentence shape
-on top of it, because a revised action is still read in Slack as one sentence
-leading with the work.
+`STYLE_RULES` and `PAGE_REWRITE_RULES` in
+[`src/analysis/prompt.ts`](../src/analysis/prompt.ts) are the one statement each
+of the handbook and of the rule above, and every prompt that needs them carries
+them: the analysis, and the rewrite the review pass asks for. Stating them once
+is the point. A reviewer that says the copy on a compare page is wrong sends the
+rewrite to a model that has to be held to the same bar the analyst was, or the
+review becomes a way around it.
+
+For an `update_pages` action the rewrite **is** the copy, so the review's writer
+gets `PAGE_REWRITE_RULES`, the current copy, and an excerpt of the page it is
+rewriting – its voice has to come from somewhere. It writes `proposed_text` back,
+and [`rewriteProblem`](../src/analysis/rewrite.ts) judges it through the same
+`checkPageEdit` the analyst's copy went through. An instruction, a note about the
+page, or a restatement of what the page already says is refused, the original
+issue stands, and the label is `review:unconfirmed`.
 
 What is not left to the prompt: `mergeRevision` in
 [`src/review/schema.ts`](../src/review/schema.ts) drops a `feature` the product
 catalog does not know rather than letting a made-up product name reach a title or
 a label, refuses a type change that is not a swap between the two product
-actions, refuses an impact change the reviewer did not ask for, and drops a
-suggested edit for a page the analysis never cited or that marketing does not
-write. Then `checkAction` in
+actions, refuses an impact change the reviewer did not ask for, and drops copy
+for a page the analysis never cited or that marketing does not write. It does not
+judge whether the copy is copy: that is `rewriteProblem`'s job, so there is one
+judge of it rather than two that can disagree. Then `checkAction` in
 [`src/analysis/analyze.ts`](../src/analysis/analyze.ts) runs the whole chain
 again, `sanitizeCopy` included, so a rewrite reaches an issue only if it would
 have been allowed to be written that way in the first place.
@@ -205,6 +253,11 @@ have been allowed to be written that way in the first place.
 - [`enforceUpdatePagesTopic`](../src/analysis/relevance.ts) runs next and drops
   a page edit that is not about the launch. It only ever removes an
   `update_pages` action: the other three types are left exactly as written.
+- [`rewriteProblem`](../src/analysis/rewrite.ts) decides whether an
+  `update_pages` action came back with the copy for the page or with another
+  instruction, and `checkPageEdit` in
+  [`src/analysis/evidence.ts`](../src/analysis/evidence.ts) drops the ones that
+  did not.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.

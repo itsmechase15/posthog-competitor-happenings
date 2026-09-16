@@ -139,10 +139,49 @@ function supportingRefs(alert: AnalyzedItem, action: RecommendedAction): PostHog
   });
 }
 
+/** Multi-line copy as a blockquote, so a paragraph survives with its breaks. */
+function quoteBlock(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `> ${line.trim()}`)
+    .join("\n>\n");
+}
+
 /**
- * The cited pages. Marketing gets the pages to edit with the suggested edits,
- * because editing the page is the job; product gets the docs that speak to the
- * action it is being asked to take, and nothing else.
+ * One page to edit: what it says now, and the words to put there instead.
+ *
+ * The rewrite is the point of the section for an `update_pages` issue. Whoever
+ * opens one should be able to read the two blocks, agree or disagree, and
+ * paste – so the proposed copy is quoted whole rather than summarized, and the
+ * one-line suggested edit sits under it as the reason rather than above it as
+ * the ask. A ref with no rewrite on it keeps the old shape: it is either a
+ * second page the action mentioned in passing, or a `new_compare_page`, which
+ * has no current copy to replace.
+ */
+function pageToEdit(ref: PostHogRef): string {
+  if (!ref.proposedText) {
+    const lines = [`### ${ref.url}`, `- **Claim today:** ${ref.claim}`];
+    if (ref.suggestedEdit) lines.push(`- **Suggested edit:** ${ref.suggestedEdit}`);
+    return lines.join("\n");
+  }
+
+  const lines = [
+    `### ${ref.url}`,
+    "",
+    "**On the page today**",
+    quoteBlock(ref.claim),
+    "",
+    "**Replace it with**",
+    quoteBlock(ref.proposedText),
+  ];
+  if (ref.suggestedEdit) lines.push("", `**Why**${SPACED_EN_DASH}${ref.suggestedEdit}`);
+  return lines.join("\n");
+}
+
+/**
+ * The cited pages. Marketing gets the pages to edit with the copy to put on
+ * them, because editing the page is the job; product gets the docs that speak
+ * to the action it is being asked to take, and nothing else.
  */
 function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   const heading = isPageAction(action)
@@ -158,16 +197,17 @@ function pagesSection(alert: AnalyzedItem, action: RecommendedAction): string {
   }
 
   const pages = refs
-    .map((ref) => {
-      const lines = [`### ${ref.url}`, `- **Claim today:** ${ref.claim}`];
-      if (ref.suggestedEdit && isPageAction(action)) {
-        lines.push(`- **Suggested edit:** ${ref.suggestedEdit}`);
-      }
-      return lines.join("\n");
-    })
+    .map((ref) =>
+      isPageAction(action) ? pageToEdit(ref) : `### ${ref.url}\n- **Claim today:** ${ref.claim}`,
+    )
     .join("\n\n");
 
-  return `${heading}\n${pages}`;
+  const note =
+    action.type === "update_pages" && refs.every((ref) => !ref.proposedText)
+      ? "\n\n_No exact replacement copy came back for this edit, so the wording is still to write._"
+      : "";
+
+  return `${heading}\n${pages}${note}`;
 }
 
 /** Enough to name the pages, short enough that nobody scrolls past it. */

@@ -48,7 +48,8 @@ things a week and the docs lag, so an analyst that cannot tell those apart will
 either invent a gap or wave one away.
 
 Pages that mention Mixpanel or Amplitude still have their claims extracted, for
-the URL + claim + suggested edit a page action needs.
+the URL + claim a page action needs. The rewrite that goes with it is written
+against the stored page, which is the same copy the check runs on.
 
 The catalog is now a route into the corpus rather than the boundary of it. It
 does three jobs: naming (a model writes "A/B testing", an issue has to say
@@ -125,20 +126,25 @@ corpus and returns one of three verdicts:
   they opened, and the issue gets `review:agreed`. The body is untouched
 - **revise** – there is real work here and part of what was written is wrong in
   a fixable way. The analyst's own model rewrites that one action, text-only,
-  from the reviewer's list of changes and the pages either model read. The
-  rewrite may change the detail, the gap, the evidence page, the quote, and the
-  feature; the impact only when the reviewer said the label is wrong; the type
-  only between `consider_building` and `consider_enhancing`, never into
-  `update_pages` or `new_compare_page`. Then the whole evidence chain runs again
-  on the result – `verifyAgainstDocs`, `enforcePageTargets`,
-  `enforceUpdatePagesTopic`, `gateActions`, `enforceActionLead` – with coverage
-  counted as the analyst's reads plus the reviewer's. A rewrite that survives is
-  PATCHed onto the issue with a recomputed title and labels and a before/after
-  comment, and gets `review:revised`. One that does not is thrown away: the
-  original issue stands, the comment says what the reviewer wanted and why the
-  rewrite could not be confirmed, and the label is `review:unconfirmed`. There is
-  no second attempt, because a claim we cannot check cannot be corrected without
-  inventing the correction
+  from the reviewer's list of changes and the pages either model read. On a
+  product action the rewrite may change the detail, the gap, the evidence page,
+  the quote, and the feature; on an `update_pages` action it rewrites
+  `proposed_text`, the copy that goes on the page, and gets an excerpt of that
+  page so the voice comes from the page rather than from the model. Impact moves
+  only when the reviewer said the label is wrong, and the type only between
+  `consider_building` and `consider_enhancing`, never into `update_pages` or
+  `new_compare_page`. Then the whole evidence chain runs again on the result –
+  `verifyAgainstDocs`, `enforcePageTargets`, `enforceUpdatePagesTopic`,
+  `gateActions`, `enforceActionLead` – with coverage counted as the analyst's
+  reads plus the reviewer's. That chain includes `rewriteProblem`, so a rewritten
+  page edit has to be copy rather than a note about copy on exactly the terms the
+  analyst's did. A rewrite that survives is PATCHed onto the issue with a
+  recomputed title and labels and a before/after comment, and gets
+  `review:revised`. One that does not is thrown away: the original issue stands,
+  the comment says what the reviewer wanted and why the rewrite could not be
+  confirmed, and the label is `review:unconfirmed`. There is no second attempt,
+  because a claim we cannot check cannot be corrected without inventing the
+  correction
 - **drop** – PostHog already does this, and the reviewer can name the pages that
   show it. The issue is closed as not planned with `review:dropped`, and the
   action is left out of the Slack alert
@@ -215,6 +221,19 @@ what the alert would say and the log shows what the issue edits would have been.
   `enforceUpdatePagesTopic` in [`src/analysis/relevance.ts`](./src/analysis/relevance.ts)
   drops a page action whose detail and suggested edit never touch the launch's
   own vocabulary, which can leave an alert with no action, and that is fine
+- Update pages carries the copy, not the instruction. The ref for the page it
+  fixes holds `claim`, the words on the page today, and `proposed_text`, the
+  exact words that should replace them, written in that page's own voice and
+  ready to paste. "Update the pricing section to mention scheduled stops" is a
+  job with the writing left in it, so `checkPageEdit` in
+  [`src/analysis/evidence.ts`](./src/analysis/evidence.ts) will not file an
+  action without a rewrite, and `rewriteProblem` in
+  [`src/analysis/rewrite.ts`](./src/analysis/rewrite.ts) rejects one that opens
+  on an editing verb, talks about "this page" or what the copy "should say",
+  is too short to stand where a paragraph stands, uses marketing filler the
+  style guide rules out, or repeats what the page already carries. The issue
+  prints **On the page today** and **Replace it with** as a pair; Slack shows
+  the first 200 characters under the page it goes on
 - Update pages and new compare page only ever target a page marketing writes:
   a compare page, a product marketing page, a blog post, pricing. Never a
   `/docs/` page. The docs are the evidence an action is checked against, and a
@@ -260,11 +279,13 @@ One short, pretty message per new signal, in this order and nothing else:
    that action's own issue ("Access GitHub issue #12"). No single issue link
    stands for the whole alert. That sentence leads with the work: the change to
    make for consider enhancing and consider building, the page and the update
-   for update pages and new compare page
+   for update pages and new compare page. An update pages action adds one
+   quoted line under that sentence: the start of the exact new copy, named for
+   the page it goes on, with the rest in the issue
 6. Small footer – competitor · source · model · source link
 
-PostHog page citations, suggested edits, and open questions are not in Slack.
-They live in the issue.
+PostHog page citations, one-line suggested edits, and open questions are not in
+Slack. They live in the issue, and so does the whole rewrite.
 
 ### GitHub issues
 Moved into the daily flow from Phase 2, because Slack got short and the detail
@@ -279,7 +300,8 @@ Title is competitor + feature + the action. Each body is scoped to its own
 action: that action in full, the summary, key points, the whole impact scale
 with each level's meaning next to it, open questions,
 source links, and the feature image. Marketing's issues carry the PostHog pages
-to update (url, claim, suggested edit); product's carry only the docs that back
+to update (url, the copy on the page today, the exact copy to replace it with,
+and the one line saying why); product's carry only the docs that back
 that action, without the edits or the compare-page copy. Neither lists the
 sibling actions: each one is its own issue. Labelled by competitor, source,
 impact, action, owner, and the PostHog product when the action names one. Uses the

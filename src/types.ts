@@ -79,8 +79,20 @@ export interface StoredItem extends CandidateItem {
 
 export interface PostHogRef {
   url: string;
+  /** The copy on the page today, quoted. Checked against the stored page. */
   claim: string;
+  /** What should change, in one line. An instruction, not the copy itself. */
   suggestedEdit?: string;
+  /**
+   * The words to put on the page, exactly as they should read there.
+   *
+   * Required on the page an `update_pages` action fixes, because "update the
+   * pricing section to mention X" is a job someone still has to do the writing
+   * for, and the analyst has the page open and we do not. See
+   * `src/analysis/rewrite.ts` for what makes text a rewrite rather than an
+   * instruction about one.
+   */
+  proposedText?: string;
 }
 
 export interface Analysis {

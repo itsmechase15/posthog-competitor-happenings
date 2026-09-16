@@ -2,9 +2,19 @@ import { FALLBACK_MODEL } from "../analysis/fallback.js";
 import { COMPETITORS } from "../config.js";
 import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
 import { entryUrl } from "../sources/link.js";
-import type { ActionIssue, Alert, IssueRef, RecommendedAction, SourceId } from "../types.js";
+import { rewriteForAction } from "../analysis/rewrite.js";
+import type {
+  ActionIssue,
+  Alert,
+  IssueRef,
+  PostHogRef,
+  RecommendedAction,
+  SourceId,
+} from "../types.js";
 import {
+  collapseWhitespace,
   firstSentence,
+  pageNameFromUrl,
   sanitizeCopy,
   sentences,
   SPACED_EN_DASH,
@@ -73,6 +83,11 @@ const MAX_POINTS = 4;
  */
 export const MAX_ACTION_CHARS = 220;
 const MAX_ACTIONS = 3;
+/**
+ * How much of an exact rewrite Slack shows. Long enough to judge the voice and
+ * the claim, short enough that an alert stays an alert: the issue has the rest.
+ */
+export const MAX_REWRITE_CHARS = 200;
 
 /**
  * Slack's mrkdwn treats these as control characters inside text nodes. Every
@@ -142,14 +157,36 @@ export function detailPoints(alert: Alert): string[] {
  * product page when we know one. A feature we do not recognize stays plain
  * text rather than pointing at a guessed URL.
  */
-export function actionSectionText(action: RecommendedAction, issue: IssueRef | null): string {
+export function actionSectionText(
+  action: RecommendedAction,
+  issue: IssueRef | null,
+  rewrite: PostHogRef | null = null,
+): string {
   const { label, feature } = actionTitleParts(action);
   const title = !feature
     ? escape(label)
     : `${escape(label)} ${feature.url ? link(feature.url, feature.label) : escape(feature.label)}`;
   const lines = [`*${title}*`, escape(firstSentence(action.detail, MAX_ACTION_CHARS))];
+  const preview = rewritePreview(rewrite);
+  if (preview) lines.push(preview);
   if (issue) lines.push(link(issue.url, issueLinkLabel(issue)));
   return lines.join("\n");
+}
+
+/**
+ * The first words of the rewrite, under the page it goes on.
+ *
+ * A page edit read in Slack is a decision about copy, so seeing the copy is
+ * what makes the decision possible before anyone opens the issue. It is a
+ * preview and says so: Slack gets a line, the issue carries the whole thing
+ * next to what the page says today, which is the pair you actually edit from.
+ */
+export function rewritePreview(ref: PostHogRef | null): string | null {
+  if (!ref?.proposedText) return null;
+  const copy = collapseWhitespace(ref.proposedText);
+  const shown = truncate(copy, MAX_REWRITE_CHARS);
+  const tail = shown.length < copy.length ? " (full copy in the issue)" : "";
+  return `> ${escape(`New copy for ${pageNameFromUrl(ref.url)}: "${shown}"`)}${tail}`;
 }
 
 /**
@@ -259,7 +296,11 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   blocks.push(section(`*${ACTION_HEADING}*`));
   if (entries.length > 0) {
     for (const entry of entries) {
-      blocks.push(section(actionSectionText(entry.action, entry.issue)));
+      blocks.push(
+        section(
+          actionSectionText(entry.action, entry.issue, rewriteForAction(analysis, entry.action)),
+        ),
+      );
     }
   } else {
     blocks.push(section(noActionSectionText(alert)));

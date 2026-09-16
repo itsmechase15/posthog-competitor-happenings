@@ -7,7 +7,7 @@ import {
   quoteAppearsOn,
   type CoverageContext,
 } from "../src/analysis/evidence.js";
-import type { Analysis, RecommendedAction } from "../src/types.js";
+import type { Analysis, PostHogRef, RecommendedAction } from "../src/types.js";
 import { corpus, EMPTY_CORPUS } from "./helpers.js";
 
 /**
@@ -276,7 +276,11 @@ describe("gateActions", () => {
       detail: "On the Mixpanel compare page, say Mixpanel now ships session replay.",
     };
 
-    it("lets through an edit whose page and quoted copy are both real", () => {
+    /** The rewrite every update_pages action has to carry to be filed. */
+    const rewrite =
+      "Mixpanel records sessions in their own product. PostHog session replay is included on every plan, and you can watch a recording next to the events it produced.";
+
+    it("lets through an edit whose page, quoted copy, and rewrite are all real", () => {
       const result = gateActions(
         analysis({
           actions: [edit],
@@ -285,6 +289,7 @@ describe("gateActions", () => {
               url: "https://posthog.com/compare/mixpanel-vs-posthog",
               claim: "Mixpanel has no session replay of its own",
               suggestedEdit: "Say they now ship it.",
+              proposedText: rewrite,
             },
           ],
         }),
@@ -325,12 +330,115 @@ describe("gateActions", () => {
               url: "https://posthog.com/compare/mixpanel-vs-posthog",
               claim: "Mixpanel cannot record a single session anywhere in their product",
               suggestedEdit: "Say they now ship it.",
+              proposedText: rewrite,
             },
           ],
         }),
         context(),
       );
       expect(result.blocked[0]?.reason).toContain("may already say something else");
+    });
+
+    /**
+     * The rule this whole gate exists for: an update_pages issue hands over
+     * the words, not the writing. A one-line instruction is the reason for the
+     * edit, and on its own it is a job with no copy in it.
+     */
+    describe("the exact rewrite", () => {
+      const withRef = (ref: Partial<PostHogRef>) =>
+        analysis({
+          actions: [edit],
+          posthogRefs: [
+            {
+              url: "https://posthog.com/compare/mixpanel-vs-posthog",
+              claim: "Mixpanel has no session replay of its own",
+              suggestedEdit: "Say they now ship it.",
+              ...ref,
+            },
+          ],
+        });
+
+      it("blocks an edit that says what to change but not what to write", () => {
+        const result = gateActions(withRef({}), context());
+        expect(result.blocked[0]?.reason).toContain("not the words to put there");
+      });
+
+      it("blocks a rewrite that is another instruction wearing the field's name", () => {
+        const result = gateActions(
+          withRef({ proposedText: "Mention that Mixpanel now records sessions of its own." }),
+          context(),
+        );
+        expect(result.blocked[0]?.reason).toContain("an instruction rather than the words");
+      });
+
+      it("blocks a rewrite that talks about the page instead of standing on it", () => {
+        const result = gateActions(
+          withRef({
+            proposedText:
+              "This section should say that Mixpanel records sessions, which our copy currently denies.",
+          }),
+          context(),
+        );
+        expect(result.blocked[0]?.reason).toContain("describes the edit rather than being it");
+      });
+
+      it("blocks a fragment nobody could paste as the replacement", () => {
+        const result = gateActions(withRef({ proposedText: "Mixpanel has replay." }), context());
+        expect(result.blocked[0]?.reason).toContain("too short");
+      });
+
+      it("blocks copy written in the voice PostHog's style guide rules out", () => {
+        const result = gateActions(
+          withRef({
+            proposedText:
+              "PostHog gives you a seamless, best-in-class replay experience that unlocks insight across your whole funnel.",
+          }),
+          context(),
+        );
+        expect(result.blocked[0]?.reason).toContain("marketing filler");
+      });
+
+      it("blocks a rewrite that is the copy already on the page", () => {
+        const result = gateActions(
+          withRef({
+            proposedText:
+              "PostHog is the open-source alternative to Mixpanel. Mixpanel has no session replay of its own.",
+          }),
+          context(),
+        );
+        expect(result.blocked[0]?.reason).toContain("what the page already says");
+      });
+
+      it("turns a missing rewrite into an open question rather than a silent drop", () => {
+        const result = gateActions(withRef({}), context());
+        expect(result.analysis.actions).toEqual([]);
+        expect(result.analysis.openQuestions[0]).toContain("not the words to put there");
+      });
+
+      it("takes the rewrite off the page whose current copy checked out", () => {
+        // One ref quotes copy that is gone, the other quotes copy that is
+        // there. The rewrite has to be on the second one to count.
+        const result = gateActions(
+          analysis({
+            actions: [edit],
+            posthogRefs: [
+              {
+                url: "https://posthog.com/compare/mixpanel-vs-posthog",
+                claim: "Mixpanel cannot record a session anywhere in their product",
+                suggestedEdit: "Say they now ship it.",
+                proposedText: rewrite,
+              },
+              {
+                url: "https://posthog.com/experiments",
+                claim: "Run A/B tests and read the result without leaving PostHog",
+                suggestedEdit: "Say they now ship it.",
+              },
+            ],
+          }),
+          context(),
+        );
+        expect(result.blocked[0]?.reason).toContain("not the words to put there");
+      });
     });
   });
 
