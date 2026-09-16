@@ -6,6 +6,7 @@ import { launchBrowser } from "../src/media/browser.js";
 import {
   captureEdit,
   stageExpression,
+  VIEWPORT,
   type StageInput,
   type StageOutcome,
 } from "../src/media/livePage.js";
@@ -85,6 +86,9 @@ withBrowser("finding the line on the live page and putting the copy in", () => {
   const targetText = (): Promise<string> =>
     page.evaluate(() => document.querySelector("#target")?.textContent ?? "");
 
+  /** Every run of copy the after shot marks as the recommendation. */
+  const marks = () => page.locator("[data-happenings-highlight]");
+
   it("puts the copy where the quoted line was, and leaves the rest of the paragraph", async () => {
     await load();
     expect((await stage(page)).status).toBe("ok");
@@ -146,6 +150,60 @@ withBrowser("finding the line on the live page and putting the copy in", () => {
     );
   });
 
+  /**
+   * The mark is the whole reason the after shot is readable at thumbnail size,
+   * so it is checked on both paths: what the copy replaced, and what it was
+   * added next to. Nothing but the proposed copy is allowed inside one.
+   */
+  it("highlights the copy it swapped in, and nothing that was already there", async () => {
+    await load();
+    await stage(page);
+    expect(await marks().count()).toBe(0);
+
+    await stage(page, { action: "apply" });
+    expect(await marks().count()).toBe(1);
+    expect(await marks().innerText()).toBe(PROPOSED);
+    expect(await targetText()).toContain("Experiments run on your own events.");
+    expect(await page.locator("#target a").count()).toBe(1);
+  });
+
+  it("highlights inserted copy, one mark per paragraph of it", async () => {
+    await load();
+    const copy = `${CLAIM} ${PROPOSED}\nPostHog will not stop one for you.`;
+    await stage(page, { mode: "insert", proposedText: copy });
+    await stage(page, { action: "apply", mode: "insert", proposedText: copy });
+
+    expect(await marks().count()).toBe(2);
+    for (const mark of await marks().all()) {
+      expect(await mark.evaluate((node) => node.tagName)).toBe("MARK");
+      expect(
+        await mark.evaluate((node) => node.closest("[data-happenings-inserted]") !== null),
+      ).toBe(true);
+    }
+    // The line the copy was added next to is not the recommendation, so it
+    // keeps the page's own styling.
+    expect(await targetText()).toContain(CLAIM);
+    const edited = page.locator("[data-happenings-edit]").first();
+    expect(await edited.locator("[data-happenings-highlight]").count()).toBe(0);
+  });
+
+  /** The page's own `mark` styling must not be able to turn the mark off. */
+  it("keeps the highlight visible on a page that styles mark for itself", async () => {
+    await load(
+      MARKETING_PAGE.replace(
+        "</style>",
+        "mark { background: transparent !important; color: inherit !important; }</style>",
+      ),
+    );
+    await stage(page);
+    await stage(page, { action: "apply" });
+
+    const background = await marks().evaluate(
+      (node) => window.getComputedStyle(node).backgroundColor,
+    );
+    expect(background).toBe("rgb(249, 189, 43)");
+  });
+
   it("says the line is missing when the page does not have it", async () => {
     await load();
     expect(
@@ -170,6 +228,7 @@ withBrowser("finding the line on the live page and putting the copy in", () => {
     expect(await targetText()).toBe(original);
     expect(await page.locator("[data-happenings-inserted]").count()).toBe(0);
     expect(await page.locator("[data-happenings-edit]").count()).toBe(0);
+    expect(await marks().count()).toBe(0);
   });
 
   it("will not apply an edit nothing located, and will not restore one nothing applied", async () => {
@@ -232,17 +291,62 @@ withBrowser("photographing the page before and after", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  const capture = () =>
+  const capture = (overrides: Partial<PostHogRef> = {}) =>
     captureEdit(
       // Planned without a stored page, so the line looked for is the ref's own
       // claim: the fixture server is not posthog.com and the corpus has never
       // heard of it.
       (browser as Browser),
-      planPageEdit(ref({ url: `${origin}/compare` }), undefined) as NonNullable<
+      planPageEdit(ref({ url: `${origin}/compare`, ...overrides }), undefined) as NonNullable<
         ReturnType<typeof planPageEdit>
       >,
       { userAgent: "posthog-competitor-happenings/0.1 (test)" },
     );
+
+  /** A PNG's own idea of how big it is, straight out of the IHDR chunk. */
+  const size = (png: Buffer): { width: number; height: number } => ({
+    width: png.readUInt32BE(16),
+    height: png.readUInt32BE(20),
+  });
+
+  /**
+   * How many pixels of the shot are the highlighter yellow.
+   *
+   * The point of the mark is that it is visible in the PNG, so the PNG is what
+   * is asked. Decoded in the same browser the shot was taken with rather than
+   * by adding an image library to a repo that reads changelogs.
+   */
+  const highlighted = async (png: Buffer): Promise<number> => {
+    const decoder = await (browser as Browser).newPage();
+    try {
+      return await decoder.evaluate(async (source: string) => {
+        const image = new Image();
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = reject;
+          image.src = source;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) return -1;
+        context.drawImage(image, 0, 0);
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+        let count = 0;
+        for (let at = 0; at < data.length; at += 4) {
+          const near = (value: number | undefined, wanted: number): boolean =>
+            value !== undefined && Math.abs(value - wanted) <= 6;
+          if (near(data[at], 0xf9) && near(data[at + 1], 0xbd) && near(data[at + 2], 0x2b)) {
+            count += 1;
+          }
+        }
+        return count;
+      }, `data:image/png;base64,${png.toString("base64")}`);
+    } finally {
+      await decoder.close().catch(() => undefined);
+    }
+  };
 
   it("comes back with two different pngs of the same page", async () => {
     status = 200;
@@ -256,6 +360,44 @@ withBrowser("photographing the page before and after", () => {
       expect(png.byteLength).toBeGreaterThan(1_000);
     }
     expect(result.before.equals(result.after)).toBe(false);
+  });
+
+  /**
+   * The mark is only worth anything if it survives as far as the file the
+   * issue embeds, so it is counted there: yellow in the after shot, none of it
+   * in the before.
+   */
+  it("puts the highlight in the after shot and leaves the before as the page reads", async () => {
+    status = 200;
+    body = MARKETING_PAGE;
+    const result = await capture();
+
+    expect(result.status).toBe("captured");
+    if (result.status !== "captured") return;
+    expect(await highlighted(result.before)).toBe(0);
+    expect(await highlighted(result.after)).toBeGreaterThan(1_000);
+  });
+
+  /**
+   * Copy that overran the window is re-shot in a taller one, and the pair is
+   * only a pair if both sides grew together. The mark has to come back with
+   * it: the second attempt puts the page back and stages the edit again.
+   */
+  it("keeps the highlight when the window grows for copy that overran it", async () => {
+    status = 200;
+    body = MARKETING_PAGE;
+    const long = Array.from(
+      { length: 100 },
+      () => "PostHog experiments stop when you stop them.",
+    ).join(" ");
+    const result = await capture({ proposedText: long });
+
+    expect(result.status).toBe("captured");
+    if (result.status !== "captured") return;
+    expect(size(result.after)).toEqual(size(result.before));
+    expect(size(result.after).height).toBeGreaterThan(VIEWPORT.height * 2);
+    expect(await highlighted(result.before)).toBe(0);
+    expect(await highlighted(result.after)).toBeGreaterThan(1_000);
   });
 
   it("says the line is missing when the live page has moved on", async () => {

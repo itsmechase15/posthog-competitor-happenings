@@ -12,6 +12,11 @@ import type { PageEditPlan } from "../types.js";
  * document, and the page is photographed again. Two PNGs of posthog.com as a
  * visitor sees it: sidebar, header, typography, everything.
  *
+ * The copy the second shot adds is highlighted, and only in the second shot.
+ * The two pictures are otherwise a page of prose next to the same page of
+ * prose, and a reader flicking between them should not have to hunt for the
+ * sentence that moved.
+ *
  * **Nothing is published by any of this.** The edit lives in one browser tab's
  * in-memory DOM for the second or two between the two screenshots, and the tab
  * is thrown away. No form is submitted, no request is made to posthog.com
@@ -134,6 +139,7 @@ export type StageOutcome =
 function stagePageEdit(input: StageInput): StageOutcome {
   const MARKER = "data-happenings-edit";
   const INSERTED = "data-happenings-inserted";
+  const HIGHLIGHT = "data-happenings-highlight";
   const BLOCKS = "p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, dd";
   /** How far down the window the edited paragraph is parked. */
   const SCROLL_FRACTION = 0.25;
@@ -242,10 +248,49 @@ function stagePageEdit(input: StageInput): StageOutcome {
   }
 
   /**
-   * Put the copy in. A replace swaps the quoted run and leaves the links and
-   * code around it alone; an insert leaves the line where it is and puts the
-   * new copy next to it. Extra paragraphs are shallow clones of the element
-   * they follow, so they inherit the page's own styling for a paragraph.
+   * One run of the proposed copy, marked so the after shot says which words
+   * are the recommendation.
+   *
+   * Without it the two shots differ by a sentence somewhere in a page of
+   * prose, and finding that sentence is work the reader should not have to do
+   * – least of all from the thumbnail an issue shows before it is clicked. A
+   * highlighter pen over the new copy is the one mark that reads at that size
+   * and still reads as the page underneath it.
+   *
+   * Every declaration is inline and `important`, because a site that styles
+   * `mark` for its own purposes would otherwise quietly undo this, and the
+   * spread is a box shadow rather than padding so a marked run occupies
+   * exactly the space the copy would have without it. That keeps the overflow
+   * measurement honest, and so keeps the pair framed the same way.
+   */
+  function highlight(text: string): HTMLElement {
+    const mark = document.createElement("mark");
+    mark.setAttribute(HIGHLIGHT, "");
+    mark.textContent = text;
+    const declarations: Array<[string, string]> = [
+      ["background-color", "#f9bd2b"],
+      ["color", "#151515"],
+      ["box-shadow", "0 0 0 3px #f9bd2b"],
+      ["border-radius", "2px"],
+      // A run that wraps gets the mark on every line of it rather than one
+      // box stretched behind the lot.
+      ["-webkit-box-decoration-break", "clone"],
+      ["box-decoration-break", "clone"],
+      ["text-decoration", "none"],
+    ];
+    for (const [property, value] of declarations) {
+      mark.style.setProperty(property, value, "important");
+    }
+    return mark;
+  }
+
+  /**
+   * Put the copy in, highlighted. A replace swaps the quoted run and leaves
+   * the links and code around it alone; an insert leaves the line where it is
+   * and puts the new copy next to it. Extra paragraphs are shallow clones of
+   * the element they follow, so they inherit the page's own styling for a
+   * paragraph. Every piece of new copy, on either path, goes in inside a
+   * {@link highlight} and nothing else does.
    */
   function applyEdit(element: HTMLElement): boolean {
     const copy = paragraphs();
@@ -259,13 +304,13 @@ function stagePageEdit(input: StageInput): StageOutcome {
       const range = rangeFor(element);
       if (!range) return false;
       range.deleteContents();
-      range.insertNode(document.createTextNode(copy[0]!));
+      range.insertNode(highlight(copy[0]!));
       rest = copy.slice(1);
     }
 
     for (const extra of rest) {
       const sibling = element.cloneNode(false) as HTMLElement;
-      sibling.textContent = extra;
+      sibling.appendChild(highlight(extra));
       sibling.setAttribute(INSERTED, "");
       anchor.after(sibling);
       anchor = sibling;

@@ -412,7 +412,7 @@ describe("the before and after in the issue body", () => {
    */
   it("says the after shot was staged in a browser and published nowhere", () => {
     expect(body).toContain(
-      "**After** \u2013 the same page with the proposed copy staged in a browser only. Nothing was published.",
+      "**After** \u2013 the same page with the proposed copy highlighted in yellow, staged in a browser only. Nothing was published.",
     );
   });
 

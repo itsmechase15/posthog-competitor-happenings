@@ -327,7 +327,10 @@ copy whole in a fence somebody pastes from. Every layer stands on its own.
 Taken off the live page, and publishing nothing. A headless browser opens it,
 shoots the window, puts the copy into that tab's own DOM, and shoots the window
 again from the same scroll offset; the tab is thrown away, no form is
-submitted, and the caption under the after shot says so. The line is found by
+submitted, and the caption under the after shot says so. The copy goes in
+highlighted, because two shots of the same page of prose leave the reader
+hunting for the sentence that moved, and the thumbnail is often all they see.
+The highlight is in the after shot only. The line is found by
 its text, folded to letters and digits the way the evidence gate folds it, in
 the deepest block that holds all of it, so a redesign does not break it and a
 table of contents cannot win against the prose. posthog.com hydrates after it

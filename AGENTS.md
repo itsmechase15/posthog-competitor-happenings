@@ -110,8 +110,10 @@ it.
  and a PNG of the same page with the proposed copy in it, taken by
  [`src/media/livePage.ts`](./src/media/livePage.ts): open the page in a
  headless browser, shoot it, put the copy into that tab's own DOM, shoot it
- again, throw the tab away. Nothing is submitted anywhere and the caption under
- the after shot says so. This replaced a card drawn from the corpus text, which
+ again, throw the tab away. The copy goes in inside a highlight, so the after
+ shot says which words are the recommendation and the before shot stays as the
+ page reads. Nothing is submitted anywhere and the caption under the after
+ shot says so. This replaced a card drawn from the corpus text, which
  read as a text mock of a page rather than the page – do not bring it back, as
  a fallback or otherwise. The corpus is still what the claim is *checked*
  against, and a claim the live page no longer has is a dropped pair and a line

@@ -296,7 +296,7 @@ export function planPageEdit(
     proposedText,
     highlightUrl: highlightUrl(ref.url, oldLine),
     beforeAlt: truncate(`${pageTitle} as it reads today, with the quoted line in place`, 140),
-    afterAlt: truncate(`${pageTitle} with the proposed copy in it: ${summary}`, 140),
+    afterAlt: truncate(`${pageTitle} with the proposed copy highlighted in it: ${summary}`, 140),
     beforePath: paths.before,
     afterPath: paths.after,
     capturedOn,
