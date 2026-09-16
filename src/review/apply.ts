@@ -337,7 +337,7 @@ async function revise(
 
   if (!checked.action) {
     return unconfirmed(
-      checked.notes[0] ?? "it did not survive the evidence checks, and no check said why",
+      checked.notes[0] ?? "the rewrite did not pass the checks the original was filed against",
     );
   }
 

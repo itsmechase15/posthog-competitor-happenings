@@ -103,6 +103,35 @@ action opens with the gap it puts the ask in front of it, and when a page
 action opens without naming a page it leads with the cited page and its
 suggested edit. It only reorders what the model already wrote.
 
+## Say which kind of nothing, and name the pages
+
+Recommending nothing is a normal answer and a useful one. What makes it useful
+is the specifics, so the answer is a verdict rather than a sentence: a kind that
+picks the title, one sentence that names the capability that shipped and what
+PostHog does about it, and the docs pages it rests on.
+
+- **None – PostHog already does this**, for a launch PostHog ships an answer
+  to. It carries one to three docs pages, each checked against the corpus like
+  any other quote.
+- **None – not a product gap**, for pricing, plans, company news, or something
+  PostHog chose not to build. The sentence says which.
+- **None – the gap could not be confirmed**, for a claim that failed a check.
+  It names the check, so a reader knows this is unsettled rather than answered.
+- **None – dropped on review**, in the reviewer's own words, with the pages it
+  read.
+- **None – not analyzed this run**, when there was no key and nobody looked.
+
+Generic copy in that slot is the failure this replaces. "Nothing here asks
+anything of PostHog" is true of most launches and tells a reader nothing: it
+names no capability, no page, and it reads like a bug. So the verdict is
+structured, [`renderNoAction`](../src/analysis/noAction.ts) is the only thing
+that renders it, and a test greps `src/` for the old lines and fails on a hit.
+
+"PostHog already does this" is a claim about the product, so it is held to the
+gap's own bar: the page is in the corpus, it is documentation, and the quote is
+on the stored copy. A verdict left with no page that passes is downgraded to
+"the gap could not be confirmed" naming the one that failed, never quietly kept.
+
 ## Only ask for a page edit when the page is wrong
 
 `update_pages` sends someone to edit PostHog's marketing, product marketing, or
@@ -261,6 +290,10 @@ have been allowed to be written that way in the first place.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.
+- [`src/analysis/noAction.ts`](../src/analysis/noAction.ts) is the one renderer
+  for an alert that recommends nothing. `gateActions` reads the verdict off
+  what it blocked, the reviewer's drops write their own, and Slack and the
+  closed issue both render the same title, sentence, and links.
 - [`src/review/`](../src/review/) reviews every action after its issue is open:
   `prompt.ts` states the bar for agreeing, revising, and dropping, `schema.ts`
   bounds what a rewrite may change, and `apply.ts` re-runs the checks above on
