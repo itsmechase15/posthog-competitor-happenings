@@ -189,7 +189,7 @@ async function reviewOne(
     notes.push(`review: agreed with a ${target.action.type} action`);
     await input.editor.comment(target.issue, agreedComment(outcome));
     await input.editor.update(target.issue, {
-      labels: withLabels(target.labels, REVIEW_LABEL.agreed),
+      labels: withLabels(target.labels, REVIEW_LABEL.agreed, REVIEW_PASS_DONE),
     });
     return keep(review);
   }
@@ -200,7 +200,7 @@ async function reviewOne(
     await input.editor.close(
       target.issue,
       "not_planned",
-      withLabels(target.labels, REVIEW_LABEL.dropped),
+      withLabels(target.labels, REVIEW_LABEL.dropped, REVIEW_PASS_DONE),
     );
     return { analysis, droppedReason: outcome.reason };
   }
@@ -229,7 +229,7 @@ async function revise(
     notes.push(`review: could not confirm a rewrite of a ${target.action.type} action (${why})`);
     await input.editor.comment(target.issue, unconfirmedComment(outcome, why));
     await input.editor.update(target.issue, {
-      labels: withLabels(target.labels, REVIEW_LABEL.unconfirmed),
+      labels: withLabels(target.labels, REVIEW_LABEL.unconfirmed, REVIEW_PASS_DONE),
     });
     return {
       analysis: alert.analysis,
@@ -311,6 +311,7 @@ async function revise(
     labels: withLabels(
       buildIssueLabels(revisedAlert, checked.action),
       REVIEW_LABEL.revised,
+      REVIEW_PASS_DONE,
     ),
   });
   await input.editor.comment(
@@ -372,9 +373,14 @@ export function rewriteDocs(
   return [...found, ...docs].slice(0, MAX_REWRITE_DOCS);
 }
 
-/** Labels the verdict leaves behind: what the issue had, its verdict, and the one-pass stamp. */
-export function withLabels(labels: string[], verdict: string): string[] {
-  return [...new Set([...labels, verdict, REVIEW_PASS_DONE])];
+/**
+ * The labels an outcome leaves behind: what the issue was opened with, plus what
+ * this outcome adds. Every verdict adds `REVIEW_PASS_DONE` alongside its own
+ * label, in one request. A skip adds only its own, because nobody reviewed it and
+ * a later run should be free to.
+ */
+export function withLabels(labels: string[], ...added: string[]): string[] {
+  return [...new Set([...labels, ...added])];
 }
 
 function pagesLine(outcome: ReviewOutcome, heading: string): string {

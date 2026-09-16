@@ -111,6 +111,66 @@ whose basis we cannot find without inventing one. Impact does not move for it:
 impact is about what the competitor shipped, not about what could be checked on
 PostHog's side.
 
+### Review every action once
+The gate above drops what it cannot check. It cannot catch the other failure: a
+recommendation whose evidence is real, whose quote is on the page, and which is
+still wrong about what PostHog ships – because the page it read was not the page
+that answers it, or because the gap sentence claims more than the quote carries.
+Only reading more of the docs catches that.
+
+So once an action's GitHub issue is open, a **different model** reads the same
+corpus and returns one of three verdicts:
+
+- **agree** – it stands. A comment says who reviewed it, why, and which pages
+  they opened, and the issue gets `review:agreed`. The body is untouched
+- **revise** – there is real work here and part of what was written is wrong in
+  a fixable way. The analyst's own model rewrites that one action, text-only,
+  from the reviewer's list of changes and the pages either model read. The
+  rewrite may change the detail, the gap, the evidence page, the quote, and the
+  feature; the impact only when the reviewer said the label is wrong; the type
+  only between `consider_building` and `consider_enhancing`, never into
+  `update_pages` or `new_compare_page`. Then the whole evidence chain runs again
+  on the result – `verifyAgainstDocs`, `enforcePageTargets`,
+  `enforceUpdatePagesTopic`, `gateActions`, `enforceActionLead` – with coverage
+  counted as the analyst's reads plus the reviewer's. A rewrite that survives is
+  PATCHed onto the issue with a recomputed title and labels and a before/after
+  comment, and gets `review:revised`. One that does not is thrown away: the
+  original issue stands, the comment says what the reviewer wanted and why the
+  rewrite could not be confirmed, and the label is `review:unconfirmed`. There is
+  no second attempt, because a claim we cannot check cannot be corrected without
+  inventing the correction
+- **drop** – PostHog already does this, and the reviewer can name the pages that
+  show it. The issue is closed as not planned with `review:dropped`, and the
+  action is left out of the Slack alert
+
+This is not the guess-then-fix pass the analyst deliberately does not have. That
+pass shows one model its own claim and asks it to check itself, which buys a
+better-argued guess. This is a different model, shown somebody else's claim, with
+the corpus underneath it, and the result re-checked by code rather than by
+another model, once. Take away any one of those and it is the forbidden pass.
+
+Where it sits matters as much as what it does. It runs **after** the issues are
+opened, so a verdict has somewhere to write itself and the whole exchange lives
+in the issue's own history, and **before** the Slack post, so a dropped action is
+simply absent from the message. Slack is never edited after it goes out. An alert
+whose every action was dropped shows **None** with the reason, which is already a
+normal outcome.
+
+It runs once per action, four ways over: the review is a function call after
+create rather than an `issues: opened` workflow, an edit never calls the
+reviewer, every verdict stamps the issue `review-pass:done` in the same PATCH
+that carries its own label and the entry point refuses an issue carrying it, and
+the verdict is stored on the analysis row as
+`analysis.issues[i].review = { verdict, model, at, reason }` so a retry of a post
+that failed finds it already done.
+
+Cost is one reviewer run per filed action and one rewrite per action that needed
+correcting. `REVIEW_MAX_PER_RUN` caps it at 12 for the whole run; past that an
+action is filed as written with `review:skipped`. A `REVIEW_MODEL` the Cursor SDK
+turns down lands in the same place: skipped, labelled, and the analyst's version
+filed. A dry run reviews and rewrites and writes nothing, so the payload shows
+what the alert would say and the log shows what the issue edits would have been.
+
 ### Analysis
 - Cursor SDK, model `claude-opus-5`
 - Impact `minor | notable | major` = **label only** (not a post gate – every new signal can Slack)
@@ -242,6 +302,9 @@ TypeScript on GitHub. Cron via GitHub Actions (~7am PT).
 - `CURSOR_API_KEY` (for Cursor SDK analysis)
 - `GITHUB_TOKEN` (free inside Actions; needs `issues: write`)
 - Optional: AgentMail API, `X_BEARER_TOKEN` if Actions cannot use other X access
+- Optional, all with defaults in [`src/config.ts`](./src/config.ts):
+  `REVIEW_MODEL` (`claude-fable-5-1`), `UPDATER_MODEL` (`CURSOR_MODEL`),
+  `REVIEW_MAX_PER_RUN` (12), and `SKIP_REVIEW` for a local run
 
 ## Taking it to PostHog marketing
 1. Prove it in a private channel, with a screenshot

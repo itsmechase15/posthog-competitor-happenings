@@ -92,6 +92,8 @@ export interface RunSummary {
   /** Analyses from an earlier run that failed to post and were tried again. */
   retried: number;
   issuesOpened: number;
+  /** Issues the reviewer closed as not planned, having read the docs behind them. */
+  issuesClosed: number;
   posted: number;
   notes: string[];
 }
@@ -170,7 +172,7 @@ async function prepareAlert(
   review: ReviewServices,
   analyzed: AnalyzedItem,
   context: RunContext,
-): Promise<Alert> {
+): Promise<PreparedAlert> {
   const image = await resolveFeatureImage(config, analyzed.item);
 
   const targets: ReviewTarget[] = [];
@@ -191,21 +193,31 @@ async function prepareAlert(
   });
   for (const note of reviewed.notes) log.info(note);
 
+  const opened = targets.filter((target) => target.issue !== null).length;
   const noneOpened = reviewed.issues.every((entry) => entry.issue === null);
+
   return {
-    ...analyzed,
-    analysis: reviewed.analysis,
-    image,
-    issues: reviewed.issues,
-    ...(noneOpened && config.dryRun
-      ? { issueNote: `GitHub issues not created${SPACED_EN_DASH}${issues.description}` }
-      : {}),
+    alert: {
+      ...analyzed,
+      analysis: reviewed.analysis,
+      image,
+      issues: reviewed.issues,
+      ...(noneOpened && config.dryRun
+        ? { issueNote: `GitHub issues not created${SPACED_EN_DASH}${issues.description}` }
+        : {}),
+    },
+    opened,
+    // An issue the reviewer closed was still opened, so the summary counts it in
+    // both columns rather than quietly losing it out of the first.
+    closed: opened - reviewed.issues.filter((entry) => entry.issue !== null).length,
   };
 }
 
-/** How many issues an alert actually left behind, for the run summary. */
-function openedCount(alert: Alert): number {
-  return alert.issues.filter((entry) => entry.issue !== null).length;
+interface PreparedAlert {
+  alert: Alert;
+  /** Issues actually opened, whether or not the review later closed one. */
+  opened: number;
+  closed: number;
 }
 
 /** Items with no date are kept: a missing date is not evidence of staleness. */
@@ -329,7 +341,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
-    const alert = await prepareAlert(config, issues, review, analyzed, context);
+    const { alert } = await prepareAlert(config, issues, review, analyzed, context);
     const message = buildSlackMessage(alert);
     const analysisId = await store.recordAnalysis({
       itemId: stored.id,
@@ -361,6 +373,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     analyzed: 0,
     retried: 0,
     issuesOpened: 0,
+    issuesClosed: 0,
     posted: 0,
     notes: [],
   };
@@ -400,8 +413,10 @@ export async function runCycle(config: Config): Promise<RunSummary> {
 
     const fresh: PendingPost[] = [];
     for (const entry of analyzed) {
-      const alert = await prepareAlert(config, issues, review, entry, corpus.context);
-      summary.issuesOpened += openedCount(alert);
+      const prepared = await prepareAlert(config, issues, review, entry, corpus.context);
+      const alert = prepared.alert;
+      summary.issuesOpened += prepared.opened;
+      summary.issuesClosed += prepared.closed;
       fresh.push({
         analysisId: await store.recordAnalysis({
           itemId: entry.item.id,

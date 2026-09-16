@@ -413,6 +413,68 @@ describe("parseStoredAlert", () => {
     expect(stored.analysis.actions).toEqual([]);
     expect(stored.issues).toEqual([]);
   });
+
+  /**
+   * The stored verdict is what stops a retry reviewing an action twice, so it
+   * has to survive the round trip through the row.
+   */
+  it("reads back the review each action got", () => {
+    const stored = parseStoredAlert({
+      ...valid,
+      issues: [
+        {
+          type: "update_pages",
+          issue: { url: "https://github.com/o/r/issues/3", number: 3 },
+          review: {
+            verdict: "revise",
+            model: "claude-fable-5-1",
+            at: "2026-01-16T09:00:00.000Z",
+            reason: "The quote does not carry the gap.",
+            applied: false,
+          },
+        },
+        {
+          type: "consider_enhancing",
+          issue: { url: "https://github.com/o/r/issues/4", number: 4 },
+        },
+      ],
+    });
+
+    expect(stored.issues[0]?.review).toEqual({
+      verdict: "revise",
+      model: "claude-fable-5-1",
+      at: new Date("2026-01-16T09:00:00.000Z"),
+      reason: "The quote does not carry the gap.",
+      applied: false,
+    });
+    // Absent, not null: an action nobody reviewed is one a later run may review.
+    expect(stored.issues[1]?.review).toBeUndefined();
+  });
+
+  it("reads a review the in-memory store never serialized to JSON", () => {
+    const at = new Date("2026-01-16T09:00:00.000Z");
+    const stored = parseStoredAlert({
+      ...valid,
+      issues: [
+        { type: "update_pages", issue: null, review: { verdict: "agree", model: "m", at, reason: "r" } },
+      ],
+    });
+    expect(stored.issues[0]?.review?.at).toEqual(at);
+  });
+
+  it("refuses a stored verdict that is not one of the three", () => {
+    expect(() =>
+      parseStoredAlert({
+        ...valid,
+        issues: [
+          {
+            type: "update_pages",
+            review: { verdict: "maybe", model: "m", at: "2026-01-16T09:00:00.000Z", reason: "r" },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
 });
 
 const item: StoredItem = {

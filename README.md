@@ -154,9 +154,10 @@ launch as a starting point, capped at four per docs section. The files the
 analyst opens are recorded from its own tool calls, not from its account of
 itself.
 
-There is no second model pass that reads the first reply and corrects it. A
-model shown its own unsupported claim argues for it better rather than going to
-check.
+There is no second pass that shows the analyst its own reply and asks it to
+correct itself. A model shown its own unsupported claim argues for it better
+rather than going to check. What happens instead, once the issues are open, is
+[a different model reviewing the same corpus](#the-review-pass).
 
 **Actions come in four types**, and the type decides who owns the issue:
 
@@ -223,6 +224,66 @@ all: it knows no PostHog product facts, so it cannot establish a gap and cannot
 establish that a page is wrong. It names the pages a person would start from,
 as open questions.
 
+### The review pass
+
+The checks above drop what they cannot verify. They cannot catch the other
+failure: a recommendation whose page is real, whose quote is on it, and which is
+still wrong about what PostHog ships, because the page it read was not the page
+that answers the question. Only reading more of the docs catches that.
+
+So once an action's issue is open, a second model – `REVIEW_MODEL`, which
+defaults to `claude-fable-5-1` – reads the same corpus with the same read-only
+tools and returns one of three verdicts:
+
+| Verdict | What happens to the issue | Label |
+| --- | --- | --- |
+| `agree` | A comment naming the reviewer, its reason, and the pages it opened. The body is untouched | `review:agreed` |
+| `revise` | The action is rewritten, re-checked, and PATCHed with a new title, body, labels, and a before/after comment | `review:revised` |
+| `revise`, rewrite not confirmed | Nothing changes. A comment says what the reviewer wanted and why the rewrite could not be checked | `review:unconfirmed` |
+| `drop` | Closed as not planned, with a comment naming the pages that show PostHog already does this. Left out of the Slack alert | `review:dropped` |
+| Over the run's budget, or a model id the SDK turns down | Nothing changes. The action is filed as the analyst wrote it | `review:skipped` |
+
+A `revise` is applied by `UPDATER_MODEL`, which defaults to the analyst's own
+model and runs text-only: no corpus, no tools, and only the pages either model
+already read in front of it. It may rewrite the detail, the gap, the evidence
+page, the quote, and the feature. It may move the impact only when the reviewer
+said the label is wrong, and switch the type only between `consider_building` and
+`consider_enhancing` – there is no path into `update_pages` or
+`new_compare_page`, because those send someone to edit posthog.com and that is a
+different recommendation, not a corrected one.
+
+Then the rewrite goes back through the whole chain above – the docs
+reconciliation, the page-target rule, the topic guard, the evidence gate, and the
+sentence shaper – with coverage counted as everything either model read. **A
+rewrite that fails any of it is thrown away and the original issue stands**,
+labelled `review:unconfirmed` for a person to settle. There is no second attempt.
+
+Why this is not the pass the last section rules out: it is a different model, it
+is shown somebody else's claim rather than its own, it has the corpus underneath
+it, the result is re-checked by code rather than by another model, and it happens
+once. Take away any one of those and it becomes a model marking its own homework.
+
+**It runs once per action, four ways over.** The review is a function call after
+the issue is created, not an `issues: opened` workflow – Actions' own
+`GITHUB_TOKEN` cannot re-trigger a workflow anyway. An edit never calls the
+reviewer. Every verdict stamps the issue `review-pass:done` in the same request
+that carries its own label, and the review refuses any issue already carrying it.
+And the verdict is stored on the analysis row, so a retry of a Slack post that
+failed finds the review already done.
+
+**Where it sits is the reason Slack is never edited.** The review runs after the
+issues are opened, so a verdict has somewhere to write itself and the whole
+exchange lives in the issue's history, and before the Slack post, so a dropped
+action is absent from the message rather than corrected in it. An alert whose
+every action was dropped shows **None** with the reason, which is already a
+normal outcome.
+
+One reviewer run per filed action, one rewrite per action that needed correcting,
+and `REVIEW_MAX_PER_RUN` caps the run at 12. A dry run reviews and rewrites and
+writes nothing: the payload shows the revised actions and omits the dropped ones,
+and the log says what the issue edits would have been. `SKIP_REVIEW=true` turns
+the pass off for a fast local run.
+
 ## Where the signals come from
 
 Four sources, all in [`src/sources/`](./src/sources). The first two need no key.
@@ -282,6 +343,29 @@ product the catalog recognizes. A feature name the catalog does not know gets
 no label, because a repo full of one-off labels nobody queries is worse than
 none. A label the repo has never seen makes GitHub answer 422, so the app
 retries once without labels rather than losing the issue.
+
+Then [the review](#the-review-pass) adds its verdict: `review:agreed`,
+`review:revised`, `review:unconfirmed`, `review:dropped`, or `review:skipped`,
+plus `review-pass:done` on every one of them. So a filed action reads as, in
+full:
+
+```
+competitor-happenings, amplitude, source:changelog, impact:notable,
+action:consider-enhancing, owner:product, team:experiments,
+product:experiments, review:agreed, review-pass:done
+```
+
+and one the reviewer rewrote differs only in the last two:
+
+```
+… product:experiments, review:revised, review-pass:done
+```
+
+Both labels go on in the same request as the rest of the verdict, so an issue
+never sits reviewed and unlabelled. If that request is refused for a label the
+repo has never seen, the rewritten title and body still land and the comment
+still says what happened – the labels are the part that goes missing, not the
+record.
 
 Inside Actions the built-in `GITHUB_TOKEN` is enough, with `issues: write`. No
 new secret. A failed issue never fails the run: that action's block goes out
@@ -355,7 +439,7 @@ it for a day microlink turns us down.
 ## How it works
 
 [`.github/workflows/daily.yml`](./.github/workflows/daily.yml) runs the bot
-every morning. One run does 7 steps:
+every morning. One run does 8 steps:
 
 1. **Refresh the docs corpus.** Discover what PostHog publishes from the
    sitemap, `llms.txt`, the links held pages carry, and the catalog; read what
@@ -375,7 +459,11 @@ every morning. One run does 7 steps:
    per recommended action. Both are stored alongside the verdict, so a retry
    re-posts the same picture and links the same issues instead of opening a
    second set.
-7. **Post.** One Block Kit message per item, then `analyses.slack_posted_at` is
+7. **Review what was filed.** A second model reads the same corpus and says
+   agree, revise, or drop about each action, once. A revise is rewritten and
+   re-checked by code; a drop closes its issue and leaves the action out of the
+   message below. See [The review pass](#the-review-pass).
+8. **Post.** One Block Kit message per item, then `analyses.slack_posted_at` is
    stamped so a retry cannot double-post. A post that fails is left unstamped
    and the next run picks it up again for up to three days. An item is only
    ever deduped once, so without that a Slack blip would lose the message for
@@ -406,9 +494,10 @@ that one posts as normal.
 | `src/analysis/evidence.ts` | The checks an action survives before anyone is asked to do it. |
 | `src/analysis/analyst.ts` | The one analyst run, and its read-only tools. |
 | `src/analysis/` | The prompt, the reply schema, and the three guards. |
+| `src/review/` | The review pass: the reviewer, the writer that applies a revise, and the code that decides what reaches the issue. |
 | `src/teams.ts` | Routes an action to PostHog's small teams. |
 | `src/media/image.ts` | The feature image chain. |
-| `src/github/issue.ts` | One issue draft per action, with its labels. |
+| `src/github/issue.ts` | One issue draft per action, with its labels, and the editor a verdict writes through. |
 | `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
@@ -652,6 +741,10 @@ And the tuning, which is right by default:
 | `FORCE_ANALYZE` | `false` | Analyze the first-run backlog instead of recording it. Rejected unless `DRY_RUN=true` |
 | `CURSOR_MODEL` | `claude-opus-5` | Model id passed to the Cursor SDK |
 | `CURSOR_RUNTIME` | `local` | `local` runs the agent in-process; `cloud` uses a no-repo cloud agent |
+| `REVIEW_MODEL` | `claude-fable-5-1` | The model that [reviews every filed action](#the-review-pass). One the SDK turns down skips the review and labels the issue `review:skipped` |
+| `UPDATER_MODEL` | `CURSOR_MODEL` | The model that applies a `revise`, text-only |
+| `REVIEW_MAX_PER_RUN` | `12` | Reviews allowed in one run. Past it, actions are filed as written |
+| `SKIP_REVIEW` | `false` | Turn the review pass off. For a local run, not for the daily job |
 | `LOOKBACK_DAYS` | `7` | Items older than this are ignored |
 | `MAX_ITEMS_PER_RUN` | `12` | Hard cap on Slack messages from one run |
 | `MAX_ITEMS_PER_SOURCE` | `8` | Hard cap on new items from one competitor + source |
@@ -738,8 +831,10 @@ response contract (including malformed, camelCase, and pre-rename model
 output), image extraction and every fallback in the chain, one issue draft per
 action with its labels and owner, claim extraction from PostHog's pages and the
 competitors' compare pages, the relevance guard that keeps a page edit on the
-launch that found it, team routing, dedupe behavior, the setup check that names
-a missing secret, and the Slack message shape. The fixtures under
+launch that found it, team routing, the review pass end to end against fake
+models – agree, revise, a rewrite the gate refuses, drop, the budget, and the
+one-pass guard – dedupe behavior, the setup check that names a missing secret,
+and the Slack message shape. The fixtures under
 `test/fixtures/` are synthetic and marked as such. They exercise the shapes
 real feeds use, and are not copies of real competitor announcements.
 

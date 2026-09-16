@@ -161,6 +161,30 @@ run – today https://amplitude.com/compare/posthog and
 https://mixpanel.com/compare/posthog – and quotes what they say about PostHog.
 That is their sales copy, so it never settles what PostHog ships. The docs do.
 
+## A rewrite is held to the same rules
+
+Once an action's issue is open, a second model reads the docs and can ask for the
+action to be revised. The rewrite that follows is copy that lands in a GitHub
+issue and in Slack, so it follows everything above, and the rules it can break
+are caught the same way the analyst's are.
+
+`STYLE_RULES` in [`src/analysis/prompt.ts`](../src/analysis/prompt.ts) is the one
+statement of the handbook that every prompt this bot sends carries – the
+analysis, the review, and the rewrite. The rewrite prompt adds the sentence shape
+on top of it, because a revised action is still read in Slack as one sentence
+leading with the work.
+
+What is not left to the prompt: `mergeRevision` in
+[`src/review/schema.ts`](../src/review/schema.ts) drops a `feature` the product
+catalog does not know rather than letting a made-up product name reach a title or
+a label, refuses a type change that is not a swap between the two product
+actions, refuses an impact change the reviewer did not ask for, and drops a
+suggested edit for a page the analysis never cited or that marketing does not
+write. Then `checkAction` in
+[`src/analysis/analyze.ts`](../src/analysis/analyze.ts) runs the whole chain
+again, `sanitizeCopy` included, so a rewrite reaches an issue only if it would
+have been allowed to be written that way in the first place.
+
 ## Where this is enforced
 
 - [`src/analysis/prompt.ts`](../src/analysis/prompt.ts) states the rules to the
@@ -184,6 +208,10 @@ That is their sales copy, so it never settles what PostHog ships. The docs do.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.
+- [`src/review/`](../src/review/) reviews every action after its issue is open:
+  `prompt.ts` states the bar for agreeing, revising, and dropping, `schema.ts`
+  bounds what a rewrite may change, and `apply.ts` re-runs the checks above on
+  the result and throws away a rewrite that fails them.
 - `sanitizeCopy` in [`src/util/text.ts`](../src/util/text.ts) rewrites em
   dashes as spaced en dashes and curly quotes as straight ones. It runs over
   every model string in `normalizeAnalysis`, and again over every Slack text
