@@ -7,7 +7,13 @@ import {
 import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
-import { buildIssueDrafts, createIssueCreator, type IssueCreator } from "./github/issue.js";
+import {
+  buildIssueDrafts,
+  createIssueCreator,
+  createIssueEditor,
+  type IssueCreator,
+  type IssueEditor,
+} from "./github/issue.js";
 import { createLogger } from "./log.js";
 import { resolveFeatureImage } from "./media/image.js";
 import { refreshDocsCorpus } from "./posthog/corpus.js";
@@ -20,10 +26,18 @@ import {
   WebhookPoster,
   type SlackPoster,
 } from "./slack/post.js";
+import {
+  createReviewBudget,
+  reviewActions,
+  type ReviewBudget,
+  type ReviewTarget,
+} from "./review/apply.js";
+import { createReviewer, type Reviewer } from "./review/reviewer.js";
+import { createActionWriter, type ActionWriter } from "./review/writer.js";
 import { enrichArticles } from "./sources/enrich.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
 import { entryUrl } from "./sources/link.js";
-import type { ActionIssue, Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
+import type { Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
 import { daysAgo, normalizeUrl, SPACED_EN_DASH } from "./util/text.js";
 
 const log = createLogger("pipeline");
@@ -104,29 +118,85 @@ export function createPoster(config: Config): SlackPoster {
 }
 
 /**
- * Turn a verdict into something postable: find the feature image, then open
- * one issue per recommended action, each carrying the long detail Slack no
- * longer shows. Three actions is three issues, because a compare-page fix and
- * a feature gap are two teams' work. A dry run and a run with no token both
- * come back with no issues, and only the dry run says so in the message.
+ * Everything the review pass needs, built once per run.
+ *
+ * The budget is shared across every item the run analyzed, because the cost it
+ * caps is a run's cost: twelve reviews is twelve reviews whether they came off
+ * one busy launch day or four quiet ones.
+ */
+interface ReviewServices {
+  editor: IssueEditor;
+  reviewer: Reviewer | null;
+  writer: ActionWriter | null;
+  budget: ReviewBudget;
+}
+
+function createReviewServices(config: Config): ReviewServices {
+  const editor = createIssueEditor(config);
+  const reviewer = createReviewer(config);
+  // No reviewer means nothing ever asks for a rewrite, so there is nothing for a
+  // writer to do. They share the API key, so they are absent together anyway.
+  const writer = reviewer ? createActionWriter(config) : null;
+
+  log.info(
+    reviewer
+      ? `action review: ${reviewer.description}, rewrites with ${writer?.description ?? "nothing"}, ${config.reviewMaxPerRun} per run`
+      : "action review: off, so every action is filed as the analyst wrote it",
+  );
+  log.info(`GitHub issue edits: ${editor.description}`);
+
+  return { editor, reviewer, writer, budget: createReviewBudget(config) };
+}
+
+/**
+ * Turn a verdict into something postable: find the feature image, open one issue
+ * per recommended action, then have a second model check each of those actions
+ * against the same docs corpus before any of it reaches Slack.
+ *
+ * Three actions is three issues, because a compare-page fix and a feature gap
+ * are two teams' work. A dry run and a run with no token both come back with no
+ * issues, and only the dry run says so in the message.
+ *
+ * The review sits between the issues and the Slack post on purpose. The issue
+ * exists, so a verdict has somewhere to write itself and the whole exchange is
+ * in the issue's own history. Slack has not gone out, so an action the reviewer
+ * drops is simply absent from the message rather than corrected in it: Slack is
+ * never edited after the fact, and an alert whose every action was dropped shows
+ * **None** with the reason.
  */
 async function prepareAlert(
   config: Config,
   issues: IssueCreator,
+  review: ReviewServices,
   analyzed: AnalyzedItem,
+  context: RunContext,
 ): Promise<Alert> {
   const image = await resolveFeatureImage(config, analyzed.item);
 
-  const opened: ActionIssue[] = [];
+  const targets: ReviewTarget[] = [];
   for (const { action, draft } of buildIssueDrafts(analyzed, image)) {
-    opened.push({ action, issue: await issues.create(draft) });
+    targets.push({ action, issue: await issues.create(draft), labels: draft.labels });
   }
 
-  const noneOpened = opened.every((entry) => entry.issue === null);
+  const reviewed = await reviewActions({
+    alert: analyzed,
+    image,
+    targets,
+    editor: review.editor,
+    reviewer: review.reviewer,
+    writer: review.writer,
+    index: context.index,
+    workspace: context.workspace,
+    budget: review.budget,
+  });
+  for (const note of reviewed.notes) log.info(note);
+
+  const noneOpened = reviewed.issues.every((entry) => entry.issue === null);
   return {
     ...analyzed,
+    analysis: reviewed.analysis,
     image,
-    issues: opened,
+    issues: reviewed.issues,
     ...(noneOpened && config.dryRun
       ? { issueNote: `GitHub issues not created${SPACED_EN_DASH}${issues.description}` }
       : {}),
@@ -219,6 +289,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
   const issues = createIssueCreator(config);
   log.info(`Slack delivery: ${poster.description}`);
   log.info(`GitHub issues: ${issues.description}`);
+  const review = createReviewServices(config);
 
   try {
     const { context } = await prepareCorpus(config, store);
@@ -258,7 +329,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
-    const alert = await prepareAlert(config, issues, analyzed);
+    const alert = await prepareAlert(config, issues, review, analyzed, context);
     const message = buildSlackMessage(alert);
     const analysisId = await store.recordAnalysis({
       itemId: stored.id,
@@ -282,6 +353,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
   const issues = createIssueCreator(config);
   log.info(`Slack delivery: ${poster.description}`);
   log.info(`GitHub issues: ${issues.description}`);
+  const review = createReviewServices(config);
   const summary: RunSummary = {
     candidates: 0,
     newItems: 0,
@@ -328,7 +400,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
 
     const fresh: PendingPost[] = [];
     for (const entry of analyzed) {
-      const alert = await prepareAlert(config, issues, entry);
+      const alert = await prepareAlert(config, issues, review, entry, corpus.context);
       summary.issuesOpened += openedCount(alert);
       fresh.push({
         analysisId: await store.recordAnalysis({

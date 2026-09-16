@@ -5,7 +5,16 @@ import { createLogger } from "../log.js";
 import { contextForSignal, topUpDocsForActions } from "../posthog/docs.js";
 import type { CorpusIndex } from "../posthog/retrieval.js";
 import type { DocsWorkspace } from "../posthog/workspace.js";
-import type { Analysis, AnalyzedItem, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
+import type {
+  Analysis,
+  AnalyzedItem,
+  Impact,
+  PostHogClaim,
+  PostHogDoc,
+  PostHogRef,
+  RecommendedAction,
+  StoredItem,
+} from "../types.js";
 import { createAnalystRunner, type AnalystRunner } from "./analyst.js";
 import type { Analyzer, AnalyzerInput, AnalyzerOutput } from "./analyzer.js";
 import { gateActions, type CoverageContext } from "./evidence.js";
@@ -225,6 +234,50 @@ export async function analyzeItems(
 }
 
 /**
+ * Every check the actions in one analysis go through, in order.
+ *
+ * Split out from `checkAnalysis` because the review pass runs the same chain a
+ * second time, on one action rewritten after the fact. The chain is the whole
+ * guarantee, so a rewrite that skipped any of it would be a claim nobody
+ * checked, arriving by a route the analyst is not allowed to use.
+ */
+export function checkActions(
+  analysis: Analysis,
+  docs: PostHogDoc[],
+  item: StoredItem,
+  coverage: CoverageContext,
+  model: string,
+): { analysis: Analysis; notes: string[] } {
+  const verified = verifyAgainstDocs(analysis, docs);
+  // Page edits pointed at the product docs, and page edits about some other
+  // capability, both go before the sentences are shaped, so nothing is spent
+  // on an action that is about to be dropped. The heuristic is exempt from the
+  // topic guard because it recommends nothing for the guard to judge.
+  const targeted = enforcePageTargets(verified.analysis);
+  const scoped =
+    model === FALLBACK_MODEL
+      ? { analysis: targeted.analysis, notes: [] as string[] }
+      : enforceUpdatePagesTopic(targeted.analysis, item);
+
+  const gated = gateActions(scoped.analysis, coverage);
+
+  // The gate can retype nothing and drop plenty, so the sentence Slack shows
+  // is shaped after it rather than before.
+  const led = enforceActionLead(gated.analysis);
+
+  return {
+    analysis: led.analysis,
+    notes: [
+      ...verified.notes,
+      ...targeted.notes,
+      ...scoped.notes,
+      ...gated.notes,
+      ...led.notes,
+    ],
+  };
+}
+
+/**
  * Every check one reply goes through, in order. Split out so a test can run
  * the whole chain on a hand-written reply without a model or a network.
  */
@@ -236,39 +289,52 @@ export function checkAnalysis(
   model: string,
   onNote: (note: string) => void,
 ): Analysis {
-  const verified = verifyAgainstDocs(reply.analysis, docs);
-  // Page edits pointed at the product docs, and page edits about some other
-  // capability, both go before the sentences are shaped, so nothing is spent
-  // on an action that is about to be dropped. The heuristic is exempt from the
-  // topic guard because it recommends nothing for the guard to judge.
-  const targeted = enforcePageTargets(verified.analysis);
-  const scoped =
-    model === FALLBACK_MODEL
-      ? { analysis: targeted.analysis, notes: [] as string[] }
-      : enforceUpdatePagesTopic(targeted.analysis, item);
-
   const coverage: CoverageContext = {
     index: context.index,
     seenUrls: new Set([...docs.map((doc) => doc.url), ...reply.readUrls]),
   };
-  const gated = gateActions(scoped.analysis, coverage);
-
-  // The gate can retype nothing and drop plenty, so the sentence Slack shows
-  // is shaped after it rather than before.
-  const led = enforceActionLead(gated.analysis);
-
-  for (const note of [
-    ...verified.notes,
-    ...targeted.notes,
-    ...scoped.notes,
-    ...gated.notes,
-    ...led.notes,
-  ]) {
-    onNote(note);
-  }
+  const checked = checkActions(reply.analysis, docs, item, coverage, model);
+  for (const note of checked.notes) onNote(note);
 
   return {
-    ...led.analysis,
+    ...checked.analysis,
     ...(reply.readUrls.length > 0 ? { pagesRead: reply.readUrls } : {}),
   };
+}
+
+export interface ActionCheck {
+  analysis: Analysis;
+  action: RecommendedAction;
+  /** The refs the rewrite carries, which is where a replaced page edit lives. */
+  refs: PostHogRef[];
+  /** The impact the rewrite carries, which only a reviewer can have moved. */
+  impact: Impact;
+  docs: PostHogDoc[];
+  item: StoredItem;
+  coverage: CoverageContext;
+  model: string;
+}
+
+/**
+ * The same checks, on one action rewritten after its issue was filed.
+ *
+ * A rewrite is a claim about what PostHog ships, exactly like the claim it
+ * replaces, so it earns nothing for having been reviewed: it goes past the docs
+ * reconciliation, the page-target rule, the topic guard, the evidence gate, and
+ * the sentence shaper, in that order, and the action that comes back is the one
+ * that survived all five. Null means it survived none of them, and null is what
+ * leaves the original issue standing.
+ */
+export function checkAction(input: ActionCheck): {
+  action: RecommendedAction | null;
+  notes: string[];
+} {
+  const candidate: Analysis = {
+    ...input.analysis,
+    impact: input.impact,
+    actions: [input.action],
+    posthogRefs: input.refs,
+  };
+  const checked = checkActions(candidate, input.docs, input.item, input.coverage, input.model);
+  return { action: checked.analysis.actions[0] ?? null, notes: checked.notes };
 }

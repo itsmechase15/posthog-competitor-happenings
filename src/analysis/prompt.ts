@@ -115,6 +115,23 @@ const TEAM_RULES = `- "teams" is 1 to ${MAX_TEAMS} PostHog small teams the actio
 - Pick by who owns the work. A team that owns the feature the action is about is the answer: an experiments gap is for Experiments, a flag rollout change is for Feature Flags, events routed through a customer's own domain is for Ingestion, a compare-page edit is for Marketing, a blog or newsletter is for Editorial, a page that has to be built on posthog.com is for Website.
 - Two or three teams only when the work genuinely splits: the team that owns the feature plus the team that owns the plumbing it arrives on, or Marketing plus whoever owns the product a page is wrong about. One team is the normal answer, and a shorter list routes better than a long one.`;
 
+/**
+ * The handbook, as rules a model can follow. Stated once and used by every
+ * prompt this bot sends, because everything any of them writes ends up in Slack
+ * or in a GitHub issue under PostHog's name.
+ */
+export const STYLE_RULES = `PostHog writing style, which every string you write has to follow:
+https://posthog.com/handbook/wizard-and-docs/docs-style-guide and https://posthog.com/handbook/brand/tone
+- Write like a smart friend explaining something, not a company trying to impress. Clear beats clever.
+- Address the reader as "you". Active voice, present tense, concise. Contractions are fine.
+- Never use an em dash (—). When a sentence needs a dash, use an en dash with a space either side ( – ). A hyphen is not a dash.
+- Oxford comma. American English spelling. Straight quotes and apostrophes, never curly ones.
+- No hedging or weasel words: helps you to, empowers, enables you to unlock, leverage, streamline, robust, best-in-class, holistic, seamless, synergy.
+- Never write "simply", "just", "easily", "obviously", "of course", or "clearly". If something is easy, the sentence will show it.
+- Simple words: use, not utilize. Explain jargon or drop it.
+- No emojis in prose, and no filler openers. Lead with the concrete capability.
+- One exception to all of the above: "evidence_quote" is somebody else's words. Copy them verbatim.`;
+
 export const SYSTEM_RULES = `You are a competitive-intelligence analyst for PostHog, an open-source product analytics platform.
 You read one thing a competitor shipped and decide what PostHog should do about it.
 
@@ -176,17 +193,7 @@ Do not recommend update_pages because customers might ask about the launch, beca
   The claim you put in "posthog_refs" is quoted from the page as it stands, and it is checked against the stored copy. A page that no longer says the thing you are correcting has already been fixed.
 A docs page is evidence for what PostHog ships, never a page to edit: update_pages and new_compare_page point at a PostHog marketing, product marketing, or compare page, and a "suggested_edit" on a /docs/ URL is always the wrong answer.
 
-PostHog writing style, which every string you write has to follow:
-https://posthog.com/handbook/wizard-and-docs/docs-style-guide and https://posthog.com/handbook/brand/tone
-- Write like a smart friend explaining something, not a company trying to impress. Clear beats clever.
-- Address the reader as "you". Active voice, present tense, concise. Contractions are fine.
-- Never use an em dash (—). When a sentence needs a dash, use an en dash with a space either side ( – ). A hyphen is not a dash.
-- Oxford comma. American English spelling. Straight quotes and apostrophes, never curly ones.
-- No hedging or weasel words: helps you to, empowers, enables you to unlock, leverage, streamline, robust, best-in-class, holistic, seamless, synergy.
-- Never write "simply", "just", "easily", "obviously", "of course", or "clearly". If something is easy, the sentence will show it.
-- Simple words: use, not utilize. Explain jargon or drop it.
-- No emojis in prose, and no filler openers. Lead with the concrete capability.
-- One exception to all of the above: "evidence_quote" is somebody else's words. Copy them verbatim.`;
+${STYLE_RULES}`;
 
 export const RESPONSE_SHAPE = `{
   "impact": "minor" | "notable" | "major",
