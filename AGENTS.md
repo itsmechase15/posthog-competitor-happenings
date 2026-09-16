@@ -76,6 +76,15 @@ it would have written instead of writing it – so a dry run shows the whole
 outcome, not the half of it that needs no credentials. `SKIP_REVIEW=true` turns
 the pass off when you are iterating on something else.
 
+A dry run also photographs the page for a page edit, writes both PNGs to one
+temp directory, and logs the paths, because that is the part worth looking at
+and it needs no credentials. It commits nothing, and it publishes nothing to
+posthog.com: the proposed copy goes into the headless browser's own copy of the
+document and dies with the tab. `SKIP_PAGE_VISUALS=true` skips the whole thing,
+which is what you want on a box with no Chromium: run
+`npx playwright install chromium-headless-shell` once if you would rather see
+it.
+
 ## House rules for changes
 
 - **Copy is PostHog copy.** Everything this bot posts follows the
@@ -96,6 +105,21 @@ the pass off when you are iterating on something else.
 - **Do not add a guess-then-fix model pass.** A model shown its own unsupported
  claim argues for it better rather than going to check. One analyst run, with
  the corpus under it, then code.
+- **The before/after is two screenshots of the live page, and publishes
+ nothing.** An `update_pages` issue embeds a PNG of the page as it reads today
+ and a PNG of the same page with the proposed copy in it, taken by
+ [`src/media/livePage.ts`](./src/media/livePage.ts): open the page in a
+ headless browser, shoot it, put the copy into that tab's own DOM, shoot it
+ again, throw the tab away. Nothing is submitted anywhere and the caption under
+ the after shot says so. This replaced a card drawn from the corpus text, which
+ read as a text mock of a page rather than the page – do not bring it back, as
+ a fallback or otherwise. The corpus is still what the claim is *checked*
+ against, and a claim the live page no longer has is a dropped pair and a line
+ in the issue saying the page has moved on, never a guess at where it went.
+ `update_pages` only: there is no before and after of a feature that does not
+ exist. Every step fails soft – no browser, a page that will not load, no
+ token, a refused commit – because an issue without the pictures says the same
+ thing in words.
 - **The review pass is not that pass.** Once an action's issue is open, a
  different model reads the same corpus and says agree, revise, or drop, and a
  revise is rewritten once and re-gated by the same code. Five things make it a

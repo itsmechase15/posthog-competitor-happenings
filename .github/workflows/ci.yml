@@ -16,6 +16,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The before/after is two screenshots of the real page, and the code that
+      # finds the line on it and swaps the copy runs inside the browser. That
+      # is the part that can be wrong, so the browser is installed here rather
+      # than skipped: without it those tests skip themselves and nothing checks
+      # them until a morning run does.
+      - name: Install the browser the before/after is taken with
+        run: npx --yes playwright@1.63.0 install --with-deps chromium-headless-shell
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
