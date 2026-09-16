@@ -521,16 +521,42 @@ describe("drop", () => {
 
     expect(result.analysis.actions).toEqual([]);
     expect(result.issues).toEqual([]);
-    expect(result.analysis.noActionReason).toContain(
+    // The reviewer's own words, and the pages it read, rather than a reason
+    // asserted on its behalf.
+    expect(result.analysis.noAction?.kind).toBe("dropped_on_review");
+    expect(result.analysis.noAction?.reason).toContain(
       "PostHog already schedules an experiment stop.",
     );
+    expect(result.analysis.noAction?.evidence.map((page) => page.url)).toEqual([LIFECYCLE]);
 
     const closed = editor.edits.find((edit) => edit.kind === "close");
     expect(closed?.reason).toBe("not_planned");
     expect(closed?.labels).toContain(REVIEW_LABEL.dropped);
     expect(closed?.labels).toContain(REVIEW_PASS_DONE);
-    expect(editor.comments[0]).toContain("Pages that show PostHog already covers this:");
+    expect(editor.comments[0]).toContain("**None – dropped on review**");
+    expect(editor.comments[0]).toContain("Pages the reviewer read:");
     expect(editor.comments[0]).toContain(LIFECYCLE);
+  });
+
+  it("puts the outcome at the top of the body it closes", async () => {
+    const { editor } = await run({
+      reviewer: fakeReviewer("drop", {
+        reason: "PostHog already schedules an experiment stop.",
+        pagesChecked: [LIFECYCLE],
+      }),
+      targets: [
+        {
+          action: filed,
+          issue,
+          labels: openedLabels,
+          body: "## What you need to know\nAmplitude schedules an experiment stop.",
+        },
+      ],
+    });
+
+    const body = editor.edits.find((edit) => edit.patch?.body)?.patch?.body ?? "";
+    expect(body.startsWith("## Outcome\n**None – dropped on review**")).toBe(true);
+    expect(body).toContain("## What you need to know");
   });
 
   it("keeps the actions it agreed with when it drops one of several", async () => {

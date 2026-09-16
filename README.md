@@ -226,10 +226,24 @@ and editing it are not the same permission.
 Last, `enforceActionLead` makes each surviving action open with the work rather
 than the gap behind it.
 
-**Zero actions is an answer.** Slack renders **None** with one sentence saying
-why: what PostHog already ships, or why this does not matter here. An empty
-section would read as a broken alert, and a missing one as an alert nobody
-finished.
+**Zero actions is an answer, and it says which answer.** The verdict has a kind,
+one sentence about this launch, and the docs pages it rests on, so Slack renders
+**None – PostHog already does this** over "PostHog schedules a flag change for a
+future date, and an experiment runs on a flag", with the two pages linked under
+it. The other kinds are **not a product gap** for pricing and company news, **the
+gap could not be confirmed** when a claim failed a check, **dropped on review**
+when the second model closed every issue, and **not analyzed this run** without a
+key. A generic line in that slot reads as a broken alert, which is why there is
+no longer one to fall back on: the kind, the sentence, and the links come off
+`analysis.noAction`, and every surface renders them through
+[`src/analysis/noAction.ts`](./src/analysis/noAction.ts).
+
+"PostHog already does this" is a claim about the product like any other, so it
+carries evidence and the evidence is checked: the page has to be in the corpus,
+it has to be documentation, and the quote has to be on the stored copy. A
+verdict whose pages all fail is downgraded to "the gap could not be confirmed"
+naming the page that could not be checked, because a claim whose basis we cannot
+find cannot be rewritten into a true one without inventing it.
 
 **Without `CURSOR_API_KEY` the bot still posts.** Analysis falls back to
 restating the source, and those messages are labeled "not model-analyzed" so
@@ -296,8 +310,9 @@ failed finds the review already done.
 issues are opened, so a verdict has somewhere to write itself and the whole
 exchange lives in the issue's history, and before the Slack post, so a dropped
 action is absent from the message rather than corrected in it. An alert whose
-every action was dropped shows **None** with the reason, which is already a
-normal outcome.
+every action was dropped shows **None – dropped on review** with the reviewer's
+own words and the pages it read, and the closed issue gets the same verdict as
+an `## Outcome` section at the top of its body.
 
 One reviewer run per filed action, one rewrite per action that needed correcting,
 and `REVIEW_MAX_PER_RUN` caps the run at 12. A dry run reviews and rewrites and

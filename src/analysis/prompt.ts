@@ -162,7 +162,10 @@ Rules:
   Nothing else moves it. Not how strategic the launch feels, not whether PostHog has a gap here, not how much PostHog customers will ask about it, not how loudly it was written up.
   Worked examples. A scheduled end time on experiments they already ship is notable, because Experiments existed and this is a new control on it. Serving customer events through the customer's own domain, which they never offered, is major, because it is a capability they did not have. A post about their new office, or a roundup of last quarter's releases, is minor.
 - "actions" is 0 to 3 things PostHog should do, most important first.
-  Zero is a normal answer and often the right one. A competitor shipping something PostHog already does well asks nothing of PostHog. So does a competitor shipping something PostHog has deliberately not built. When you recommend nothing, send an empty "actions" array and one sentence in "no_action_reason" saying why: name what PostHog already ships, or why this does not matter to PostHog.
+  Zero is a normal answer and often the right one. A competitor shipping something PostHog already does well asks nothing of PostHog. So does a competitor shipping something PostHog has deliberately not built. When you recommend nothing, send an empty "actions" array and a "no_action" object saying which kind of nothing it is:
+  - "already_covered": PostHog ships the thing that just shipped elsewhere. This is a claim about PostHog's product and it carries evidence like any gap does: one to three docs pages in "evidence", each with the page URL and a quote copied from it verbatim. A page that is not in the corpus, is not documentation, or does not contain the quote is dropped, and a verdict left with no evidence is downgraded to "the gap could not be confirmed", so cite what you actually read.
+  - "not_a_gap": the launch asks nothing of the product. Pricing, plans, and packaging; company news, hiring, or a customer story; a capability PostHog chose not to build. Say which of those it is in "reason".
+  "reason" is one sentence either way, and it names the capability that shipped and what PostHog does about it. "Nothing to do here" is not a reason.
   Never pad the list. One action that survives being checked is worth more than three that read well.
 - Each action has a "type", a "detail", and, for the two product actions, a "gap", an "evidence_url", and an "evidence_quote". "type" is one of:
   - update_pages: a PostHog marketing, product marketing, or compare page is now wrong, understates what PostHog does, or is contradicted by the competitor's own comparison page. It has a bar of its own, below.
@@ -227,7 +230,16 @@ export const RESPONSE_SHAPE = `{
       "evidence_quote": "string (words copied from that page, verbatim; required for the two product actions)"
     }
   ],
-  "no_action_reason": "string (one sentence; required when actions is empty)",
+  "no_action": {
+    "kind": "already_covered" | "not_a_gap",
+    "reason": "string (one sentence; required when actions is empty)",
+    "evidence": [
+      {
+        "url": "string (a PostHog docs page in the corpus; required for already_covered)",
+        "quote": "string (words copied from that page, verbatim)"
+      }
+    ]
+  },
   "posthog_refs": [
     {
       "url": "string",

@@ -159,8 +159,9 @@ Where it sits matters as much as what it does. It runs **after** the issues are
 opened, so a verdict has somewhere to write itself and the whole exchange lives
 in the issue's own history, and **before** the Slack post, so a dropped action is
 simply absent from the message. Slack is never edited after it goes out. An alert
-whose every action was dropped shows **None** with the reason, which is already a
-normal outcome.
+whose every action was dropped shows **None – dropped on review** with the
+reviewer's own reasons and the pages it read, and the closed issue carries the
+same verdict as an `## Outcome` section above its body.
 
 It runs once per action, four ways over: the review is a function call after
 create rather than an `issues: opened` workflow, an edit never calls the
@@ -192,7 +193,16 @@ what the alert would say and the log shows what the issue edits would have been.
   they never offered, is major; a post about a new office is minor
 - Zero to three recommended actions, most important first. One signal often
   needs two, e.g. a stale page to fix and a feature gap to close. Zero is a
-  normal answer, and Slack renders **None** with one sentence saying why:
+  normal answer, and it says which answer: a kind, one sentence about this
+  launch, and the docs pages under it, as
+  `analysis.noAction = { kind, reason, evidence }`. `already_covered` names what
+  PostHog ships and carries the pages that show it, checked against the corpus
+  the way a gap claim is and downgraded to `unverified` when they fail;
+  `not_a_gap` is pricing or company news; `unverified` is a claim no check could
+  confirm; `dropped_on_review` is the reviewer closing everything; `unanalyzed`
+  is a run with no key. Rendered once, in
+  [`src/analysis/noAction.ts`](./src/analysis/noAction.ts), for Slack and for
+  the GitHub issue a reviewer closed. The four action types:
   - update pages (existing compare/content)
   - new compare page
   - consider building (PostHog has nothing like this)

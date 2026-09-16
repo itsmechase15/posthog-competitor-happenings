@@ -292,9 +292,53 @@ describe("parseAnalysis", () => {
     expect(analysis.noActionReason).toBe("PostHog already ships this, so there is nothing to do.");
   });
 
-  it("says so when an analysis recommends nothing and does not say why", () => {
+  it("says which part is missing when an analysis recommends nothing and gives no verdict", () => {
     const analysis = parseAnalysis(JSON.stringify({ ...valid, actions: [] }));
-    expect(analysis.noActionReason).toContain("did not say why");
+    expect(analysis.noAction?.kind).toBe("unverified");
+    expect(analysis.noAction?.reason).toContain("cited no PostHog page");
+  });
+
+  it("reads the structured verdict the analyst sends, with the pages under it", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [],
+        no_action: {
+          kind: "already_covered",
+          reason: "PostHog schedules a flag change for a future date, and an experiment runs on a flag.",
+          evidence: [
+            {
+              url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+              quote: "Schedule a change to a feature flag for a future date",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(analysis.noAction?.kind).toBe("already_covered");
+    expect(analysis.noAction?.evidence).toEqual([
+      {
+        url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+        quote: "Schedule a change to a feature flag for a future date",
+      },
+    ]);
+    // The string stays next to the structure, so a row written now still reads
+    // on any surface that only knows about the sentence.
+    expect(analysis.noActionReason).toBe(analysis.noAction?.reason);
+  });
+
+  it("reads a verdict kind it does not recognize as one nobody has confirmed", () => {
+    const analysis = parseAnalysis(
+      JSON.stringify({
+        ...valid,
+        actions: [],
+        no_action: { kind: "vibes", reason: "It felt fine." },
+      }),
+    );
+
+    expect(analysis.noAction?.kind).toBe("unverified");
+    expect(analysis.noAction?.reason).toBe("It felt fine.");
   });
 
   it("keeps a product action's gap, page, and quote", () => {
@@ -937,8 +981,15 @@ describe("buildAnalysisPrompt", () => {
     it("says zero actions is a normal answer and asks for the reason", () => {
       expect(withRefs).toContain('"actions" is 0 to 3 things PostHog should do');
       expect(withRefs).toContain("Zero is a normal answer and often the right one");
-      expect(withRefs).toContain('one sentence in "no_action_reason" saying why');
-      expect(withRefs).toContain('"no_action_reason"');
+      expect(withRefs).toContain('a "no_action" object saying which kind of nothing it is');
+      expect(withRefs).toContain('"no_action"');
+    });
+
+    it("holds already_covered to the same evidence bar as a gap", () => {
+      expect(withRefs).toContain(
+        "one to three docs pages in \"evidence\", each with the page URL and a quote copied from it verbatim",
+      );
+      expect(withRefs).toContain('"not_a_gap": the launch asks nothing of the product');
     });
   });
 
