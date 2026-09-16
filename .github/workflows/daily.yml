@@ -18,8 +18,11 @@ concurrency:
   cancel-in-progress: false
 
 # Each alert links a GitHub issue holding the detail Slack no longer carries.
+# `contents: write` is for the before/after cards: a GitHub issue renders an
+# image from a URL and nothing else, so an update_pages card's PNG is committed
+# to artifacts/update-pages/ and the issue embeds its raw URL.
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -62,6 +65,23 @@ jobs:
 
       - run: npm run build
         if: steps.window.outputs.proceed == 'true'
+
+      # The before/after card on an update_pages issue is a Chromium
+      # screenshot of a static HTML template. `playwright-core` ships no
+      # browser, which is why installing this app does not download one, so the
+      # headless shell is fetched here and cached between runs. A run without
+      # it still opens every issue, with the diff and the copy to paste and no
+      # picture.
+      - name: Cache the browser the cards are rendered with
+        if: steps.window.outputs.proceed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-chromium-headless-shell-1.63.0
+
+      - name: Install the browser the cards are rendered with
+        if: steps.window.outputs.proceed == 'true'
+        run: npx --yes playwright@1.63.0 install chromium-headless-shell
 
       # Fails in seconds, naming the secret and where its value comes from,
       # rather than twenty minutes in as a Postgres timeout or a silent channel.

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+
 /**
  * The workflows are the only place the app's environment is assembled, and a
  * variable the code now requires is worth nothing if the step that reads it was
@@ -162,6 +163,47 @@ describe("workflow environments", () => {
       "daily.yml": 1,
       "force-post.yml": 1,
     });
+  });
+
+  /**
+   * The before/after card on an `update_pages` issue is a Chromium screenshot,
+   * and `playwright-core` ships no browser, so a workflow that runs the
+   * pipeline has to install one. It also has to install the version the app
+   * depends on: a mismatch means a browser revision `playwright-core` will not
+   * look for, which is a silent fall back to issues with no pictures.
+   */
+  describe("the browser the cards are rendered with", () => {
+    const pinned = (
+      JSON.parse(readFileSync("package.json", "utf8")) as {
+        dependencies: Record<string, string>;
+      }
+    ).dependencies["playwright-core"];
+
+    it("is pinned exactly, so the install and the library cannot drift", () => {
+      expect(pinned).toMatch(/^\d+\.\d+\.\d+$/);
+    });
+
+    it.each(workflows.filter(({ text }) => pipelineSteps(text).length > 0))(
+      "$name installs it at the version the app depends on",
+      ({ text }) => {
+        expect(text).toContain(`playwright@${pinned} install chromium-headless-shell`);
+        // Cached, because a download per run is a minute of a job that already
+        // spends its time reading someone else's website.
+        expect(text).toContain("path: ~/.cache/ms-playwright");
+        expect(text).toContain(`key: ms-playwright-chromium-headless-shell-${pinned}`);
+      },
+    );
+
+    /**
+     * The PNG is committed to this repo, because a GitHub issue renders an
+     * image from a URL and nothing else.
+     */
+    it.each(workflows.filter(({ text }) => pipelineSteps(text).length > 0))(
+      "$name may write the card it commits",
+      ({ text }) => {
+        expect(text).toContain("contents: write");
+      },
+    );
   });
 
   /**

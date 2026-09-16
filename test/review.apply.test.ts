@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { IssueEditor, IssuePatch } from "../src/github/issue.js";
 import { REVIEW_LABEL, REVIEW_PASS_DONE } from "../src/labels.js";
+import { CorpusEditCardMaker, type EditCardMaker } from "../src/media/cards.js";
 import {
   createReviewBudget,
   reviewActions,
@@ -213,6 +214,25 @@ interface RunOptions {
   budget?: number;
   editor?: RecordingEditor;
   alert?: AnalyzedItem;
+  cards?: EditCardMaker;
+}
+
+/**
+ * A card maker that commits nothing and names the file after the copy on it,
+ * so a test can tell a re-rendered card from the one the analyst's copy got.
+ */
+function cardMaker(): EditCardMaker {
+  return new CorpusEditCardMaker(
+    index,
+    {
+      description: "test store",
+      async put(path) {
+        return `https://raw.invalid/${path}`;
+      },
+    },
+    async () => Buffer.from("png"),
+    () => new Date("2026-09-16T09:00:00Z"),
+  );
 }
 
 async function run(
@@ -227,6 +247,7 @@ async function run(
     editor,
     reviewer: options.reviewer === undefined ? fakeReviewer("agree") : options.reviewer,
     writer: options.writer === undefined ? fakeWriter(goodRewrite) : options.writer,
+    ...(options.cards ? { cards: options.cards } : {}),
     index,
     workspace: null,
     budget: createReviewBudget({ reviewMaxPerRun: options.budget ?? 12 } as never),
@@ -353,12 +374,17 @@ describe("revise", () => {
   });
 
   /** An update_pages action's substance is the copy for the page, so that is what a revise rewrites. */
-  const pageRun = (revision: Revision, changes = ["Say what Amplitude now does, in its voice."]) =>
+  const pageRun = (
+    revision: Revision,
+    changes = ["Say what Amplitude now does, in its voice."],
+    cards?: EditCardMaker,
+  ) =>
     run({
       targets: [{ action: pageAction, issue, labels: openedLabels }],
       alert: { ...alert, analysis: { ...alert.analysis, actions: [pageAction] } },
       reviewer: fakeReviewer("revise", { changes }),
       writer: fakeWriter(revision),
+      ...(cards ? { cards } : {}),
     });
 
   const rewritten =
@@ -386,6 +412,40 @@ describe("revise", () => {
     expect(patch?.body).toContain(rewritten);
     // The before/after shows the copy, because on a page action it is the change.
     expect(editor.comments[0]).toContain(`- Copy for it: "${rewritten}"`);
+  });
+
+  /**
+   * A revised page edit gets a new before/after, rendered from the copy that
+   * survived the checks. The old picture shows the paragraph the analyst wrote,
+   * and leaving it under a rewritten diff is the one wrong image this is all
+   * meant to avoid.
+   */
+  it("re-renders the before/after from the copy that survived the checks", async () => {
+    const { editor } = await pageRun(
+      {
+        pageEdits: [{ url: COMPARE, proposedText: rewritten }],
+      },
+      ["Say where the schedule is set."],
+      cardMaker(),
+    );
+
+    const body = editor.edits.find((edit) => edit.kind === "update")?.patch?.body ?? "";
+    expect(body).toContain("![Before and after for /compare/amplitude-vs-posthog");
+    expect(body).toContain("https://raw.invalid/artifacts/update-pages/2026-09-16/");
+    expect(body).toContain(`+ ${rewritten}`);
+    expect(body).toContain(`**Paste this**\n\n\`\`\`text\n${rewritten}`);
+    // The copy the analyst filed is gone from the issue, picture included.
+    expect(body).not.toContain(
+      "Amplitude schedules an experiment stop from the experiment settings. PostHog",
+    );
+  });
+
+  /** No maker, no picture: a rewritten issue is never left showing the old one. */
+  it("patches the body with its text layers when there is nothing to render with", async () => {
+    const { editor } = await pageRun({ pageEdits: [{ url: COMPARE, proposedText: rewritten }] });
+    const body = editor.edits.find((edit) => edit.kind === "update")?.patch?.body ?? "";
+    expect(body).not.toContain("![Before and after");
+    expect(body).toContain(rewritten);
   });
 
   it("refuses a rewrite that writes about the edit instead of writing it", async () => {

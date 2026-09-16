@@ -8,13 +8,14 @@ import type { Config } from "./config.js";
 import { createStore } from "./db/index.js";
 import { itemKey, type PendingPost, type Store } from "./db/store.js";
 import {
-  buildIssueDrafts,
+  buildIssueDraft,
   createIssueCreator,
   createIssueEditor,
   type IssueCreator,
   type IssueEditor,
 } from "./github/issue.js";
 import { createLogger } from "./log.js";
+import { createEditCardMaker, type EditCardMaker } from "./media/cards.js";
 import { resolveFeatureImage } from "./media/image.js";
 import { refreshDocsCorpus } from "./posthog/corpus.js";
 import { buildCorpusIndex } from "./posthog/retrieval.js";
@@ -170,13 +171,18 @@ async function prepareAlert(
   config: Config,
   issues: IssueCreator,
   review: ReviewServices,
+  cards: EditCardMaker,
   analyzed: AnalyzedItem,
   context: RunContext,
 ): Promise<PreparedAlert> {
   const image = await resolveFeatureImage(config, analyzed.item);
 
   const targets: ReviewTarget[] = [];
-  for (const { action, draft } of buildIssueDrafts(analyzed, image)) {
+  // One action at a time, because an `update_pages` action gets a rendered
+  // before/after per page it edits and the body has to carry the picture from
+  // the moment the issue is opened.
+  for (const action of analyzed.analysis.actions) {
+    const draft = buildIssueDraft(analyzed, image, action, await cards.cardsFor(analyzed, action));
     targets.push({ action, issue: await issues.create(draft), labels: draft.labels });
   }
 
@@ -187,6 +193,7 @@ async function prepareAlert(
     editor: review.editor,
     reviewer: review.reviewer,
     writer: review.writer,
+    cards,
     index: context.index,
     workspace: context.workspace,
     budget: review.budget,
@@ -305,6 +312,8 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
 
   try {
     const { context } = await prepareCorpus(config, store);
+    const cards = createEditCardMaker(config, context.index);
+    log.info(`page edit cards: ${cards.description}`);
 
     const { candidates } = await collectCandidates(config);
     const wanted = normalizeUrl(targetUrl);
@@ -341,7 +350,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
-    const { alert } = await prepareAlert(config, issues, review, analyzed, context);
+    const { alert } = await prepareAlert(config, issues, review, cards, analyzed, context);
     const message = buildSlackMessage(alert);
     const analysisId = await store.recordAnalysis({
       itemId: stored.id,
@@ -381,6 +390,8 @@ export async function runCycle(config: Config): Promise<RunSummary> {
   try {
     const corpus = await prepareCorpus(config, store);
     summary.notes.push(...corpus.notes);
+    const cards = createEditCardMaker(config, corpus.context.index);
+    log.info(`page edit cards: ${cards.description}`);
 
     const collection = await collectCandidates(config);
     summary.candidates = collection.candidates.length;
@@ -413,7 +424,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
 
     const fresh: PendingPost[] = [];
     for (const entry of analyzed) {
-      const prepared = await prepareAlert(config, issues, review, entry, corpus.context);
+      const prepared = await prepareAlert(config, issues, review, cards, entry, corpus.context);
       const alert = prepared.alert;
       summary.issuesOpened += prepared.opened;
       summary.issuesClosed += prepared.closed;
