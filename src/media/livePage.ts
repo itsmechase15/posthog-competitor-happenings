@@ -17,6 +17,13 @@ import type { PageEditPlan } from "../types.js";
  * prose, and a reader flicking between them should not have to hunt for the
  * sentence that moved.
  *
+ * The mark covers what the edit adds and nothing else. A rewrite commonly
+ * keeps part of the copy it replaces, quoting the sentence that is still true
+ * before the one the launch makes necessary, and marking the lot would tell a
+ * reader the page's own words are the recommendation. So the copy is compared
+ * with the paragraph as it reads today and only the sentences that are not
+ * already there are marked.
+ *
  * **Nothing is published by any of this.** The edit lives in one browser tab's
  * in-memory DOM for the second or two between the two screenshots, and the tab
  * is thrown away. No form is submitted, no request is made to posthog.com
@@ -285,37 +292,127 @@ function stagePageEdit(input: StageInput): StageOutcome {
   }
 
   /**
-   * Put the copy in, highlighted. A replace swaps the quoted run and leaves
-   * the links and code around it alone; an insert leaves the line where it is
-   * and puts the new copy next to it. Extra paragraphs are shallow clones of
-   * the element they follow, so they inherit the page's own styling for a
-   * paragraph. Every piece of new copy, on either path, goes in inside a
-   * {@link highlight} and nothing else does.
+   * A run of copy, short of a sentence, is not worth deciding about on its
+   * own: "Yes." folds to three letters, which turn up inside plenty of
+   * paragraphs by accident, and a mark that stops for one word and starts
+   * again reads as a fault rather than as a recommendation. Anything shorter
+   * than this takes the verdict of the run before it.
    */
-  function applyEdit(element: HTMLElement): boolean {
+  const MIN_RUN_CHARS = 12;
+
+  /** The proposed copy as sentences, each keeping the whitespace after it. */
+  function pieces(text: string): string[] {
+    const found = text.match(/[^.!?]+[.!?]*\s*/g);
+    return found && found.length > 0 ? found : [text];
+  }
+
+  /**
+   * Split one paragraph of the rewrite into what the page already says and
+   * what the recommendation adds.
+   *
+   * A rewrite usually keeps some of the copy it replaces: it quotes the
+   * sentence that is still true and follows it with the one the launch makes
+   * necessary. Marking the whole string then paints the page's own words
+   * yellow and tells the reader they are new, which is the one thing the after
+   * shot must not do: the mark is what the reader trusts to say which words are
+   * the ask. So each sentence is checked against the paragraph as it reads
+   * today, folded the same way the line was found, and only the sentences that
+   * are not already there are marked.
+   */
+  function delta(text: string, existing: string): Array<{ text: string; isNew: boolean }> {
+    const already = fold(existing).folded;
+    const runs: Array<{ text: string; isNew: boolean }> = [];
+
+    for (const piece of pieces(text)) {
+      const core = piece.replace(/\s+$/, "");
+      const folded = fold(core).folded;
+      const previous = runs[runs.length - 1];
+      const isNew =
+        folded.length < MIN_RUN_CHARS
+          ? (previous?.isNew ?? true)
+          : already === "" || !already.includes(folded);
+
+      if (previous && previous.isNew === isNew) previous.text += piece;
+      else runs.push({ text: piece, isNew });
+    }
+
+    return runs;
+  }
+
+  /**
+   * One paragraph of the rewrite as nodes: the new sentences inside a
+   * {@link highlight}, the retained ones as the plain text they already were.
+   * The whitespace between sentences stays outside the mark, so a marked run
+   * ends where its last word does.
+   *
+   * A replace keeps the retained sentences, because the copy it replaced has
+   * gone and they are how the page still says that part. An insert drops them:
+   * the quoted line is still up there, and a rewrite that opens by restating
+   * it would otherwise put the same sentence on the page twice.
+   */
+  function copyInto(text: string, existing: string): DocumentFragment {
+    const fragment = document.createDocumentFragment();
+    for (const run of delta(text, existing)) {
+      if (!run.isNew) {
+        if (input.mode !== "insert") fragment.appendChild(document.createTextNode(run.text));
+        continue;
+      }
+      const core = run.text.replace(/\s+$/, "");
+      const trailing = run.text.slice(core.length);
+      fragment.appendChild(highlight(core));
+      if (trailing !== "") fragment.appendChild(document.createTextNode(trailing));
+    }
+    return fragment;
+  }
+
+  /** Whether a paragraph of the rewrite says anything the page does not already. */
+  function addsAnything(text: string, existing: string): boolean {
+    return delta(text, existing).some((run) => run.isNew);
+  }
+
+  /**
+   * Put the copy in, with the new words highlighted. A replace swaps the
+   * quoted run and leaves the links and code around it alone; an insert leaves
+   * the line where it is and puts the new copy next to it. Extra paragraphs
+   * are shallow clones of the element they follow, so they inherit the page's
+   * own styling for a paragraph.
+   *
+   * What the copy is compared against is the paragraph as it reads today,
+   * taken before anything is changed: a rewrite that keeps a sentence of it
+   * keeps the page's words, and the page's words are never the recommendation.
+   *
+   * Returns why it could not go in, or null when it did.
+   */
+  function applyEdit(element: HTMLElement): string | null {
     const copy = paragraphs();
-    if (copy.length === 0) return false;
+    if (copy.length === 0) return "the copy would not go in";
+    const existing = element.textContent ?? input.oldLine;
 
     store.__happeningsOriginal = element.innerHTML;
     let anchor: Element = element;
     let rest = copy;
 
-    if (input.mode !== "insert") {
+    if (input.mode === "insert") {
+      // An insert keeps the quoted line, so a paragraph of the rewrite that
+      // only restates it would put the same sentence on the page twice.
+      rest = copy.filter((part) => addsAnything(part, existing));
+      if (rest.length === 0) return "every paragraph of the copy is already on the page";
+    } else {
       const range = rangeFor(element);
-      if (!range) return false;
+      if (!range) return "the copy would not go in";
       range.deleteContents();
-      range.insertNode(highlight(copy[0]!));
+      range.insertNode(copyInto(copy[0]!, existing));
       rest = copy.slice(1);
     }
 
     for (const extra of rest) {
       const sibling = element.cloneNode(false) as HTMLElement;
-      sibling.appendChild(highlight(extra));
+      sibling.appendChild(copyInto(extra, existing));
       sibling.setAttribute(INSERTED, "");
       anchor.after(sibling);
       anchor = sibling;
     }
-    return true;
+    return null;
   }
 
   /**
@@ -373,7 +470,8 @@ function stagePageEdit(input: StageInput): StageOutcome {
 
   if (input.action === "apply") {
     if (!marked) return { status: "failed", reason: "the line was never located" };
-    if (!applyEdit(marked)) return { status: "failed", reason: "the copy would not go in" };
+    const problem = applyEdit(marked);
+    if (problem !== null) return { status: "failed", reason: problem };
     if (input.scrollY !== undefined) window.scrollTo(0, input.scrollY);
     return { status: "ok", scrollY: window.scrollY, overflowBy: overflowBy(marked) };
   }

@@ -125,7 +125,10 @@ it.
  headless browser, shoot it, put the copy into that tab's own DOM, shoot it
  again, throw the tab away. The copy goes in inside a highlight, so the after
  shot says which words are the recommendation and the before shot stays as the
- page reads. Nothing is submitted anywhere and the caption under the after
+ page reads. Only the words it adds: a rewrite that keeps a sentence of the
+ page's own copy leaves that sentence unmarked, and an insert never repeats the
+ line it was added next to, because a mark on words the page already had says
+ the edit is bigger than it is. Nothing is submitted anywhere and the caption under the after
  shot says so. This replaced a card drawn from the corpus text, which
  read as a text mock of a page rather than the page – do not bring it back, as
  a fallback or otherwise. The corpus is still what the claim is *checked*
