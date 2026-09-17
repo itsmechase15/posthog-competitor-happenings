@@ -3,6 +3,7 @@ import { buildReviewPrompt, buildRewritePrompt } from "../src/review/prompt.js";
 import { parseReview } from "../src/review/schema.js";
 import type { AnalyzedItem, RecommendedAction, StoredItem } from "../src/types.js";
 import type { DocsWorkspace } from "../src/posthog/workspace.js";
+import { corpus } from "./helpers.js";
 
 const item: StoredItem = {
   id: "1",
@@ -104,6 +105,71 @@ describe("buildReviewPrompt", () => {
     expect(prompt).toContain(
       "An update_pages action with no proposed copy at all is a revise, not a drop",
     );
+  });
+
+  /**
+   * "Is this edit proportional to the page?" is unanswerable from an excerpt,
+   * so the reviewer gets both lengths and the number the gate measures with.
+   */
+  const shortPage = corpus({
+    url: COMPARE,
+    title: "The best Amplitude alternatives",
+    kind: "marketing",
+    text: "Both tools require manual consent handling. PostHog is the open-source alternative to Amplitude.",
+  });
+
+  it("says how long the page is and how much the copy adds to it", () => {
+    const sized = buildReviewPrompt({
+      alert,
+      action: pageAction,
+      workspace,
+      docs,
+      index: shortPage,
+    });
+
+    expect(sized).toContain("size: the page runs about 13 words");
+    expect(sized).toContain("within the 60 a page that length carries");
+  });
+
+  it("says when the copy is more than the page can carry", () => {
+    const dump = Array.from(
+      { length: 8 },
+      (_, index) =>
+        `Amplitude gates its Web Experiment script on consent, and their ${index + 1} paragraph of release notes says how the buffer flushes when a visitor grants it.`,
+    ).join(" ");
+    const sized = buildReviewPrompt({
+      alert: {
+        ...alert,
+        analysis: {
+          ...alert.analysis,
+          posthogRefs: [
+            {
+              url: COMPARE,
+              claim: "Both tools require manual consent handling.",
+              proposedText: dump,
+            },
+          ],
+        },
+      },
+      action: pageAction,
+      workspace,
+      docs,
+      index: shortPage,
+    });
+
+    expect(sized).toContain("over the 60 a page that length carries");
+  });
+
+  it("leaves the size out rather than guessing when the corpus is not to hand", () => {
+    expect(buildReviewPrompt({ alert, action: pageAction, workspace, docs })).not.toContain(
+      "size: the page runs",
+    );
+  });
+
+  it("makes a page edit out of proportion to its page a revise, and sometimes a drop", () => {
+    expect(prompt).toContain("the copy is out of proportion to the page it lands on");
+    expect(prompt).toContain("an edit may add up to a fifth of the page's own length");
+    expect(prompt).toContain("Where no short version is worth making, that is a drop");
   });
 
   it("names the three verdicts and the bar for each", () => {

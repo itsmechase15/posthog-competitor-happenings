@@ -189,6 +189,7 @@ async function reviewOne(
       action: target.action,
       workspace: input.workspace,
       docs: alert.docs ?? [],
+      index: input.index,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -295,6 +296,7 @@ async function revise(
       action: target.action,
       review: outcome,
       docs,
+      index: input.index,
     });
     merged = mergeRevision(
       target.action,

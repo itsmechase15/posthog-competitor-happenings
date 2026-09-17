@@ -102,6 +102,19 @@ it.
  analysis never opened. A failed check becomes an open question and opens no
  issue – never a correction, because there is no way to rewrite a claim whose
  basis we cannot find without inventing one.
+- **A page edit is proportional to the page.** A page that could carry more is
+ not a page that should be edited. What an `update_pages` edit adds has to fit
+ what is already there, so a page of two or three short paragraphs takes one or
+ two sentences and never a competitive write-up, however true every sentence of
+ it is. `proportionProblem` in
+ [`src/analysis/proportion.ts`](./src/analysis/proportion.ts) measures it
+ against the stored page – a fifth of the page's own length, or 60 words,
+ whichever is more, on top of the line it replaces – and over that the action
+ is dropped into an open question saying a shorter edit may still be worth
+ making. Nothing shortens the copy for the model: choosing which sentences
+ survive is writing the recommendation, not checking it. The review pass is
+ where a short version gets asked for, and the prompts state the rule in the
+ same numbers the gate measures with, so keep the three in step.
 - **Do not add a guess-then-fix model pass.** A model shown its own unsupported
  claim argues for it better rather than going to check. One analyst run, with
  the corpus under it, then code.
