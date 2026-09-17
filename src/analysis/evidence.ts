@@ -11,6 +11,7 @@ import type {
 } from "../types.js";
 import { firstSentence, truncate } from "../util/text.js";
 import { evidenceFor, noActionOf, withNoAction } from "./noAction.js";
+import { proportionProblem } from "./proportion.js";
 import { isExactRewrite, repeatsCurrentCopy, rewriteProblem } from "./rewrite.js";
 
 /**
@@ -211,6 +212,8 @@ export const BLOCK_CAUSES = [
   "page_edit_stale_claim",
   "page_edit_no_copy",
   "page_edit_no_change",
+  /** The copy is fine and there is far too much of it for the page it lands on. */
+  "page_edit_disproportionate",
   "page_edit_unusable",
 ] as const;
 export type BlockCause = (typeof BLOCK_CAUSES)[number];
@@ -362,6 +365,13 @@ function checkPageEdit(
  * Only those pages are candidates. A rewrite attached to copy that is no longer
  * on the page replaces nothing, and the reader has no way to tell which of the
  * two is stale.
+ *
+ * Three questions about it, in the order a person would ask them. Is it copy
+ * rather than a note about the edit? Does it change anything? And is there an
+ * amount of it a page this size can carry? The last one is `proportion.ts`,
+ * and it is the only check here that can fail copy nothing is wrong with:
+ * a competitive write-up filed against a page of three short paragraphs is
+ * true, well written, and still the wrong edit.
  */
 function checkRewrite(
   action: RecommendedAction,
@@ -372,7 +382,8 @@ function checkRewrite(
     (ref) =>
       isExactRewrite(ref.proposedText) &&
       !repeatsCurrentCopy(ref) &&
-      !alreadyOnPage(ref, context),
+      !alreadyOnPage(ref, context) &&
+      proportionProblem(ref, context.index.page(ref.url)) === null,
   );
   if (usable) return null;
 
@@ -395,12 +406,14 @@ function checkRewrite(
       [first.url],
     );
   }
-  return block(
-    action,
-    "page_edit_unusable",
-    rewriteProblem(first.proposedText) ?? "its replacement copy is unusable",
-    [first.url],
-  );
+
+  const unusable = rewriteProblem(first.proposedText);
+  if (unusable) return block(action, "page_edit_unusable", unusable, [first.url]);
+
+  const outsized = proportionProblem(first, context.index.page(first.url));
+  if (outsized) return block(action, "page_edit_disproportionate", outsized, [first.url]);
+
+  return block(action, "page_edit_unusable", "its replacement copy is unusable", [first.url]);
 }
 
 /** A rewrite already sitting on the stored page is a page that has been fixed. */
@@ -572,6 +585,10 @@ function kindForCause(cause: BlockCause): NoActionKind {
       return "already_covered";
     case "packaging":
     case "docs_only":
+    // Nothing about the product is missing and nothing on the page is unsayable:
+    // the edit asked for is the wrong size for the page, which is a judgement
+    // about the page rather than a claim nobody could check.
+    case "page_edit_disproportionate":
       return "not_a_gap";
     case "no_gap":
     case "no_evidence":
@@ -612,6 +629,10 @@ function notAGapReason(blocked: BlockedAction[]): string {
   const packaging = blocked.find((entry) => entry.cause === "packaging");
   if (packaging) {
     return `The only thing recommended was about what a competitor charges rather than what PostHog can do ("${truncate(packaging.action.gap ?? "", 120)}"), and pricing is not a capability PostHog is missing.`;
+  }
+  const outsized = blocked.find((entry) => entry.cause === "page_edit_disproportionate");
+  if (outsized) {
+    return `The only thing recommended was a page edit far longer than the page it lands on: ${outsized.reason}. A shorter edit may still be worth making, so this is a page nobody has written two sentences for yet rather than a page that is wrong.`;
   }
   return "The only thing recommended was writing docs about something PostHog already ships, which is a docs job rather than a product gap.";
 }

@@ -187,6 +187,88 @@ withBrowser("finding the line on the live page and putting the copy in", () => {
     expect(await edited.locator("[data-happenings-highlight]").count()).toBe(0);
   });
 
+  /**
+   * A rewrite usually keeps part of what it replaces: the sentence that is
+   * still true, then the one the launch makes necessary. The page's own words
+   * are not the recommendation, so the mark has to stop at them.
+   */
+  it("marks the sentence the rewrite adds and leaves the one it keeps alone", async () => {
+    await load();
+    const added = "Amplitude now schedules that stop for you.";
+    const copy = `${CLAIM} ${added}`;
+    await stage(page, { proposedText: copy });
+    await stage(page, { action: "apply", proposedText: copy });
+
+    expect(await marks().count()).toBe(1);
+    expect(await marks().innerText()).toBe(added);
+    // The kept sentence is on the page once, as the page's own copy.
+    const text = await targetText();
+    expect(text).toContain(CLAIM);
+    expect(text.indexOf(CLAIM)).toBe(text.lastIndexOf(CLAIM));
+  });
+
+  it("marks nothing at all when the rewrite only reorders what was there", async () => {
+    await load();
+    await stage(page, { proposedText: CLAIM });
+    expect((await stage(page, { action: "apply", proposedText: CLAIM })).status).toBe("ok");
+    expect(await marks().count()).toBe(0);
+    expect(await targetText()).toContain(CLAIM);
+  });
+
+  /**
+   * The paragraph, not only the quoted line. A rewrite that restates a
+   * neighbouring sentence is restating the page, and marking it would say the
+   * page's own words arrived with this recommendation.
+   */
+  it("leaves a sentence the rewrite took from elsewhere in the paragraph unmarked", async () => {
+    await load();
+    const kept = "Experiments run on your own events.";
+    const added = "Amplitude schedules an experiment to stop on a date you pick.";
+    const copy = `${kept} ${added}`;
+    await stage(page, { proposedText: copy });
+    await stage(page, { action: "apply", proposedText: copy });
+
+    expect(await marks().count()).toBe(1);
+    expect(await marks().innerText()).toBe(added);
+  });
+
+  it("drops a paragraph an insert would put on the page twice", async () => {
+    await load();
+    const copy = `${CLAIM}\nPostHog will not stop one for you.`;
+    await stage(page, { mode: "insert", proposedText: copy });
+    expect((await stage(page, { action: "apply", mode: "insert", proposedText: copy })).status).toBe(
+      "ok",
+    );
+
+    const inserted = page.locator("[data-happenings-inserted]");
+    expect(await inserted.count()).toBe(1);
+    expect(await inserted.innerText()).toBe("PostHog will not stop one for you.");
+    expect(await marks().count()).toBe(1);
+  });
+
+  /** The quoted line stays where it is, so the inserted copy is only what is new. */
+  it("does not repeat the quoted line inside the copy it adds next to it", async () => {
+    await load();
+    const added = "Amplitude schedules an experiment to stop on a date you pick.";
+    const copy = `${CLAIM} ${added}`;
+    await stage(page, { mode: "insert", proposedText: copy });
+    await stage(page, { action: "apply", mode: "insert", proposedText: copy });
+
+    const inserted = page.locator("[data-happenings-inserted]");
+    expect(await inserted.innerText()).toBe(added);
+    expect(await marks().innerText()).toBe(added);
+    const text = await page.locator("main").innerText();
+    expect(text.indexOf(CLAIM)).toBe(text.lastIndexOf(CLAIM));
+  });
+
+  it("says so when an insert would add nothing the page does not already say", async () => {
+    await load();
+    await stage(page, { mode: "insert", proposedText: CLAIM });
+    const applied = await stage(page, { action: "apply", mode: "insert", proposedText: CLAIM });
+    expect(applied.status).toBe("failed");
+    if (applied.status === "failed") expect(applied.reason).toContain("already on the page");
+  });
+
   /** The page's own `mark` styling must not be able to turn the mark off. */
   it("keeps the highlight visible on a page that styles mark for itself", async () => {
     await load(
@@ -398,6 +480,32 @@ withBrowser("photographing the page before and after", () => {
     expect(size(result.after).height).toBeGreaterThan(VIEWPORT.height * 2);
     expect(await highlighted(result.before)).toBe(0);
     expect(await highlighted(result.after)).toBeGreaterThan(1_000);
+  });
+
+  /**
+   * The same proof in pixels: a rewrite that keeps the page's sentence paints
+   * less of the shot yellow than one that replaces it, because the sentence it
+   * kept is the page's copy and the mark is only ever the recommendation.
+   */
+  it("paints less of the after shot when the rewrite keeps a sentence of the page", async () => {
+    status = 200;
+    body = MARKETING_PAGE;
+    const added = "Amplitude schedules an experiment to stop on a date you pick.";
+    const swapped =
+      "Teams running a test on either tool end it by hand when they remember to.";
+
+    const reused = await capture({ proposedText: `${CLAIM} ${added}` });
+    const fresh = await capture({ proposedText: `${swapped} ${added}` });
+
+    expect(reused.status).toBe("captured");
+    expect(fresh.status).toBe("captured");
+    if (reused.status !== "captured" || fresh.status !== "captured") return;
+
+    const onReused = await highlighted(reused.after);
+    const onFresh = await highlighted(fresh.after);
+    expect(onReused).toBeGreaterThan(1_000);
+    expect(onFresh).toBeGreaterThan(onReused);
+    expect(await highlighted(reused.before)).toBe(0);
   });
 
   it("says the line is missing when the live page has moved on", async () => {

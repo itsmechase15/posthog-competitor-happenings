@@ -3,6 +3,8 @@ import { actionLabel } from "../labels.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { EVIDENCE_LABEL, TOC_FILENAME, type DocsWorkspace } from "../posthog/workspace.js";
 import { PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
+import { describeProportion, MIN_GROWTH_WORDS } from "../analysis/proportion.js";
+import type { CorpusIndex } from "../posthog/retrieval.js";
 import { MAX_ACTION_CHARS } from "../slack/message.js";
 import type {
   AnalyzedItem,
@@ -36,6 +38,12 @@ export interface ReviewInput {
   workspace: DocsWorkspace | null;
   /** Corpus excerpts already ranked for this signal, as a starting point. */
   docs: PostHogDoc[];
+  /**
+   * The corpus in memory, for the one thing the excerpts cannot answer: how
+   * long the page an edit lands on actually is. Absent leaves the size line
+   * out rather than guessing at it.
+   */
+  index?: CorpusIndex;
 }
 
 export interface RewriteInput {
@@ -49,6 +57,8 @@ export interface RewriteInput {
    * fails the evidence check and throws the rewrite away.
    */
   docs: PostHogDoc[];
+  /** The same as on a review: how long the page being rewritten is. */
+  index?: CorpusIndex;
 }
 
 /** A page action's rewrite is copy for posthog.com; a product action's is a claim about it. */
@@ -74,7 +84,11 @@ function renderDocs(docs: PostHogDoc[]): string {
  * replace, and for an `update_pages` action the proposed copy is the substance
  * of the recommendation, so it is shown in full rather than summarized.
  */
-function renderEdits(refs: PostHogRef[], action: RecommendedAction): string {
+function renderEdits(
+  refs: PostHogRef[],
+  action: RecommendedAction,
+  index: CorpusIndex | null,
+): string {
   // For a page action, every page it could edit is listed whether or not copy
   // came back for it, because a page action with no copy is itself the finding.
   const edits = isPageAction(action)
@@ -90,13 +104,22 @@ function renderEdits(refs: PostHogRef[], action: RecommendedAction): string {
           : "  copy proposed for it: (none, which is a revise on its own for update_pages)",
       );
       if (ref.suggestedEdit) lines.push(`  why: "${ref.suggestedEdit}"`);
+      // How long the page is, so "is this edit proportional to the page?" is a
+      // question with numbers under it rather than a guess at a page the
+      // reviewer may never open.
+      const proportion = describeProportion(index?.page(ref.url), ref);
+      if (proportion) lines.push(`  size: ${proportion}`);
       return lines.join("\n");
     })
     .join("\n");
 }
 
 /** One action exactly as it was filed, so both models judge the same thing. */
-export function renderFiledAction(alert: AnalyzedItem, action: RecommendedAction): string {
+export function renderFiledAction(
+  alert: AnalyzedItem,
+  action: RecommendedAction,
+  index: CorpusIndex | null = null,
+): string {
   const competitor = COMPETITORS[alert.item.competitor].label;
   return [
     `Competitor: ${competitor}`,
@@ -112,7 +135,7 @@ export function renderFiledAction(alert: AnalyzedItem, action: RecommendedAction
     `Gap claimed: ${action.gap ?? "(none)"}`,
     `Evidence page: ${action.evidenceUrl ?? "(none)"}`,
     `Evidence quote: ${action.evidenceQuote ? `"${action.evidenceQuote}"` : "(none)"}`,
-    `Pages it asks someone to edit:\n${renderEdits(alert.analysis.posthogRefs, action)}`,
+    `Pages it asks someone to edit:\n${renderEdits(alert.analysis.posthogRefs, action, index)}`,
   ].join("\n");
 }
 
@@ -152,6 +175,7 @@ One of three, and the middle one is the interesting one.
   - It says consider_building where PostHog has an adjacent product to enhance, or consider_enhancing where PostHog has nothing in the area at all.
   - The impact label does not match what the post shipped.
   - For an update_pages action: the copy proposed for the page is wrong about what PostHog does, or is a note about the edit rather than the words to put on the page, or restates what the page already says, or does not read as if it came off that page. An update_pages action with no proposed copy at all is a revise, not a drop: the recommendation may be right and the writing is missing.
+  - For an update_pages action: the copy is out of proportion to the page it lands on. Each page above carries its length and how much this copy adds to it, so this is a measurement rather than a feeling: an edit may add up to a fifth of the page's own length, and never less than ${MIN_GROWTH_WORDS} words, on top of the line it replaces. A short page given a long competitive write-up is a revise asking for the one or two sentences that make the point, and naming what to cut ${EN_DASH} the competitor's pricing tiers, their rollout history, and the rest of their launch post go first. Where no short version is worth making, that is a drop: the page is not wrong, it just does not need this.
 - "drop": there is nothing to file. PostHog already does this and you can name the pages that show it, or the gap is about what a competitor charges rather than what the product does, or the action asks for documentation to be written.
 
 The bar, which matters more than the list:
@@ -200,7 +224,7 @@ ${CALIBRATION}
 ${renderWorkspaceRules(input.workspace)}
 
 ## The action as filed
-${renderFiledAction(input.alert, input.action)}
+${renderFiledAction(input.alert, input.action, input.index ?? null)}
 
 ## Pre-loaded excerpts the analyst was shown
 The pages the analysis was checked against. A starting point, not the answer.
@@ -253,7 +277,8 @@ const PRODUCT_CHECKS = `- "evidence_url" has to be a PostHog docs page, and it h
 - "feature" has to be PostHog's own name for the product, e.g. "Experiments", "Session replay", "AI observability". A name PostHog does not use is dropped and the old one kept.
 - Never change the type into update_pages or new_compare_page, and never out of one. Those ask marketing to edit posthog.com, which is a different recommendation.`;
 
-const PAGE_CHECKS = `- "proposed_text" is the words that go on the page, and the check on it is mechanical: copy that opens with mention, note, say, add, update, clarify, reword or the like, copy that talks about "the page" or "this section" or what the copy "should say", copy shorter than a sentence or two, and copy carrying marketing filler the handbook rules out are all thrown out. So is copy that restates what the page already says, and copy that is already on the stored page.
+const PAGE_CHECKS = `- "proposed_text" is measured against the page it lands on: it may add up to a fifth of that page's own length, and never less than ${MIN_GROWTH_WORDS} words, on top of the line it replaces. The size line under each page above says where this one stands. Copy over the line is thrown away with the action, so on a short page write the one or two sentences that make the point and cut the competitor detail around them.
+- "proposed_text" is the words that go on the page, and the check on it is mechanical: copy that opens with mention, note, say, add, update, clarify, reword or the like, copy that talks about "the page" or "this section" or what the copy "should say", copy shorter than a sentence or two, and copy carrying marketing filler the handbook rules out are all thrown out. So is copy that restates what the page already says, and copy that is already on the stored page.
 - Only a page this action already cites, and only one marketing writes. A "/docs/" URL is always the wrong answer: the docs are the evidence, never the target.
 - "suggested_edit" is the one line saying what is wrong and what you are changing. It never stands in for "proposed_text".`;
 
@@ -277,7 +302,7 @@ ${pageWork ? PAGE_CHECKS : PRODUCT_CHECKS}
   }
 ${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}
 ## The action as filed
-${renderFiledAction(alert, action)}
+${renderFiledAction(alert, action, input.index ?? null)}
 
 ## What the reviewer said
 ${renderReviewerAsk(review, alert.analysis.impact)}

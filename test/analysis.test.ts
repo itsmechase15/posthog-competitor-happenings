@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { diversifyClaims } from "../src/analysis/analyze.js";
 import { heuristicAnalysis } from "../src/analysis/fallback.js";
 import { buildAnalysisPrompt } from "../src/analysis/prompt.js";
+import { MIN_GROWTH_WORDS } from "../src/analysis/proportion.js";
 import { MAX_ACTION_CHARS } from "../src/slack/message.js";
 import type { PostHogClaim } from "../src/types.js";
 import { extractJsonObject, parseAnalysis, parseStoredAlert } from "../src/analysis/schema.js";
@@ -775,6 +776,25 @@ describe("buildAnalysisPrompt", () => {
     expect(withRefs).toContain(
       '"suggested_edit" stays what it always was: one line saying what is wrong',
     );
+  });
+
+  /**
+   * The judgement the gate then measures: a page that could carry more is not
+   * a page that should be edited, and a short page takes a short edit.
+   */
+  it("asks for an edit proportional to the page, in the numbers the gate uses", () => {
+    expect(withRefs).toContain("Size it to the page");
+    expect(withRefs).toContain(
+      `up to a fifth of the page's own length on top of the line it replaces, and never less than ${MIN_GROWTH_WORDS} words`,
+    );
+    expect(withRefs).toContain("Use judgment on the size of the edit, every time");
+    expect(withRefs).toContain("Competitor detail earns its place one fact at a time");
+    expect(withRefs).toContain("it is refused on length alone");
+  });
+
+  it("says no update_pages is the answer when no short version is worth making", () => {
+    expect(withRefs).toContain("the answer is a shorter edit, or no update_pages action at all");
+    expect(withRefs).toContain("work somebody will have to undo");
   });
 
   it("puts proposed_text in the response shape it asks for", () => {

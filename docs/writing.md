@@ -190,6 +190,45 @@ The GitHub issue prints the pair – **On the page today**, then **Replace it
 with** – so the edit is a decision rather than an assignment. Slack shows the
 first 200 characters under the page name and leaves the rest to the issue.
 
+## And proportional to the page it lands on
+
+A page that *could* carry more is not a page that *should* be edited. The
+second question, after "is this page wrong?", is "how much does this page
+need?", and the answer is a ratio rather than a length: what the edit adds has
+to be proportional to what is already there. A page of two or three short
+paragraphs takes one or two sentences. It does not take a competitive write-up.
+
+The case that showed why was a competitor moving one of its products onto a
+flat rate. The page it touched ran three short paragraphs, and the
+recommendation was four more on their new tiers, their overage rules, and how
+their old plan used to work. Every sentence of it was true and every existing
+check passed: the page was real, the quoted line was on it, the copy was copy
+rather than a note about the edit. It was simply too much, and the page it
+landed on would have read as a page about them.
+
+So it is measured. [`proportion.ts`](../src/analysis/proportion.ts) counts the
+words on the stored page and the words the edit adds on top of the line it
+replaces, and an edit may add a fifth of the page's own length, or 60 words,
+whichever is more. The floor is there so a short page can still take the one
+honest sentence it sometimes needs; the ratio is there so a long page can take
+a paragraph. Over the line, `checkPageEdit` drops the action like any other
+failed check, and the open question says what a shorter edit would be worth.
+
+Nothing shortens the copy on its own. Picking which two of somebody's four
+sentences survive is writing the recommendation rather than checking it, which
+is the same reason no failed evidence check is ever turned into a correction.
+What can ask for the short version is the review pass: the reviewer is shown
+how long the page is and how much the copy adds to it, and "this is three times
+the page" is a revise asking for two sentences, or a drop when there is no
+short version worth making.
+
+The prompts carry the same rule in the same numbers, so copy written to the
+rule passes the check rather than discovering it: `PAGE_REWRITE_RULES` states
+it to the analyst and to the review's writer, and the `update_pages` section of
+`SYSTEM_RULES` says what to cut first. Their pricing tiers, their rollout
+history, and the rest of their launch post are theirs to publish. One fact,
+named in the fewest words that make the point, is the edit.
+
 ## And only about the thing that shipped
 
 All three reasons are about *this* launch. A launch is not a licence to fix the
@@ -287,6 +326,9 @@ have been allowed to be written that way in the first place.
   instruction, and `checkPageEdit` in
   [`src/analysis/evidence.ts`](../src/analysis/evidence.ts) drops the ones that
   did not.
+- [`proportionProblem`](../src/analysis/proportion.ts) measures what is left
+  against the page it goes on, and drops the write-up that a short page cannot
+  carry. It is the only check here that can fail copy nothing is wrong with.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.

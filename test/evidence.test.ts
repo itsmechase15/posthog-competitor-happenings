@@ -477,6 +477,77 @@ describe("gateActions", () => {
         expect(result.blocked[0]?.reason).toContain("not the words to put there");
       });
     });
+
+    /**
+     * The other half of the judgement: copy nothing is wrong with, and far too
+     * much of it for the page it lands on. A competitor's launch post is long
+     * and the page it touches is often three paragraphs, and an edit that
+     * triples the page is the launch swallowing the page.
+     */
+    describe("the size of the edit", () => {
+      /** Four sentences of competitor detail, which is a write-up rather than an edit. */
+      const dump =
+        "Mixpanel now records sessions in their own product, on a plan that starts at a flat monthly rate and meters recordings above the bundled allowance. Their replay is sold alongside their analytics seats, so a team already paying for seats pays again for the recordings those seats watch. Earlier this year they metered it per recording instead, and teams that signed before the change keep the old terms until renewal. PostHog session replay is included on every plan, and you can watch a recording next to the events it produced without adding a product to your bill.";
+
+      const withRef = (ref: Partial<PostHogRef>, url: string) =>
+        analysis({
+          actions: [edit],
+          posthogRefs: [
+            {
+              url,
+              claim: "Mixpanel has no session replay of its own",
+              suggestedEdit: "Say they now ship it.",
+              ...ref,
+            },
+          ],
+        });
+
+      const SHORT = "https://posthog.com/compare/mixpanel-vs-posthog";
+
+      it("blocks a competitive write-up filed against a page of two sentences", () => {
+        const result = gateActions(withRef({ proposedText: dump }, SHORT), context());
+        expect(result.blocked[0]?.cause).toBe("page_edit_disproportionate");
+        expect(result.blocked[0]?.reason).toContain("proportional to the page");
+      });
+
+      it("lets the same copy through on a page long enough to carry it", () => {
+        const long = corpus({
+          url: "https://posthog.com/product-analytics",
+          title: "Product analytics",
+          kind: "marketing",
+          text: `Mixpanel has no session replay of its own. ${"PostHog gives you product analytics, session replay, feature flags, experiments, surveys, and a data warehouse in one place, priced per event with a free tier that most teams never leave. ".repeat(
+            20,
+          )}`,
+        });
+
+        const result = gateActions(
+          withRef({ proposedText: dump }, "https://posthog.com/product-analytics"),
+          { index: long, seenUrls: new Set() },
+        );
+        expect(result.blocked).toEqual([]);
+      });
+
+      it("keeps a short edit on a short page, which is the whole point of the rule", () => {
+        const result = gateActions(
+          withRef(
+            {
+              proposedText:
+                "Mixpanel records sessions in their own product now. PostHog session replay is included on every plan.",
+            },
+            SHORT,
+          ),
+          context(),
+        );
+        expect(result.blocked).toEqual([]);
+      });
+
+      it("says a shorter edit may still be right rather than calling the page fine", () => {
+        const result = gateActions(withRef({ proposedText: dump }, SHORT), context());
+        expect(result.analysis.actions).toEqual([]);
+        expect(result.analysis.noAction?.kind).toBe("not_a_gap");
+        expect(result.analysis.noAction?.reason).toContain("A shorter edit may still be worth");
+      });
+    });
   });
 
   describe("new compare pages", () => {
