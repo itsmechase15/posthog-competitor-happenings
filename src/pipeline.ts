@@ -21,6 +21,7 @@ import { refreshDocsCorpus } from "./posthog/corpus.js";
 import { buildCorpusIndex } from "./posthog/retrieval.js";
 import { writeDocsWorkspace } from "./posthog/workspace.js";
 import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
+import { postQuietDayNote } from "./slack/quietDay.js";
 import {
   BotTokenPoster,
   ConsolePoster,
@@ -96,6 +97,8 @@ export interface RunSummary {
   /** Issues the reviewer closed as not planned, having read the docs behind them. */
   issuesClosed: number;
   posted: number;
+  /** Whether the run told the channel it had found nothing. */
+  quietDayPosted: boolean;
   notes: string[];
 }
 
@@ -389,6 +392,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     issuesOpened: 0,
     issuesClosed: 0,
     posted: 0,
+    quietDayPosted: false,
     notes: [],
   };
 
@@ -449,7 +453,8 @@ export async function runCycle(config: Config): Promise<RunSummary> {
       });
     }
 
-    for (const entry of [...pending, ...fresh]) {
+    const toPost = [...pending, ...fresh];
+    for (const entry of toPost) {
       try {
         // A retry of a phase 1 analysis has no stored image; find one now.
         const image = entry.image ?? (await resolveFeatureImage(config, entry.item));
@@ -464,6 +469,17 @@ export async function runCycle(config: Config): Promise<RunSummary> {
         );
       }
     }
+
+    // Once, at the end, after every alert has been tried: a run that found
+    // nothing says so rather than leaving the channel to guess whether the job
+    // ran at all. `attempted` rather than `posted`, so an alert Slack refused
+    // does not get "nothing happened today" written over the top of it.
+    summary.quietDayPosted = await postQuietDayNote(poster, {
+      candidates: summary.candidates,
+      attempted: toPost.length,
+      seeded: summary.seeded,
+      failedSources: collection.failures.length,
+    });
 
     return summary;
   } finally {
