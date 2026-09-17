@@ -32,6 +32,13 @@ export interface CollectionResult {
   candidates: CandidateItem[];
   /** Per-source notes surfaced in the run summary, e.g. why X was skipped. */
   notes: string[];
+  /**
+   * Labels of the sources that threw, as opposed to the ones that were skipped
+   * for want of a token. A run that collected nothing because every feed broke
+   * has not established that nothing happened, and the quiet-day message needs
+   * to tell those two apart.
+   */
+  failures: string[];
 }
 
 function http(config: Config) {
@@ -134,6 +141,7 @@ async function collectNewsletters(config: Config, inboxId: string): Promise<Cand
 export async function collectCandidates(config: Config): Promise<CollectionResult> {
   const candidates: CandidateItem[] = [];
   const notes: string[] = [];
+  const failures: string[] = [];
 
   const run = async (label: string, task: () => Promise<CandidateItem[]>): Promise<void> => {
     try {
@@ -142,6 +150,7 @@ export async function collectCandidates(config: Config): Promise<CollectionResul
       const message = error instanceof Error ? error.message : String(error);
       log.error(`source ${label} failed: ${message}`);
       notes.push(`${label}: failed (${message})`);
+      failures.push(label);
     }
   };
 
@@ -172,7 +181,7 @@ export async function collectCandidates(config: Config): Promise<CollectionResul
     notes.push(note);
   }
 
-  return { candidates, notes };
+  return { candidates, notes, failures };
 }
 
 export function groupBySourceKey(

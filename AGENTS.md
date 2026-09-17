@@ -149,7 +149,17 @@ it.
  and it becomes the forbidden pass. See [`src/review/`](./src/review/) and the
  [Review section of PLAN.md](./PLAN.md#review-every-action-once).
 - **Zero actions is a normal answer**, rendered as **None** with a reason. Do
- not reintroduce a rule that an alert has to recommend something.
+  not reintroduce a rule that an alert has to recommend something.
+- **A run with no alerts in it still says so.** Silence reads the same as a
+  broken cron from inside the channel, so `runCycle` ends with one line saying
+  nothing shipped, posted once, after every alert has been tried. See
+  `postQuietDayNote` in [`src/slack/quietDay.ts`](./src/slack/quietDay.ts). It
+  is skipped on a run that had alerts to post – including ones Slack refused,
+  because the next run retries those – on a run that collected nothing because
+  every source failed, and on a first run that recorded a backlog silently. In
+  each of those the line would be untrue rather than merely redundant. A forced
+  post of one URL never reaches it: that path posts its own message, **None**
+  and all.
 - **New environment variable?** Add it to [`src/config.ts`](./src/config.ts),
   [`src/setup/requirements.ts`](./src/setup/requirements.ts), `.env.example`,
   and the workflow that needs it. The requirements list is what `check-env`

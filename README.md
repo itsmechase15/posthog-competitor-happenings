@@ -95,6 +95,37 @@ and [tone of voice](https://posthog.com/handbook/brand/tone).
 rule is enforced. The one to know: dashes are en dashes with a space either
 side, never em dashes.
 
+### A day with nothing in it
+
+Most days neither competitor ships anything, and the run used to end in silence.
+Silence is ambiguous: from the channel, a quiet Tuesday and a broken cron look
+the same, so nobody could tell whether the bot had looked. So a run that posts no
+alerts posts one line instead:
+
+```
+No new competitor products or features today
+Nothing new from Mixpanel or Amplitude. 37 items checked, none of them new.
+```
+
+The count is there because "nothing happened" and "nothing was read" also look
+the same, and a number tells them apart.
+[`src/slack/quietDay.ts`](./src/slack/quietDay.ts) is the whole of it, and
+`runCycle` calls it once, at the end, after every alert has been tried. Three
+kinds of run get no such line, because in each of them it would be untrue rather
+than merely redundant:
+
+- **A run with alerts in it.** Including alerts Slack refused: the attempt is
+  what counts, the next run retries them, and "nothing happened today" written
+  over the top of a failed alert is the worst thing this could say.
+- **A run that collected nothing because every source failed.** A day that could
+  not be checked is not a quiet day. One broken feed out of several still is.
+- **A first run for a source**, which records that source's backlog without
+  alerting. There were items; they were recorded rather than posted.
+
+A forced post of a single URL is not this path at all. It already posts its own
+message, **None** and a reason included, so it never gets an empty-day line on
+top of it.
+
 ## How impact is rated
 
 Impact answers one question: what did this post ship?
@@ -628,6 +659,7 @@ that one posts as normal.
 | `src/github/issue.ts` | One issue draft per action, with its labels, and the editor a verdict writes through. |
 | `src/github/files.ts` | Commits both PNGs to this repo, so an issue can embed them. |
 | `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
+| `src/slack/quietDay.ts` | The one line a run with no alerts in it posts, and the runs that get no such line. |
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
 | `migrations/001_init.sql` | The four tables. |
