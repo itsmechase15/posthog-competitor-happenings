@@ -220,11 +220,17 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("leads with the news, then the ask, then what the ask stands on", () => {
+  it("leads with the news, then the detail, then the ask, then what the ask stands on", () => {
     for (const body of [draft.body, buildIssueDraft(analyzed, image, productAction).body]) {
       const headings = [...body.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
-      expect(headings.slice(0, 2)).toEqual(["What you need to know", "Recommended action"]);
+      expect(headings.slice(0, 3)).toEqual([
+        "What you need to know",
+        "More detail",
+        "Recommended action",
+      ]);
       expect(headings.indexOf("Impact")).toBeGreaterThan(headings.indexOf("Recommended action"));
+      expect(headings.indexOf("Open questions")).toBeGreaterThan(headings.indexOf("Impact"));
+      expect(headings.at(-1)).toBe("Sources");
     }
 
     const withGap = buildIssueBody(analyzed, image, {
@@ -232,8 +238,9 @@ describe("buildIssueDraft", () => {
       gap: "PostHog experiments have no scheduled stop.",
     });
     const gapHeadings = [...withGap.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
-    expect(gapHeadings.slice(0, 3)).toEqual([
+    expect(gapHeadings.slice(0, 4)).toEqual([
       "What you need to know",
+      "More detail",
       "Recommended action",
       "The gap this closes",
     ]);
@@ -355,7 +362,7 @@ describe("buildIssueDraft", () => {
 
   it("gives product only the docs that back its own action", () => {
     const product = buildIssueDraft(analyzed, image, productAction).body;
-    expect(product).toContain("## PostHog pages for context");
+    expect(product).toContain("## What PostHog's docs say today");
     expect(product).toContain("https://posthog.com/docs/experiments/managing-lifecycle");
     expect(product).toContain(
       "**Claim today:** Experiments are started, paused, and stopped by hand.",
@@ -379,9 +386,112 @@ describe("buildIssueDraft", () => {
       image,
       productAction,
     );
-    expect(body).toContain("## PostHog pages for context");
-    expect(body).toContain("No PostHog docs page in context speaks to this action");
+    expect(body).toContain("## What PostHog's docs say today");
+    expect(body).toContain("No PostHog docs page describes this part of Experiments yet");
     expect(body).not.toContain("best-amplitude-alternatives");
+  });
+
+  /**
+   * The section reading empty next to a list of docs URLs is what sent a
+   * reader looking for the bug. There is no bug: PostHog documents what
+   * PostHog ships, so a gap has no page, and the list underneath is the docs
+   * somebody writes afterwards.
+   */
+  describe("an empty docs section", () => {
+    const withoutRefs = (action: RecommendedAction): string =>
+      buildIssueBody(
+        { ...analyzed, analysis: { ...analyzed.analysis, posthogRefs: [] } },
+        null,
+        action,
+      );
+
+    it("says PostHog has no page because PostHog does not ship it", () => {
+      const body = withoutRefs({
+        type: "consider_building",
+        detail: "Ship a typed Python client for agent code.",
+      });
+      expect(body).toContain(
+        "No PostHog docs page describes this capability, which is what you would expect for something PostHog does not ship",
+      );
+      expect(body).toContain("that absence is the gap rather than a check that failed");
+    });
+
+    it("never says the recommendation went unchecked", () => {
+      expect(withoutRefs(productAction)).not.toContain("has been checked against what PostHog");
+    });
+
+    it("sends the reader to the section the evidence is actually in", () => {
+      const body = withoutRefs({
+        ...productAction,
+        gap: "PostHog experiments have no scheduled stop.",
+        evidenceUrl: "https://posthog.com/docs/experiments/managing-lifecycle",
+      });
+      expect(body).toContain('The docs the gap itself was read off are under "The gap this closes"');
+    });
+
+    it("says what the docs listed under it are for, and only when they are there", () => {
+      const future =
+        'The pages under "Docs that would change if this ships" are the ones somebody would rewrite after PostHog does this, not evidence for it.';
+
+      const listed = buildIssueBody(
+        {
+          ...analyzed,
+          analysis: { ...analyzed.analysis, posthogRefs: [] },
+          docs: [
+            {
+              url: "https://posthog.com/docs/experiments",
+              title: "Experiments",
+              excerpt: "Experiments compare variants.",
+            },
+          ],
+        },
+        null,
+        productAction,
+      );
+      expect(listed).toContain(future);
+      expect(listed).toContain("## Docs that would change if this ships");
+
+      expect(withoutRefs(productAction)).not.toContain(future);
+    });
+  });
+
+  /**
+   * A statement under "Open questions" leaves the reader to work out what is
+   * being asked. Analyses stored before that was enforced still render here,
+   * so the body is the last place it is checked rather than the first.
+   */
+  describe("open questions", () => {
+    const asked = (questions: string[]): string[] => {
+      const body = buildIssueBody(
+        { ...analyzed, analysis: { ...analyzed.analysis, openQuestions: questions } },
+        null,
+        productAction,
+      );
+      const section = body.split("## Open questions\n")[1]?.split("\n\n")[0] ?? "";
+      return section.split("\n").map((line) => line.replace(/^- /, ""));
+    };
+
+    it("asks the statement a stored analysis left behind", () => {
+      expect(
+        asked([
+          "Whether Headless is generally available on every Mixpanel plan.",
+          "Whether PostHog users writing agent code want a typed Python client",
+        ]),
+      ).toEqual([
+        "Is Headless generally available on every Mixpanel plan?",
+        "Do we know whether PostHog users writing agent code want a typed Python client?",
+      ]);
+    });
+
+    it("renders nothing under the heading that is not a question", () => {
+      for (const question of asked([
+        "Whether the compare page is stale.",
+        "Is this priced per seat?",
+        "No docs page covers the Python client.",
+      ])) {
+        expect(question.endsWith("?") || question.includes("? ")).toBe(true);
+      }
+    });
   });
 
   it("names the docs a product action would make wrong if it shipped", () => {
