@@ -76,7 +76,7 @@ export function verifyAgainstDocs(analysis: Analysis, docs: PostHogDoc[]): DocsV
       } else if (openQuestions.length < 3) {
         notes.push("flagged an unverified gap claim as an open question");
         openQuestions.push(
-          `This action says what PostHog does not do, and no PostHog docs page in context confirmed it. Check the docs for ${namedProducts(action) || "the product involved"} before acting on it.`,
+          `Does PostHog already do this? The action says it does not, no PostHog docs page in context confirmed that, so read the docs for ${namedProducts(action) || "the product involved"} before acting on it.`,
         );
       }
     }

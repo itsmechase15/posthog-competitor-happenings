@@ -185,6 +185,7 @@ ${TEAM_RULES}
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
 - "posthog_refs" cites PostHog URLs from the corpus. Only cite URLs that exist in it. Include "suggested_edit" when an action is update_pages or new_compare_page, and "proposed_text" whenever the action is update_pages. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things that change what PostHog should do and that you could not settle. This is where an unproven gap goes. It is a better answer than an action, not a worse one.
+- Write every open question as a question. It opens with Is, Are, Does, Do, Can, Will, Which, What, How, or "Do we know", and it ends with a question mark, because the reader's job is to answer it. "Is Headless generally available on every Mixpanel plan, or only on Enterprise?" is a question. "Whether Headless is generally available" is a note you left yourself: it names the doubt and asks nobody anything, and it is rewritten into a question or dropped before it reaches the issue. One question per entry, and name the thing you could not check inside it. A sentence of context after the question mark is fine.
 - Do not invent product facts about PostHog or the competitor. If the source text is thin, say so in the summary and rate impact on what the post does show: a post with no feature visible in it is minor.
 
 Every product action carries its own evidence, and every part of it is checked against PostHog's stored docs before anyone is asked to do the work:
@@ -257,7 +258,7 @@ export const RESPONSE_SHAPE = `{
       "proposed_text": "string (the exact copy to put on the page, in the page's own voice; required for update_pages)"
     }
   ],
-  "open_questions": ["string"]
+  "open_questions": ["string (a question, ending in a question mark)"]
 }`;
 
 export interface PromptContext {

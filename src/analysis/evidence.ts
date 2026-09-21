@@ -510,7 +510,7 @@ export function gateActions(analysis: Analysis, context: CoverageContext): GateR
   if (kept.length > 0) {
     for (const entry of blocked) {
       if (openQuestions.length >= 4) break;
-      openQuestions.push(entry.reason);
+      openQuestions.push(blockedQuestion(entry));
     }
   }
 
@@ -573,6 +573,59 @@ export function gateActions(analysis: Analysis, context: CoverageContext): GateR
     }
 
     return null;
+  }
+}
+
+/**
+ * What a blocked action leaves for a person to answer.
+ *
+ * `reason` says what failed, in the words the verdict uses, and it is a
+ * statement about the action rather than a question about PostHog. An open
+ * question has to ask something, so the cause picks the question and the
+ * reason follows it as the context behind it.
+ */
+export function blockedQuestion(entry: BlockedAction): string {
+  const reason = entry.reason.trim().replace(/[.]+$/, "");
+  return `${questionForCause(entry.cause)} The recommendation was dropped because ${reason}.`;
+}
+
+function questionForCause(cause: BlockCause): string {
+  switch (cause) {
+    case "covered_elsewhere":
+      return "Does PostHog already cover this?";
+    case "wrong_page_ranked":
+      return "Which PostHog docs page actually answers this gap?";
+    case "page_exists":
+      return "Does the comparison page PostHog already publishes say enough about this?";
+    case "packaging":
+      return "Is there a capability gap here, underneath what the competitor charges?";
+    case "docs_only":
+      return "Is there anything to change in the product here, rather than in the docs?";
+    case "no_gap":
+      return "What does PostHog not do here today?";
+    case "no_evidence":
+    case "not_in_corpus":
+    case "not_docs":
+      return "Which PostHog docs page shows this gap?";
+    case "no_quote":
+    case "quote_missing":
+      return "What does that docs page say about this today?";
+    case "page_edit_no_page":
+      return "Which PostHog page should change?";
+    case "page_edit_no_edit":
+    case "page_edit_no_copy":
+    case "page_edit_unusable":
+      return "What exact copy should go on that page?";
+    case "page_edit_stale_claim":
+      return "Has that page already been fixed?";
+    case "page_edit_no_change":
+      return "Is anything on that page left to change?";
+    case "page_edit_disproportionate":
+      return "What is the shortest edit that page needs?";
+    default: {
+      const exhaustive: never = cause;
+      return exhaustive;
+    }
   }
 }
 

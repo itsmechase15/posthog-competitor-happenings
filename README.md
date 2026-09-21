@@ -86,7 +86,11 @@ There is no single issue link for the whole alert. Three actions means three
 issues and three links. The work lands on different desks.
 
 Page citations, suggested edits, and open questions are deliberately not in
-Slack. They are in the issue, which is where someone does the work.
+Slack. They are in the issue, which is where someone does the work. An issue
+opens the same way this message does – what you need to know, more detail, then
+the recommended action – and everything the action stands on follows it. Its
+open questions are written as questions, because that section is the list of
+what somebody still has to settle.
 
 The copy follows PostHog's
 [docs style guide](https://posthog.com/handbook/wizard-and-docs/docs-style-guide)

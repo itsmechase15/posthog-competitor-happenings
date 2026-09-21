@@ -1,3 +1,4 @@
+import { asQuestions } from "../analysis/questions.js";
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
 import { createLogger } from "../log.js";
@@ -258,24 +259,58 @@ function pageEditSection(visual: PageEditVisual): string {
 }
 
 /**
+ * Why a product action cites no docs page, said plainly.
+ *
+ * An empty section here used to read as a failed check, which is the opposite
+ * of what it usually means: PostHog has no page describing a capability
+ * PostHog does not ship, so there was no page to quote. That is the gap, and
+ * the issue names it two sections up.
+ *
+ * The confusion it caused was the next heading. "Docs that would change if
+ * this ships" lists docs URLs right underneath, which reads as a contradiction
+ * until you know one section is about today and the other is about afterwards.
+ * So the empty state says which section is which, and only names a section the
+ * issue actually has.
+ */
+function noDocsCited(action: RecommendedAction, hasGap: boolean, hasFutureDocs: boolean): string {
+  const what = action.feature ? `this part of ${action.feature}` : "this capability";
+  const opening =
+    action.type === "consider_building"
+      ? `No PostHog docs page describes ${what}, which is what you would expect for something PostHog does not ship: there is no page about it to quote here, and that absence is the gap rather than a check that failed.`
+      : `No PostHog docs page describes ${what} yet, so there was no page about it to quote here. That absence is the gap rather than a check that failed.`;
+
+  const pointers = [
+    hasGap
+      ? `The docs the gap itself was read off are under "The gap this closes".`
+      : null,
+    hasFutureDocs
+      ? `The pages under "Docs that would change if this ships" are the ones somebody would rewrite after PostHog does this, not evidence for it.`
+      : null,
+  ].filter((line): line is string => line !== null);
+
+  return [opening, ...pointers].join(" ");
+}
+
+/**
  * The cited pages. Marketing gets the pages to edit with the copy to put on
- * them, because editing the page is the job; product gets the docs that speak
- * to the action it is being asked to take, and nothing else.
+ * them, because editing the page is the job; product gets the docs that say
+ * what PostHog ships today, and nothing else.
  */
 function pagesSection(
   alert: AnalyzedItem,
   action: RecommendedAction,
   visuals: PageEditVisual[],
+  futureDocs: string[] = [],
 ): string {
   const heading = isPageAction(action)
     ? "## PostHog pages to update"
-    : "## PostHog pages for context";
+    : "## What PostHog's docs say today";
   const refs = supportingRefs(alert, action);
 
   if (refs.length === 0) {
     const empty = isPageAction(action)
       ? "No indexed PostHog.com page covers this yet, which is itself worth a look."
-      : "No PostHog docs page in context speaks to this action, so nothing here has been checked against what PostHog ships.";
+      : noDocsCited(action, Boolean(action.gap), futureDocs.length > 0);
     return `${heading}\n_${empty}_`;
   }
 
@@ -321,11 +356,7 @@ function docsThatWouldChange(alert: AnalyzedItem, action: RecommendedAction): st
   return [...new Set([...verified, ...cited])].slice(0, MAX_DOCS_THAT_CHANGE);
 }
 
-function docsThatWouldChangeSection(
-  alert: AnalyzedItem,
-  action: RecommendedAction,
-): string | null {
-  const urls = docsThatWouldChange(alert, action);
+function docsThatWouldChangeSection(urls: string[]): string | null {
   if (urls.length === 0) return null;
   return `## Docs that would change if this ships\n${urls.map((url) => `- ${url}`).join("\n")}`;
 }
@@ -372,8 +403,12 @@ function bullets(values: string[], empty: string): string {
  * the full detail, page citations, suggested edits, open questions – lives
  * here, scoped to the one job this issue is asking for.
  *
- * What the competitor shipped comes first and the ask comes second, because
- * somebody who opens this cold needs the news before a job makes sense.
+ * What the competitor shipped comes first and the ask comes third, because
+ * somebody who opens this cold needs the news before a job makes sense: the
+ * summary, then the detail behind it, then what PostHog should do about it.
+ * Everything the ask stands on – the gap, the teams, the impact, the docs, the
+ * open questions – follows the ask, in the order somebody checking it asks for
+ * it.
  *
  * `visuals` are the photographed page edits for an `update_pages` action,
  * already taken and committed by the caller, because building this body is
@@ -391,18 +426,23 @@ export function buildIssueBody(
   const competitor = COMPETITORS[item.competitor];
   const published = item.publishedAt?.toISOString().slice(0, 10) ?? "unknown";
 
+  const futureDocs = docsThatWouldChange(alert, action);
+
   const sections = [
     `**${competitor.label}** · ${SOURCE_LABEL[item.source]} · published ${published} · impact **${IMPACT_LABEL[analysis.impact]}** · owned by **${actionOwner(action)}**`,
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## What you need to know\n${analysis.summary}`,
+    `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     evidenceSection(action),
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
     `## Impact\n${impactScale(analysis.impact)}`,
-    `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    pagesSection(alert, action, action.type === "update_pages" ? visuals : []),
-    docsThatWouldChangeSection(alert, action),
-    `## Open questions\n${bullets(analysis.openQuestions, "None raised.")}`,
+    pagesSection(alert, action, action.type === "update_pages" ? visuals : [], futureDocs),
+    docsThatWouldChangeSection(futureDocs),
+    // Normalized once more on the way out: a question is the one thing this
+    // section is for, and an analysis stored before that was true still
+    // renders here.
+    `## Open questions\n${bullets(asQuestions(analysis.openQuestions), "None raised.")}`,
     `## Sources\n- [${competitor.label} ${SOURCE_LABEL[item.source]}](${entryUrl(item)})${
       image ? `\n- Feature image (${image.origin}): ${image.url}` : ""
     }`,

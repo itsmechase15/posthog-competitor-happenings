@@ -117,14 +117,14 @@ describe("parseAnalysis", () => {
         keyPoints: ["k"],
         actions: [{ action: "consider_enhancing", actionDetail: "d", posthogFeature: "Surveys" }],
         posthogRefs: [{ url: "u", claim: "c", suggestedEdit: "e" }],
-        openQuestions: ["q"],
+        openQuestions: ["Does the free plan include it?"],
       }),
     );
     expect(analysis.actions).toEqual([
       { type: "consider_enhancing", detail: "d", feature: "Surveys" },
     ]);
     expect(analysis.keyPoints).toEqual(["k"]);
-    expect(analysis.openQuestions).toEqual(["q"]);
+    expect(analysis.openQuestions).toEqual(["Does the free plan include it?"]);
     expect(analysis.posthogRefs[0]?.suggestedEdit).toBe("e");
   });
 

@@ -307,11 +307,17 @@ three issues, because marketing owns update pages and new compare page while
 product owns consider building and consider enhancing.
 
 Title is competitor + feature + the action. Each body is scoped to its own
-action: that action in full, the summary, key points, the whole impact scale
-with each level's meaning next to it, open questions,
-source links, and the feature image. Marketing's issues carry the PostHog pages
+action and reads in that order: what you need to know, more detail, then the
+recommended action, then everything the action stands on – the gap, the teams,
+the whole impact scale with each level's meaning next to it, the docs, open
+questions, source links – and the feature image. Open questions are written as
+questions, because the section exists for what somebody has to go and settle.
+Marketing's issues carry the PostHog pages
 to update, each photographed before and after (see below); product's carry only
-the docs that back that action, without the edits or the compare-page copy. Neither lists the
+the docs that back that action, without the edits or the compare-page copy. A
+product issue with no docs to cite says why – PostHog has no page describing
+something PostHog does not ship – rather than leaving the section looking
+broken next to the docs that would change if the work lands. Neither lists the
 sibling actions: each one is its own issue. Labelled by competitor, source,
 impact, action, owner, and the PostHog product when the action names one. Uses the
 `GITHUB_TOKEN` Actions provides; with no token the run skips issue creation and

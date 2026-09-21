@@ -132,6 +132,58 @@ gap's own bar: the page is in the corpus, it is documentation, and the quote is
 on the stored copy. A verdict left with no page that passes is downgraded to
 "the gap could not be confirmed" naming the one that failed, never quietly kept.
 
+## Open questions are questions
+
+The heading says "Open questions", so every line under it asks something. What
+used to land there was the doubt written down as a note:
+
+- Bad: "Whether Headless is generally available on every Mixpanel plan."
+- Bad: "Whether PostHog users writing agent code want a typed Python client."
+- Good: "Is Headless generally available on every Mixpanel plan, or gated to
+  Enterprise?"
+- Good: "Do we know whether PostHog users writing agent code want a typed
+  Python client?"
+
+The note and the question hold the same fact. Only one of them hands a reader
+something to go and settle, which is the entire job of the section: a person
+reads it looking for what nobody has answered yet.
+
+A sentence of context after the question mark is welcome – the page nobody
+opened, the check that failed – as long as the question leads, because the
+first line is what gets scanned.
+
+[`asQuestions`](../src/analysis/questions.ts) is the enforcement.
+`SYSTEM_RULES` asks the analyst for questions, `normalizeAnalysis` shapes what
+comes back, and `buildIssueBody` shapes it once more on the way out, so an
+analysis stored before any of this still renders as questions. It inverts the
+verb where English lets it ("whether Headless is generally available" becomes
+"Is Headless generally available?"), wraps the clause where it does not ("Do we
+know whether …?"), moves a buried question to the front, and drops a fragment
+too short to be asking anything. The two places that add their own questions –
+`gateActions` when a check drops an action, and `verifyAgainstDocs` when a gap
+claim has no page behind it – write them as questions already, so the shaping
+has nothing to do.
+
+## An issue reads news, detail, ask
+
+A GitHub issue is read by somebody who was not in the channel, so it opens the
+way the news does: **What you need to know**, then **More detail**, then
+**Recommended action**. The ask makes sense only after the launch does.
+Everything the ask stands on follows it – the gap, the teams, the impact, the
+docs, the open questions, the sources – in the order somebody checking the ask
+would want them.
+
+The two docs sections under it are about different days, and they say so:
+
+- **What PostHog's docs say today** is what the recommendation was checked
+  against. On a product action it is often empty, and empty is the expected
+  answer rather than a broken check: PostHog documents what PostHog ships, so a
+  capability PostHog does not ship has no page to cite. The copy says that, and
+  points at **The gap this closes** for the page the gap itself was read off.
+- **Docs that would change if this ships** is the other day. Those are the
+  pages somebody rewrites after the work lands, and they are never evidence for
+  it.
+
 ## Only ask for a page edit when the page is wrong
 
 `update_pages` sends someone to edit PostHog's marketing, product marketing, or
@@ -329,6 +381,8 @@ have been allowed to be written that way in the first place.
 - [`proportionProblem`](../src/analysis/proportion.ts) measures what is left
   against the page it goes on, and drops the write-up that a short page cannot
   carry. It is the only check here that can fail copy nothing is wrong with.
+- [`asQuestions`](../src/analysis/questions.ts) makes every open question a
+  question, in `normalizeAnalysis` and again in the issue body.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.
