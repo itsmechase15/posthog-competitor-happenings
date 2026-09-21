@@ -176,6 +176,8 @@ describe("verifyAgainstDocs", () => {
     expect(verified.analysis.openQuestions).toHaveLength(1);
     expect(verified.analysis.openQuestions[0]).toContain("no PostHog docs page in context");
     expect(verified.analysis.openQuestions[0]).toContain("Experiments");
+    // It goes under "Open questions", so it asks one.
+    expect(verified.analysis.openQuestions[0]).toMatch(/^Does PostHog already do this\?/);
   });
 
   it("respects the three-question ceiling rather than pushing a fourth", () => {

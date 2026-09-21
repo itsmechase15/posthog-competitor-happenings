@@ -15,6 +15,7 @@ import {
 } from "../types.js";
 import { parseDate, sanitizeCopy } from "../util/text.js";
 import { UNSTATED_NO_ACTION_REASON } from "./noAction.js";
+import { asQuestions } from "./questions.js";
 
 /**
  * A field the model means to leave out but sends as "" instead. Read as
@@ -288,7 +289,10 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
         ...(proposed ? { proposedText: clean(proposed) } : {}),
       };
     }),
-    openQuestions: openQuestions.map(clean).filter(Boolean),
+    // A model that means to ask something often writes it down as a note to
+    // itself ("whether Headless is generally available"). The section is
+    // called Open questions, so it holds questions.
+    openQuestions: asQuestions(openQuestions.map(clean).filter(Boolean)),
     ...(pagesRead.length > 0 ? { pagesRead: pagesRead.map((url) => url.trim()) } : {}),
   };
 }

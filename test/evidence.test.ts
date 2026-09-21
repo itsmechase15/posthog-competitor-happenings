@@ -7,6 +7,7 @@ import {
   quoteAppearsOn,
   type CoverageContext,
 } from "../src/analysis/evidence.js";
+import { isQuestion } from "../src/analysis/questions.js";
 import type { Analysis, PostHogRef, RecommendedAction } from "../src/types.js";
 import { corpus, EMPTY_CORPUS } from "./helpers.js";
 
@@ -251,6 +252,22 @@ describe("gateActions", () => {
     expect(result.analysis.actions).toEqual([goodGap]);
     expect(result.analysis.openQuestions).toHaveLength(1);
     expect(result.analysis.openQuestions[0]).toContain("without quoting what the page says");
+  });
+
+  /**
+   * A block reads as a verdict on the action. An open question has to ask a
+   * person something, so the cause is asked and the verdict follows it.
+   */
+  it("asks the question the block leaves behind, rather than restating the block", () => {
+    const [question] = gateActions(
+      analysis({ actions: [goodGap, { ...goodGap, evidenceUrl: undefined }] }),
+      context([LIFECYCLE]),
+    ).analysis.openQuestions;
+
+    expect(question).toBeDefined();
+    expect(isQuestion(question as string)).toBe(true);
+    expect(question).toContain("Which PostHog docs page shows this gap?");
+    expect(question).toContain("The recommendation was dropped because it cites no PostHog docs page");
   });
 
   it("says which check failed once everything is blocked, rather than saying nothing survived", () => {
