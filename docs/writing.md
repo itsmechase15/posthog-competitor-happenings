@@ -177,9 +177,13 @@ so it is where the slips happen.
 [`articleProblem`](../src/analysis/article.ts) is the code half: a draft that
 is missing, has no headline, runs under 300 words, or opens by describing the
 post is dropped as a brief. `similarPieces` in the same file searches PostHog's
-own writing for the headline and the ask, and a piece on the same angle that
-the analysis never opened drops the action and puts a **Marketing** line under
-the None naming the page. The issue stages the draft into a real posthog.com
+own writing for the headline and the ask, then judges each candidate by its
+headline: the same piece is one whose title carries half of the draft title's
+distinctive words, and a how-to never covers a piece that asks a question. A
+match the analysis never opened drops the action and puts a **Marketing** line
+under the None naming the page. Which is why the headline matters twice: it is
+what a marketer decides on, and it is what the check reads, so it says what
+question the piece answers. The issue stages the draft into a real posthog.com
 blog post in a headless browser and photographs it, so it reads as the post it
 would be, then carries the whole draft in a fence for an editor.
 
