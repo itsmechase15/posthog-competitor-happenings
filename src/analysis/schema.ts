@@ -15,9 +15,12 @@ import {
   type NoAction,
   type RecommendedAction,
 } from "../types.js";
-import { parseDate, sanitizeCopy } from "../util/text.js";
+import { createLogger } from "../log.js";
+import { parseDate, sanitizeCopy, truncate } from "../util/text.js";
 import { shapeNoAction, UNSTATED_NO_ACTION_REASON } from "./noAction.js";
 import { asQuestions } from "./questions.js";
+
+const log = createLogger("analysis");
 
 /**
  * A field the model means to leave out but sends as "" instead. Read as
@@ -30,26 +33,77 @@ function blankAsMissing(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
 
-const optionalText = (max: number) =>
-  z.preprocess(blankAsMissing, z.string().min(1).max(max).optional());
+/**
+ * A length a model wrote past, shortened rather than refused.
+ *
+ * Every cap in this file used to be a wall: one string over it threw, the
+ * parse failed, and `analyzeItems` dropped the item, so the alert said "not
+ * analyzed this run" and three minutes of an analyst reading the docs went in
+ * the bin. That happened for real on 2026-09-23, on a
+ * `consider_publishing` action whose `detail` ran past 900 characters, and
+ * what reached Slack was a restatement of the competitor's own post.
+ *
+ * A cap is a rendering budget, not a fact about the reply. So it is applied
+ * the way a rendering budget should be: the string is cut at a word boundary,
+ * the run log says which field was cut and by how much, and everything else
+ * the model wrote survives. The budgets are generous enough that a cut is a
+ * bug worth reading about in the log rather than a daily occurrence, and the
+ * prompt states them so a reply written to the rule is never cut at all.
+ */
+export function capText(value: unknown, max: number, field: string): unknown {
+  if (typeof value !== "string" || value.length <= max) return value;
+  log.warn(
+    `shortened "${field}" from ${value.length} to ${max} characters, which is the budget for it; the rest of the reply is unchanged`,
+  );
+  return truncate(value, max);
+}
+
+/** Entries past a list's budget, dropped rather than failing the list. */
+export function capList(value: unknown, max: number, field: string): unknown {
+  if (!Array.isArray(value) || value.length <= max) return value;
+  log.warn(`kept the first ${max} of ${value.length} entries in "${field}"`);
+  return value.slice(0, max);
+}
+
+const optionalText = (max: number, field: string) =>
+  z.preprocess(
+    (value) => capText(blankAsMissing(value), max, field),
+    z.string().min(1).max(max).optional(),
+  );
+
+/** The same budget on a field the reply has to carry. */
+const requiredText = (max: number, field: string) =>
+  z.preprocess((value) => capText(value, max, field), z.string().min(1).max(max));
 
 /** Blank entries are dropped rather than failing the list they are in. */
-const lines = z.preprocess(
-  (value) =>
-    Array.isArray(value)
-      ? value.filter((entry) => typeof entry !== "string" || entry.trim() !== "")
-      : value,
-  z.array(z.string().min(1)).max(8),
-);
+const lineList = (max: number, field: string) =>
+  z.preprocess(
+    (value) =>
+      capList(
+        Array.isArray(value)
+          ? value
+              .filter((entry) => typeof entry !== "string" || entry.trim() !== "")
+              .map((entry) => capText(entry, MAX_LINE_CHARS, field))
+          : value,
+        max,
+        field,
+      ),
+    z.array(z.string().min(1)).max(max),
+  );
+
+/** A bullet, an open question, a page title: one line, not a paragraph. */
+const MAX_LINE_CHARS = 600;
+
+const lines = lineList(8, "lines");
 
 /** A paragraph of replacement copy, which runs longer than a one-line instruction. */
-const proposedText = optionalText(1_200);
+const proposedText = optionalText(1_200, "proposed_text");
 
 const refSchema = z.object({
-  url: z.string().min(1),
-  claim: z.string().min(1),
-  suggested_edit: optionalText(600),
-  suggestedEdit: optionalText(600),
+  url: requiredText(1_000, "url"),
+  claim: requiredText(1_200, "claim"),
+  suggested_edit: optionalText(600, "suggested_edit"),
+  suggestedEdit: optionalText(600, "suggested_edit"),
   proposed_text: proposedText,
   proposedText,
   replacement_text: proposedText,
@@ -58,18 +112,22 @@ const refSchema = z.object({
 /** A citation with no page or no claim says nothing, so it goes rather than throws. */
 const refs = z.preprocess(
   (value) =>
-    Array.isArray(value)
-      ? value.filter((entry) => {
-          if (typeof entry !== "object" || entry === null) return false;
-          const ref = entry as { url?: unknown; claim?: unknown };
-          return (
-            typeof ref.url === "string" &&
-            ref.url.trim() !== "" &&
-            typeof ref.claim === "string" &&
-            ref.claim.trim() !== ""
-          );
-        })
-      : value,
+    capList(
+      Array.isArray(value)
+        ? value.filter((entry) => {
+            if (typeof entry !== "object" || entry === null) return false;
+            const ref = entry as { url?: unknown; claim?: unknown };
+            return (
+              typeof ref.url === "string" &&
+              ref.url.trim() !== "" &&
+              typeof ref.claim === "string" &&
+              ref.claim.trim() !== ""
+            );
+          })
+        : value,
+      5,
+      "posthog_refs",
+    ),
   z.array(refSchema).max(5),
 );
 
@@ -77,30 +135,105 @@ const refs = z.preprocess(
 const impactToken = z.enum([...IMPACTS, ...LEGACY_IMPACTS]);
 
 const actionToken = z.enum(ACTIONS);
-const detail = optionalText(900);
-const feature = optionalText(120);
-const gap = optionalText(400);
-const quote = optionalText(600);
-const articleTitle = optionalText(160);
+
+/**
+ * How long an action's reasoning may run.
+ *
+ * Slack shows the first sentence and the GitHub issue carries the rest, so
+ * this is the length of the rest: the change to make, what the competitor now
+ * does, what PostHog does today, and for a piece to publish what the angle is
+ * and who it is for. Two thousand characters is three or four paragraphs,
+ * which is more than any of those needs and well past where the old 900 sat.
+ * It is stated in the prompt as well, so the budget is something a reply aims
+ * under rather than something it discovers.
+ */
+export const MAX_DETAIL_CHARS = 2_000;
+
+const detail = optionalText(MAX_DETAIL_CHARS, "detail");
+const feature = optionalText(120, "feature");
+const gap = optionalText(400, "gap");
+const quote = optionalText(600, "evidence_quote");
+const articleTitle = optionalText(160, "article_title");
 /**
  * How long a draft may run. About two thousand words: a PostHog blog post is
  * usually shorter, and past this the model is writing a guide rather than the
  * post a marketer edits into one.
  */
 export const MAX_ARTICLE_DRAFT_CHARS = 12_000;
-const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS);
+const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS, "article_draft");
 
 /** Small team names, blanks dropped. Validated against the catalog later. */
 const teamNames = z.preprocess(
   (value) =>
-    Array.isArray(value)
-      ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "")
-      : value,
+    capList(
+      Array.isArray(value)
+        ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "")
+        : value,
+      5,
+      "teams",
+    ),
   z.array(z.string().min(1)).max(5).optional(),
 );
 
+/**
+ * A markdown heading inside an action's `detail`, which prose never has and a
+ * blog draft always does.
+ */
+const HEADING_LINE = /(^|\n)#{1,3}[ \t]+\S/;
+
+/** Below this, a run of text with a heading in it is a note, not a draft. */
+const MIN_LIFTED_DRAFT_WORDS = 60;
+
+/**
+ * Move a draft the model wrote into `detail` over to `article_draft`.
+ *
+ * `detail` is the reasoning and `article_draft` is the piece, and the prompt
+ * says so, but a model writing a post sometimes puts the post where it was
+ * explaining the post. Left alone, the long field is cut to its budget and a
+ * marketer gets a truncated draft filed as a recommendation, or no draft at
+ * all and the gate drops the action as a brief. Neither is what the reply
+ * said.
+ *
+ * So the unambiguous shape is read rather than refused: an action with no
+ * draft of its own whose `detail` carries a markdown heading and a post's
+ * worth of prose after it. The heading and everything below become the draft,
+ * what sat above it stays the detail, and where nothing sat above it the
+ * draft's own first paragraph becomes the detail. Nothing is written that the
+ * model did not write, and a `detail` that merely runs long is untouched.
+ */
+function liftDraftFromDetail(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const entry = value as Record<string, unknown>;
+  if ((entry.type ?? entry.action) !== "consider_publishing") return value;
+
+  const written = (key: string): boolean =>
+    typeof entry[key] === "string" && (entry[key] as string).trim() !== "";
+  if (written("article_draft") || written("articleDraft") || written("draft")) return value;
+
+  const key = ["detail", "action_detail", "actionDetail"].find((name) => written(name));
+  const detail = key ? (entry[key] as string) : "";
+  const found = HEADING_LINE.exec(detail);
+  if (!key || !found) return value;
+
+  const at = found.index === 0 ? 0 : found.index + 1;
+  const draft = detail.slice(at).trim();
+  if (draft.split(/\s+/).length < MIN_LIFTED_DRAFT_WORDS) return value;
+
+  const above = detail.slice(0, at).trim();
+  const lead = above || firstParagraph(draft.replace(/^#{1,3}[ \t]+.*\n+/, ""));
+  log.warn(
+    `moved a ${draft.length}-character draft out of a consider_publishing action's detail and into article_draft, where the checks and the issue can read it`,
+  );
+  return { ...entry, [key]: lead || draft.slice(0, 200), article_draft: draft };
+}
+
+/** The first block of a markdown document, which is its own summary of itself. */
+function firstParagraph(text: string): string {
+  return (text.split(/\n\s*\n/)[0] ?? "").trim();
+}
+
 /** One entry of `actions`, in whichever casing the model reached for. */
-const actionSchema = z.object({
+const actionSchema = z.preprocess(liftDraftFromDetail, z.object({
   type: actionToken.optional(),
   action: actionToken.optional(),
   detail,
@@ -114,8 +247,8 @@ const actionSchema = z.object({
   posthogTeams: teamNames,
   gap,
   gap_today: gap,
-  evidence_url: optionalText(500),
-  evidenceUrl: optionalText(500),
+  evidence_url: optionalText(500, "evidence_url"),
+  evidenceUrl: optionalText(500, "evidence_url"),
   evidence_quote: quote,
   evidenceQuote: quote,
   article_title: articleTitle,
@@ -123,30 +256,37 @@ const actionSchema = z.object({
   article_draft: articleDraft,
   articleDraft,
   draft: articleDraft,
-});
+}));
 
 /** Pages named by URL, blanks dropped. Titles and quotes are optional on each. */
 const namedPages = z
   .preprocess(
     (value) =>
-      Array.isArray(value)
-        ? value.filter(
-            (entry) =>
-              typeof entry === "object" &&
-              entry !== null &&
-              typeof (entry as { url?: unknown }).url === "string" &&
-              (entry as { url: string }).url.trim() !== "",
-          )
-        : value,
+      capList(
+        Array.isArray(value)
+          ? value.filter(
+              (entry) =>
+                typeof entry === "object" &&
+                entry !== null &&
+                typeof (entry as { url?: unknown }).url === "string" &&
+                (entry as { url: string }).url.trim() !== "",
+            )
+          : value,
+        MAX_NAMED_PAGES,
+        "pages",
+      ),
     z.array(
       z.object({
-        url: z.string().min(1),
-        title: optionalText(300),
-        quote: optionalText(600),
+        url: requiredText(1_000, "page url"),
+        title: optionalText(300, "page title"),
+        quote: optionalText(600, "page quote"),
       }),
     ),
   )
   .optional();
+
+/** More pages than this under one verdict is a reading list, not evidence. */
+const MAX_NAMED_PAGES = 8;
 
 /**
  * The marketing half of a None: PostHog already covers this angle, or nothing
@@ -154,8 +294,8 @@ const namedPages = z
  */
 const marketingSchema = z
   .object({
-    note: optionalText(600),
-    reason: optionalText(600),
+    note: optionalText(600, "marketing note"),
+    reason: optionalText(600, "marketing note"),
     pages: namedPages,
     existing_pages: namedPages,
   })
@@ -167,9 +307,9 @@ const marketingSchema = z
  */
 const noActionSchema = z
   .object({
-    kind: optionalText(60),
-    reason: optionalText(600),
-    no_action_reason: optionalText(600),
+    kind: optionalText(60, "no_action.kind"),
+    reason: optionalText(600, "no_action.reason"),
+    no_action_reason: optionalText(600, "no_action.reason"),
     evidence: namedPages,
     marketing: marketingSchema,
     content: marketingSchema,
@@ -180,10 +320,10 @@ export const analysisSchema = z.object({
   impact: impactToken.optional(),
   /** Phase 1 rows and older model replies call the same field severity. */
   severity: impactToken.optional(),
-  summary: z.string().min(1).max(600),
+  summary: requiredText(600, "summary"),
   key_points: lines.optional(),
   keyPoints: lines.optional(),
-  actions: z.array(actionSchema).max(4).optional(),
+  actions: z.preprocess((value) => capList(value, 4, "actions"), z.array(actionSchema).max(4)).optional(),
   /** A single action is how rows written before this field looked. */
   action: actionToken.optional(),
   action_detail: detail,
@@ -193,8 +333,8 @@ export const analysisSchema = z.object({
   posthogFeature: feature,
   no_action: noActionSchema,
   noAction: noActionSchema,
-  no_action_reason: optionalText(600),
-  noActionReason: optionalText(600),
+  no_action_reason: optionalText(600, "no_action_reason"),
+  noActionReason: optionalText(600, "no_action_reason"),
   posthog_refs: refs.optional(),
   posthogRefs: refs.optional(),
   open_questions: lines.optional(),

@@ -3,6 +3,8 @@ import { POSTHOG_TEAMS, POSTHOG_TEAMS_URL } from "../posthog/teams.js";
 // The sentence budget the prompt asks for is the one Slack renders to, so it
 // is stated once, where the message is built.
 import { MAX_ACTION_CHARS } from "../slack/message.js";
+// The length the reply is read with, stated to the model that writes it.
+import { MAX_DETAIL_CHARS } from "./schema.js";
 import { EVIDENCE_LABEL, TOC_FILENAME } from "../posthog/workspace.js";
 import { MAX_TEAMS } from "../teams.js";
 import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
@@ -198,8 +200,9 @@ Rules:
   - consider_publishing: the piece ships nothing, and PostHog's blog, tutorials, and newsletter have nothing on the same angle. This is marketing's action about PostHog's own content, not a product action: it sits next to the product verdict in "no_action" rather than replacing it, and it carries the draft. The marketing question section below says when to use it.
 - The other four action types take no "feature". Leave the key out rather than sending it empty.
 ${TEAM_RULES}
-- "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy.
+- "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy. A few short paragraphs at most, and under ${MAX_DETAIL_CHARS} characters ${EN_DASH} past that it is shortened on the way in, and the sentence it stops on is the one you cared about.
 - Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
+- For consider_publishing, "detail" is still the reasoning: what to publish, the angle, and who it is for. The piece itself goes in "article_draft" and never in "detail", which is neither long enough to hold it nor where anything looks for it.
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
   - consider_enhancing and consider_building: name the change first, then the gap behind it if it still fits. Good: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand." The bad one is true and it is evidence, but it names no change, so it belongs in a later sentence.
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.

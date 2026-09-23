@@ -3,6 +3,7 @@ import { actionLabel } from "../labels.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { EVIDENCE_LABEL, TOC_FILENAME, type DocsWorkspace } from "../posthog/workspace.js";
 import { ARTICLE_RULES, PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
+import { MAX_DETAIL_CHARS } from "../analysis/schema.js";
 import { describeProportion, MIN_GROWTH_WORDS } from "../analysis/proportion.js";
 import { countWords, EDITORIAL_DIRS, MIN_ARTICLE_WORDS } from "../analysis/article.js";
 import type { CorpusIndex } from "../posthog/retrieval.js";
@@ -30,7 +31,12 @@ import type { ReviewDecision } from "./schema.js";
  */
 
 const MAX_EXCERPT_CHARS = 900;
-const MAX_DETAIL_CHARS = 1_200;
+/**
+ * The whole detail, because the reviewer is judging what was filed and a
+ * detail it was shown half of is a claim it is guessing at. The schema's own
+ * budget is the length, so the two cannot drift apart.
+ */
+const MAX_SHOWN_DETAIL_CHARS = MAX_DETAIL_CHARS;
 
 export interface ReviewInput {
   /** The alert the action came out of, with the docs it was checked against. */
@@ -150,7 +156,7 @@ export function renderFiledAction(
     "",
     `Action title: ${actionLabel(action)}`,
     `Action type: ${action.type}`,
-    `Detail: ${truncate(action.detail, MAX_DETAIL_CHARS)}`,
+    `Detail: ${truncate(action.detail, MAX_SHOWN_DETAIL_CHARS)}`,
   ];
   if (isContentAction(action)) return [...lines, ...renderPiece(alert, action)].join("\n");
   return [

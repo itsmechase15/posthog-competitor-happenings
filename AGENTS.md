@@ -196,6 +196,13 @@ it.
   each of those the line would be untrue rather than merely redundant. A forced
   post of one URL never reaches it: that path posts its own message, **None**
   and all.
+- **A length cap shortens the string, never the reply.** Every cap on what a
+ model writes is a rendering budget, so `capText` and `capList` in
+ [`src/analysis/schema.ts`](./src/analysis/schema.ts) cut and log rather than
+ throw, and the prompts state the budgets so a reply aims under them. A bare
+ `.max()` on a model-written field is the bug this replaced: one long
+ `detail` used to fail the parse and turn a whole analysis into "not analyzed
+ this run". Add a field, give it a named budget through those helpers.
 - **New environment variable?** Add it to [`src/config.ts`](./src/config.ts),
   [`src/setup/requirements.ts`](./src/setup/requirements.ts), `.env.example`,
   and the workflow that needs it. The requirements list is what `check-env`
