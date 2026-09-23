@@ -1,7 +1,15 @@
 import { XMLParser } from "fast-xml-parser";
+import type { Config } from "../config.js";
+import { createLogger } from "../log.js";
+import { fetchText } from "../util/http.js";
 import { normalizeUrl, parseDate } from "../util/text.js";
 
 const parser = new XMLParser({ ignoreAttributes: true, trimValues: true });
+
+const log = createLogger("sitemap");
+
+/** How many child sitemaps to follow from a sitemap index. */
+const MAX_CHILD_SITEMAPS = 4;
 
 export interface SitemapEntry {
   url: string;
@@ -47,6 +55,27 @@ export function parseSitemap(xml: string): ParsedSitemap {
     .filter((entry): entry is SitemapEntry => entry !== null);
 
   return { children, entries };
+}
+
+/** Read one sitemap, following a sitemap index one level down. */
+export async function readSitemap(config: Config, url: string): Promise<SitemapEntry[]> {
+  const options = {
+    timeoutMs: config.httpTimeoutMs,
+    userAgent: config.userAgent,
+    accept: "application/xml, text/xml, */*",
+  };
+  const parsed = parseSitemap(await fetchText(url, options));
+  if (parsed.entries.length > 0 || parsed.children.length === 0) return parsed.entries;
+
+  const entries: SitemapEntry[] = [];
+  for (const child of parsed.children.slice(0, MAX_CHILD_SITEMAPS)) {
+    try {
+      entries.push(...parseSitemap(await fetchText(child, options)).entries);
+    } catch (error) {
+      log.warn(`failed to read child sitemap ${child}`, error);
+    }
+  }
+  return entries;
 }
 
 export function matchesAnyPrefix(url: string, prefixes: string[]): boolean {

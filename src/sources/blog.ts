@@ -26,6 +26,30 @@ export interface BlogCandidateOptions {
 }
 
 /**
+ * One sitemap entry as a blog candidate. Shared with the force-post path, so a
+ * named URL pulled out of the full sitemap is the same item the daily run
+ * would have collected, down to the id it dedupes on.
+ */
+export function sitemapEntryToItem(
+  competitor: CompetitorConfig,
+  entry: SitemapEntry,
+): CandidateItem {
+  const url = normalizeUrl(entry.url);
+  return {
+    competitor: competitor.id,
+    source: "blog",
+    externalId: url,
+    title: titleFromUrl(url),
+    url,
+    publishedAt: entry.lastModified,
+    raw: {
+      discoveredVia: "sitemap",
+      lastmod: entry.lastModified?.toISOString() ?? null,
+    },
+  };
+}
+
+/**
  * Turn sitemap entries into blog candidates. `lastmod` is only a pre-filter to
  * keep the candidate list small: some sites bump it on every site-wide
  * re-render, so novelty is decided by URL dedupe against the `items` table.
@@ -40,19 +64,5 @@ export function sitemapEntriesToItems(
     .filter((entry) => entry.lastModified !== null && entry.lastModified >= options.since)
     .sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0))
     .slice(0, options.limit)
-    .map((entry) => {
-      const url = normalizeUrl(entry.url);
-      return {
-        competitor: competitor.id,
-        source: "blog" as const,
-        externalId: url,
-        title: titleFromUrl(url),
-        url,
-        publishedAt: entry.lastModified,
-        raw: {
-          discoveredVia: "sitemap",
-          lastmod: entry.lastModified?.toISOString() ?? null,
-        },
-      };
-    });
+    .map((entry) => sitemapEntryToItem(competitor, entry));
 }

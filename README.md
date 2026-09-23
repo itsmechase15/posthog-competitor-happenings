@@ -847,8 +847,14 @@ Two ways in:
   and merge it to main. Changing the file is itself the trigger, which leaves a
   record of every forced post in the git history.
 
-The item still has to exist in a live feed. This mode selects from what the
-fetchers returned, so it cannot manufacture an announcement.
+The item still has to be a real competitor post, but it does not have to be a
+recent one. Blog candidates are the last few days of the sitemap, so a post
+from a month ago is live on the site and absent from the day's collection. A
+URL the fetchers did not return is looked for in the competitor's full
+sitemap, and failing that the page is read directly. Both stay inside the
+configured Mixpanel and Amplitude sources: a URL outside them, or one the site
+no longer serves, stops the run rather than becoming an announcement nobody
+published.
 
 `DATABASE_URL` is optional for the forced post alone. Without it the run uses
 the in-memory store, so the message still goes out but nothing is recorded and
