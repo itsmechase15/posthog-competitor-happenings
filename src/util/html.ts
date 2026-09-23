@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { collapseWhitespace } from "./text.js";
+import { collapseWhitespace, parseDate } from "./text.js";
 
 const NON_CONTENT = "script, style, noscript, template, svg, iframe, nav, footer, header, form";
 
@@ -185,6 +185,44 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
   });
 
   return found;
+}
+
+/** Where a post usually says when it was published, most explicit first. */
+const PUBLISHED_META_SELECTORS = [
+  "meta[property='article:published_time']",
+  "meta[property='og:article:published_time']",
+  "meta[name='article:published_time']",
+  "meta[itemprop='datePublished']",
+  "meta[name='publish-date']",
+  "meta[name='pubdate']",
+  "meta[name='date']",
+];
+
+/**
+ * The date a page says it was published on, or null when it does not say.
+ *
+ * Only for the pages we reach by name rather than through a feed or a sitemap,
+ * which are the two places a date normally comes from. A wrong guess is worse
+ * than none here, so nothing is inferred from the body copy.
+ */
+export function extractPublishedAt(html: string): Date | null {
+  const $ = cheerio.load(html);
+
+  for (const selector of PUBLISHED_META_SELECTORS) {
+    const parsed = parseDate($(selector).first().attr("content"));
+    if (parsed) return parsed;
+  }
+
+  const time = parseDate($("time[datetime]").first().attr("datetime"));
+  if (time) return time;
+
+  for (const element of $("script[type='application/ld+json']").toArray()) {
+    const match = /"datePublished"\s*:\s*"([^"]+)"/.exec($(element).text());
+    const parsed = parseDate(match?.[1]);
+    if (parsed) return parsed;
+  }
+
+  return null;
 }
 
 /** Convert an RSS `content:encoded` payload into plain text. */

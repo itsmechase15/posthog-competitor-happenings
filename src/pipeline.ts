@@ -37,6 +37,7 @@ import {
 import { createReviewer, type Reviewer } from "./review/reviewer.js";
 import { createActionWriter, type ActionWriter } from "./review/writer.js";
 import { enrichArticles } from "./sources/enrich.js";
+import { resolveForcedCandidate } from "./sources/force.js";
 import { collectCandidates, groupBySourceKey } from "./sources/index.js";
 import { entryUrl } from "./sources/link.js";
 import type { Alert, AnalyzedItem, CandidateItem, StoredItem } from "./types.js";
@@ -307,8 +308,14 @@ async function selectForAnalysis(
 
 /**
  * Run one named item through the whole pipeline, ignoring dedupe and the
- * first-run seed guard. Built for verifying a specific announcement end to end
- * — the item still has to exist in a live feed, so this cannot manufacture one.
+ * first-run seed guard. Built for verifying a specific announcement end to end.
+ *
+ * The day's candidates come first, and a URL they do not have is looked up in
+ * the competitor's own sources instead: the full sitemap, then the page. Being
+ * old is not being gone, and a post that has aged out of the recent slice is
+ * still a post PostHog might want an issue about. What this cannot do is
+ * manufacture one — a URL outside a configured Mixpanel or Amplitude source
+ * resolves to nothing and the run stops.
  */
 export async function runSingleItem(config: Config, targetUrl: string): Promise<SlackMessage> {
   const store = createStore(config, { allowMemoryFallback: true });
@@ -329,18 +336,24 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     // The anchor first: every Mixpanel changelog entry shares one page URL, so
     // dropping the hash would post whichever of them the feed happened to list
     // first rather than the one that was asked for.
-    const match =
+    const live =
       candidates.find((candidate) => entryUrl(candidate) === wantedEntry) ??
       candidates.find(
         (candidate) =>
           normalizeUrl(candidate.url) === wanted || normalizeUrl(candidate.externalId) === wanted,
       );
-    if (!match) {
+
+    const resolved = live
+      ? { item: live, via: "the live feeds" }
+      : await resolveForcedCandidate(config, targetUrl);
+    if (!resolved) {
       throw new Error(
-        `no live feed item matches ${targetUrl} — found ${candidates.length} candidates, none with that URL`,
+        `nothing to post for ${targetUrl} — it is not among the ${candidates.length} live candidates, not in the competitor's sitemap, and either outside every configured Mixpanel or Amplitude source or unreachable`,
       );
     }
-    log.info(`matched ${match.competitor}/${match.source} "${match.title}"`);
+
+    const match = resolved.item;
+    log.info(`matched ${match.competitor}/${match.source} "${match.title}" via ${resolved.via}`);
 
     const [prepared = match] = await enrichArticles(config, [match]);
     const [inserted] = await store.insertNewItems([prepared]);

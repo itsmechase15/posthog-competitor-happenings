@@ -10,7 +10,7 @@ import {
 } from "./agentmail.js";
 import { sitemapEntriesToItems } from "./blog.js";
 import { feedEntriesToItems, parseFeed } from "./rss.js";
-import { parseSitemap, type SitemapEntry } from "./sitemap.js";
+import { readSitemap, type SitemapEntry } from "./sitemap.js";
 import {
   postsToItems,
   timelineUrl,
@@ -23,8 +23,6 @@ const log = createLogger("sources");
 
 /** Candidates handed to the deduplicator per competitor+source, before caps. */
 const CANDIDATE_LIMIT = 200;
-/** How many child sitemaps to follow from a sitemap index. */
-const MAX_CHILD_SITEMAPS = 4;
 const X_POSTS_PER_ACCOUNT = 10;
 const NEWSLETTER_FETCH_LIMIT = 50;
 
@@ -56,26 +54,6 @@ async function collectChangelog(
   const entries = parseFeed(xml);
   log.info(`${competitor.label} changelog: ${entries.length} feed entries`);
   return feedEntriesToItems(competitor, entries).slice(0, CANDIDATE_LIMIT);
-}
-
-async function readSitemap(config: Config, url: string): Promise<SitemapEntry[]> {
-  const xml = await fetchText(url, { ...http(config), accept: "application/xml, text/xml, */*" });
-  const parsed = parseSitemap(xml);
-  if (parsed.entries.length > 0 || parsed.children.length === 0) return parsed.entries;
-
-  const entries: SitemapEntry[] = [];
-  for (const child of parsed.children.slice(0, MAX_CHILD_SITEMAPS)) {
-    try {
-      const childXml = await fetchText(child, {
-        ...http(config),
-        accept: "application/xml, text/xml, */*",
-      });
-      entries.push(...parseSitemap(childXml).entries);
-    } catch (error) {
-      log.warn(`failed to read child sitemap ${child}`, error);
-    }
-  }
-  return entries;
 }
 
 async function collectBlog(config: Config, competitor: CompetitorConfig): Promise<CandidateItem[]> {
