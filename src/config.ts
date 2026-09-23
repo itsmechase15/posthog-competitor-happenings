@@ -129,7 +129,7 @@ export interface Config {
   skipReview: boolean;
   /**
    * Stop photographing the page for the before/after on an `update_pages`
-   * issue, and the laid-out draft on a `consider_publishing` one. They are the
+   * issue, and the draft staged on a blog post for a `consider_publishing` one. They are the
    * one thing in the app that runs a browser and commits to the repo, so they
    * share a switch – an issue without the pictures says the same thing in
    * words.

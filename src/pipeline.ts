@@ -179,7 +179,10 @@ interface IssueMedia {
 }
 
 function createIssueMedia(config: Config, index: CorpusIndex): IssueMedia {
-  const media = { pages: createPageVisualMaker(config, index), drafts: createDraftVisualMaker(config) };
+  const media = {
+    pages: createPageVisualMaker(config, index),
+    drafts: createDraftVisualMaker(config, index),
+  };
   log.info(`page edit before/after: ${media.pages.description}`);
   log.info(`draft pictures: ${media.drafts.description}`);
   return media;

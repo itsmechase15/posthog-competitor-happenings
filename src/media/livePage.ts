@@ -1,4 +1,4 @@
-import type { Browser, Page } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import type { PageEditPlan } from "../types.js";
 
 /**
@@ -568,11 +568,26 @@ function edit(plan: PageEditPlan): Pick<StageInput, "oldLine" | "proposedText" |
  * – rather than a strip of prose. Both are taken at the same scroll offset, so
  * flipping between them in an issue moves only the words that changed.
  */
-export async function captureEdit(
+/**
+ * A live posthog.com page, open in a fresh context and ready to photograph, or
+ * why it could not be.
+ *
+ * Shared by the page before/after and by the draft laid out on a real post,
+ * because what makes a shot look like posthog.com is all in here: the light
+ * theme a signed-out visitor sees, a window a desktop reader has, the site's
+ * own fonts and images allowed in and every third party kept out, and the DOM
+ * left alone until it has stopped changing. The caller owns the context and
+ * closes it whichever way things end.
+ */
+export type OpenedPage =
+  | { status: "open"; context: BrowserContext; page: Page }
+  | { status: "skipped"; reason: string };
+
+export async function openLivePage(
   browser: Browser,
-  plan: PageEditPlan,
+  url: string,
   options: CaptureOptions,
-): Promise<CaptureResult> {
+): Promise<OpenedPage> {
   const context = await browser.newContext({
     viewport: { ...VIEWPORT },
     deviceScaleFactor: 2,
@@ -584,6 +599,11 @@ export async function captureEdit(
     userAgent: options.userAgent,
   });
 
+  const skipped = async (reason: string): Promise<OpenedPage> => {
+    await context.close().catch(() => undefined);
+    return { status: "skipped", reason };
+  };
+
   try {
     await context.addInitScript(() => {
       try {
@@ -593,7 +613,7 @@ export async function captureEdit(
       }
     });
 
-    const pageHost = new URL(plan.url).hostname;
+    const pageHost = new URL(url).hostname;
     await context.route("**/*", async (route) => {
       let host: string;
       try {
@@ -609,20 +629,16 @@ export async function captureEdit(
     });
 
     const page = await context.newPage();
-    const response = await page.goto(plan.url, {
+    const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: NAVIGATION_TIMEOUT_MS,
     });
 
-    if (!response) return { status: "skipped", reason: "the page never answered" };
-    if (!response.ok()) {
-      return { status: "skipped", reason: `the page answered ${response.status()}` };
-    }
-    if (new URL(page.url()).hostname !== pageHost) {
-      return { status: "skipped", reason: `it redirected to ${page.url()}` };
-    }
+    if (!response) return skipped("the page never answered");
+    if (!response.ok()) return skipped(`the page answered ${response.status()}`);
+    if (new URL(page.url()).hostname !== pageHost) return skipped(`it redirected to ${page.url()}`);
     if (CHALLENGE_TITLE.test(await page.title())) {
-      return { status: "skipped", reason: "a bot check was served instead of the page" };
+      return skipped("a bot check was served instead of the page");
     }
 
     // A shot taken while the webfont is still loading is a shot of the
@@ -636,6 +652,22 @@ export async function captureEdit(
         "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; } html { scroll-behavior: auto !important; }",
     });
 
+    return { status: "open", context, page };
+  } catch (error) {
+    return skipped(error instanceof Error ? error.message : String(error));
+  }
+}
+
+export async function captureEdit(
+  browser: Browser,
+  plan: PageEditPlan,
+  options: CaptureOptions,
+): Promise<CaptureResult> {
+  const opened = await openLivePage(browser, plan.url, options);
+  if (opened.status === "skipped") return opened;
+  const { context, page } = opened;
+
+  try {
     let height: number = VIEWPORT.height;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const located = await stage(page, { action: "locate", ...edit(plan) });

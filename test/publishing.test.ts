@@ -452,6 +452,7 @@ describe("the GitHub issue", () => {
       { url: "https://raw.invalid/a-1.png", alt: "Draft, part 1 of 2", path: "a-1.png" },
       { url: "https://raw.invalid/a-2.png", alt: "Draft, part 2 of 2", path: "a-2.png" },
     ],
+    stagedOn: "https://posthog.com/blog/product-engineer-vs-software-engineer",
   };
   const withSimilar = { ...piece, similarPages: [TUTORIAL] };
   const body = buildIssueBody(analyzed, null, withSimilar, [], draftVisual);
@@ -489,13 +490,16 @@ describe("the GitHub issue", () => {
     expect(fresh).toContain("nothing close, so this would be new");
   });
 
-  it("embeds every shot in order, with a caption saying it is a rendering and nothing was published", () => {
+  it("embeds every shot in order, with a caption naming the post it was staged on and that nothing was published", () => {
     const first = body.indexOf("![Draft, part 1 of 2](https://raw.invalid/a-1.png)");
     const second = body.indexOf("![Draft, part 2 of 2](https://raw.invalid/a-2.png)");
     expect(first).toBeGreaterThan(-1);
     expect(second).toBeGreaterThan(first);
     expect(body).toContain("in 2 parts from the top down");
-    expect(body).toContain("not a posthog.com page. Nothing was published.");
+    expect(body).toContain(
+      "the live post at https://posthog.com/blog/product-engineer-vs-software-engineer, opened in a headless browser with its headline and copy swapped for the draft",
+    );
+    expect(body).toContain("Nothing was published.");
   });
 
   it("carries the whole draft in a fence somebody copies from", () => {

@@ -400,12 +400,17 @@ marketer compares first. No block on the content side ever reaches the product
 verdict, `update_pages` keeps its own bar, and impact stays what the post
 shipped. Slack shows the product None first and the action under it, with the
 working title quoted. The issue reads news, product verdict, ask, whether
-PostHog already covers this, then the draft – laid out as a post in a headless
-browser and photographed a screen at a time, captioned as a rendering of a
-draft with nothing published, committed to `artifacts/consider-publishing/`,
-and the whole draft in a fence under the pictures. The review pass reviews it
-like any other action, the writer returns the whole draft again on a revise,
-and a dropped piece becomes a marketing line under the None.
+PostHog already covers this, then the draft – staged into a real posthog.com
+blog post in the same headless browser the page before/after uses, with the
+post's headline, body, byline, and tables of contents swapped for the draft's,
+a "Proposed draft · not published" stamp above the headline, and the page
+photographed a screen at a time; captioned with the post it was staged on and
+that nothing was published; committed to `artifacts/consider-publishing/`; and
+the whole draft in a fence under the pictures. It has to look like posthog.com,
+because that is where the decision is about – a generic reading column was
+tried and rejected. The review pass reviews it like any other action, the
+writer returns the whole draft again on a revise, and a dropped piece becomes a
+marketing line under the None.
 
 A private channel first; a PostHog channel later. Whichever it is, the id lives
 in `SLACK_CHANNEL_ID`, never in the code.

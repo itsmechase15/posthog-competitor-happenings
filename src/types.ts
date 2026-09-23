@@ -339,13 +339,14 @@ export interface PageEditVisual extends PageEditPlan {
 }
 
 /**
- * A `consider_publishing` draft rendered as a page and photographed, so a
- * marketer reading the issue sees the piece rather than a fence of markdown.
+ * A `consider_publishing` draft staged on a real posthog.com blog post and
+ * photographed, so a marketer reading the issue sees the piece as it would
+ * look on the site rather than a fence of markdown.
  *
- * The picture is of the draft laid out as a post, and it says so: there is no
- * posthog.com page to photograph for an article nobody has written. `shots`
- * is empty when nothing could be rendered or committed, and the issue carries
- * the draft in text either way.
+ * The picture is posthog.com's own page with the draft in place of the post's
+ * copy, stamped as a draft, and published nowhere. `shots` is empty when
+ * nothing could be staged or committed, and the issue carries the draft in
+ * text either way.
  */
 export interface ArticleDraftVisual {
   title: string;
@@ -353,6 +354,8 @@ export interface ArticleDraftVisual {
   capturedOn: string;
   /** In reading order, top of the page first. */
   shots: DraftShot[];
+  /** The post whose layout the draft was staged into, when there are shots. */
+  stagedOn?: string;
 }
 
 export interface DraftShot {

@@ -333,12 +333,32 @@ claim about PostHog read off a docs page it opened this run. The GitHub issue
 reads news, product verdict, ask, then **Does PostHog already cover this?** –
 the PostHog pieces the corpus ranked nearest, which the analyst read and
 recommended past, or a line saying nothing close exists – then **The draft**:
-the piece laid out as a post and photographed a screen at a time, captioned as
-a rendering of a draft with nothing published, and the whole draft in a fence
-under the pictures for an editor to copy. The PNGs are committed to
+the piece as it would read on posthog.com, photographed a screen at a time,
+and the whole draft in a fence under the pictures for an editor to copy. The
+PNGs are committed to
 [`artifacts/consider-publishing/`](./artifacts/consider-publishing/README.md)
 the way the page before/after is, and the issue is labelled
 `action:consider-publishing`, `owner:marketing`, and routed to Editorial.
+
+The pictures are taken the way the page before/after is, and for the same
+reason: a marketer deciding on a piece for posthog.com wants to see it on
+posthog.com. [`src/media/draftPage.ts`](./src/media/draftPage.ts) opens a real
+PostHog blog post in the same headless browser, through the same `openLivePage`
+as an `update_pages` shot – light theme, desktop window, the site's own fonts
+and images in and every third party out – and turns that post into the draft
+in the tab's own DOM: the headline becomes the draft's headline, the article
+body becomes the draft, both tables of contents are rebuilt from the draft's
+headings, the borrowed post's authors are hidden because they did not write
+this, the date reads `Draft, <today>`, the hero image and the cookie banner go,
+and a yellow **Proposed draft · not published** stamp sits above the headline
+in the headline's own column. Then the reader view is scrolled a screen at a
+time and the window photographed, at most four times. Which post is borrowed is
+`templateCandidates`: the PostHog post the corpus ranked nearest the draft, then
+the longest posts in the corpus, then a known one, tried in turn until one loads
+and has an article body. The caption on the issue names the post the layout
+came from and says nothing was published. A page with no headline or no article
+body is refused rather than half-swapped, and the issue carries the draft in
+text.
 
 **It is an extra path, and it never moves the product answer.** The gate in
 [`src/analysis/evidence.ts`](./src/analysis/evidence.ts) judges the two sides
