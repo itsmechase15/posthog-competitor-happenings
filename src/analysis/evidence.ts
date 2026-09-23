@@ -1,15 +1,19 @@
 import { isMarketingTarget } from "../posthog/pages.js";
 import { matchProducts } from "../posthog/products.js";
 import { terms, type CorpusIndex, type RetrievalHit } from "../posthog/retrieval.js";
-import type {
-  Analysis,
-  NoAction,
-  NoActionEvidence,
-  NoActionKind,
-  PostHogRef,
-  RecommendedAction,
+import {
+  isContentAction,
+  productActions,
+  type Analysis,
+  type MarketingNote,
+  type NoAction,
+  type NoActionEvidence,
+  type NoActionKind,
+  type PostHogRef,
+  type RecommendedAction,
 } from "../types.js";
 import { firstSentence, truncate } from "../util/text.js";
+import { articleProblem, similarPieces } from "./article.js";
 import { evidenceFor, noActionOf, withNoAction } from "./noAction.js";
 import { proportionProblem } from "./proportion.js";
 import { isExactRewrite, repeatsCurrentCopy, rewriteProblem } from "./rewrite.js";
@@ -215,6 +219,10 @@ export const BLOCK_CAUSES = [
   /** The copy is fine and there is far too much of it for the page it lands on. */
   "page_edit_disproportionate",
   "page_edit_unusable",
+  /** A piece was recommended and no draft of it came back, or not enough of one. */
+  "article_no_draft",
+  /** PostHog's blog, tutorials, or newsletter already carry the piece, on pages nobody opened. */
+  "article_exists",
 ] as const;
 export type BlockCause = (typeof BLOCK_CAUSES)[number];
 
@@ -464,6 +472,43 @@ function isComparePage(url: string): boolean {
 }
 
 /**
+ * A piece to publish, checked the two ways it can be: is there a draft, and
+ * has PostHog already written it.
+ *
+ * The first is `articleProblem`, and it is mechanical: a title, a draft, and
+ * enough words for the draft to be one. The second searches PostHog's own
+ * writing with the headline and the ask, and blocks when a piece on the same
+ * angle sits on a page the analysis never opened – the same shape as the
+ * coverage check on a gap, for the same reason. "Publish the post you already
+ * published" is the marketing version of "build the thing you already ship".
+ * A similar piece the analyst did open and recommended past is left standing
+ * and named in the issue, because deciding the angle differs is a judgement,
+ * and the reviewer gets the same pages.
+ */
+function checkArticle(action: RecommendedAction, context: CoverageContext): BlockedAction | null {
+  const problem = articleProblem(action);
+  if (problem) return block(action, "article_no_draft", problem);
+
+  const { unread } = similarPieces(action, context.index, context.seenUrls);
+  if (unread.length > 0) {
+    const urls = unread.map((hit) => hit.url);
+    return block(
+      action,
+      "article_exists",
+      `PostHog already publishes on this angle, on pages the analysis never opened: ${urls.join(", ")}`,
+      urls,
+    );
+  }
+  return null;
+}
+
+function withSimilarPages(action: RecommendedAction, context: CoverageContext): RecommendedAction {
+  const { strong } = similarPieces(action, context.index, context.seenUrls);
+  if (strong.length === 0) return action;
+  return { ...action, similarPages: strong.map((hit) => hit.url) };
+}
+
+/**
  * Whether a cited page really says what the ref claims. A page the corpus does
  * not hold cannot be checked, and an unverifiable page edit is one someone
  * would go and make on trust.
@@ -487,40 +532,62 @@ export function gateActions(analysis: Analysis, context: CoverageContext): GateR
   const notes: string[] = [];
   const citedUrls = new Set(analysis.posthogRefs.map((ref) => ref.url));
 
-  const kept = analysis.actions.filter((action) => {
-    const failure = firstFailure(action);
-    if (!failure) return true;
-    blocked.push(failure);
-    notes.push(failure.note);
-    return false;
-  });
+  const kept = analysis.actions
+    .filter((action) => {
+      const failure = firstFailure(action);
+      if (!failure) return true;
+      blocked.push(failure);
+      notes.push(failure.note);
+      return false;
+    })
+    // A piece that passed carries the PostHog pieces the search found nearest
+    // it, which the analysis read and recommended past: the issue names them
+    // so a marketer compares before writing.
+    .map((action) => (isContentAction(action) ? withSimilarPages(action, context) : action));
 
-  if (blocked.length === 0) {
-    // The analyst's own verdict is a claim about what PostHog ships, so it is
-    // checked here too rather than published on trust.
-    if (analysis.actions.length > 0) return { analysis, blocked, notes };
-    const verdict = checkNoActionEvidence(analysis, context.index);
-    return { analysis: verdict.analysis, blocked, notes: verdict.notes };
-  }
+  // The product side and the content side are judged apart. What blocked a
+  // product action decides the product verdict; what blocked a piece to
+  // publish is a line about the blog under it, never a claim about the product.
+  const productKept = productActions(kept);
+  const productBlocked = blocked.filter((entry) => !isContentAction(entry.action));
+  const contentBlocked = blocked.filter((entry) => isContentAction(entry.action));
 
-  // What blocked the last action is the answer to "so why is this empty?", and
-  // saying it as the verdict and again as an open question reads as two
-  // findings rather than one.
+  if (blocked.length === 0 && productKept.length > 0) return { analysis, blocked, notes };
+
+  // What blocked the last product action is the answer to "so why is this
+  // empty?", and saying it as the verdict and again as an open question reads
+  // as two findings rather than one. A blocked piece with a product action
+  // still standing has no verdict to sit under, so it is a question instead.
   const openQuestions = [...analysis.openQuestions];
-  if (kept.length > 0) {
-    for (const entry of blocked) {
+  if (productKept.length > 0) {
+    for (const entry of [...productBlocked, ...contentBlocked]) {
       if (openQuestions.length >= 4) break;
       openQuestions.push(blockedQuestion(entry));
     }
+    return { analysis: { ...analysis, actions: kept, openQuestions }, blocked, notes };
   }
 
   const gated: Analysis = { ...analysis, actions: kept, openQuestions };
+  let verdict: NoAction;
+  if (productBlocked.length > 0) {
+    verdict = noActionFrom(productBlocked, context.index);
+    // The analyst's own line about the blog survives a product verdict the
+    // gate rewrote: the gate judged the product side, and the note is not
+    // about the product.
+    const marketing = analysis.noAction?.marketing;
+    if (marketing) verdict = { ...verdict, marketing };
+  } else {
+    // The analyst's own verdict is a claim about what PostHog ships, so it is
+    // checked here too rather than published on trust.
+    const checked = checkNoActionEvidence(gated, context.index);
+    notes.push(...checked.notes);
+    verdict = noActionOf(checked.analysis);
+  }
+  if (contentBlocked.length > 0) {
+    verdict = { ...verdict, marketing: marketingFrom(contentBlocked, context.index) };
+  }
 
-  return {
-    analysis: kept.length === 0 ? withNoAction(gated, noActionFrom(blocked, context.index)) : gated,
-    blocked,
-    notes,
-  };
+  return { analysis: withNoAction(gated, verdict), blocked, notes };
 
   function firstFailure(action: RecommendedAction): BlockedAction | null {
     if (isDocumentationOnlyAction(action)) {
@@ -538,6 +605,7 @@ export function gateActions(analysis: Analysis, context: CoverageContext): GateR
     if (action.type === "new_compare_page") {
       return checkNewComparePage(action, analysis, context);
     }
+    if (isContentAction(action)) return checkArticle(action, context);
     if (!isProductAction(action)) return null;
 
     if (isPackagingGap(action)) {
@@ -622,6 +690,10 @@ function questionForCause(cause: BlockCause): string {
       return "Is anything on that page left to change?";
     case "page_edit_disproportionate":
       return "What is the shortest edit that page needs?";
+    case "article_no_draft":
+      return "What would a PostHog piece on this say?";
+    case "article_exists":
+      return "Does the piece PostHog already publishes cover this angle?";
     default: {
       const exhaustive: never = cause;
       return exhaustive;
@@ -642,6 +714,10 @@ function kindForCause(cause: BlockCause): NoActionKind {
     // the edit asked for is the wrong size for the page, which is a judgement
     // about the page rather than a claim nobody could check.
     case "page_edit_disproportionate":
+    // A blocked piece never reaches the product verdict – `gateActions` keeps
+    // the content blocks apart – so these only have to be named here.
+    case "article_no_draft":
+    case "article_exists":
       return "not_a_gap";
     case "no_gap":
     case "no_evidence":
@@ -726,6 +802,33 @@ export function noActionFrom(blocked: BlockedAction[], index: CorpusIndex): NoAc
 }
 
 /**
+ * The line about PostHog's own content, read off what the gate blocked.
+ *
+ * A piece PostHog already publishes is the answer marketing wants, so it wins
+ * and names the pages. A piece with no draft behind it is said plainly: the
+ * analyst thought there was something to write and wrote nothing, which is
+ * worth a line and not worth an issue.
+ */
+export function marketingFrom(blocked: BlockedAction[], index: CorpusIndex): MarketingNote {
+  const exists = blocked.find((entry) => entry.cause === "article_exists");
+  if (exists) {
+    const pages = [...new Set(exists.urls)].map((url) => evidenceFor(index, url));
+    const named = pages.map((page) => page.title ?? page.url).join(" and ");
+    return {
+      note: `PostHog already covers this angle in ${named}, so there is nothing new to publish.`,
+      pages,
+    };
+  }
+
+  const first = blocked[0] as BlockedAction;
+  const piece = first.action.articleTitle ?? firstSentence(first.action.detail, 120);
+  return {
+    note: `A PostHog piece was suggested ("${truncate(piece, 100)}") and not filed, because ${first.reason.replace(/[.]+$/, "")}.`,
+    pages: [],
+  };
+}
+
+/**
  * Check an `already_covered` verdict the way a gap claim is checked.
  *
  * "PostHog already does this" is a claim about what PostHog ships, so it earns
@@ -739,12 +842,13 @@ export function checkNoActionEvidence(
   analysis: Analysis,
   index: CorpusIndex,
 ): { analysis: Analysis; notes: string[] } {
-  const verdict = noActionOf(analysis);
+  const stated = noActionOf(analysis);
+  const notes: string[] = [];
+  const verdict = checkMarketingPages(stated, index, notes);
   if (verdict.kind !== "already_covered") {
-    return { analysis: withNoAction(analysis, verdict), notes: [] };
+    return { analysis: withNoAction(analysis, verdict), notes };
   }
 
-  const notes: string[] = [];
   const kept: NoActionEvidence[] = [];
 
   for (const entry of verdict.evidence) {
@@ -780,7 +884,31 @@ export function checkNoActionEvidence(
         ? `The analysis says PostHog already covers this and reads it off ${failed}, which could not be confirmed against the stored corpus, so what PostHog ships here is unchecked.`
         : "The analysis says PostHog already covers this and names no page it read that on, so what PostHog ships here is unchecked.",
       evidence: [],
+      ...(verdict.marketing ? { marketing: verdict.marketing } : {}),
     }),
     notes,
   };
+}
+
+/**
+ * The pages a marketing note points at, checked for being pages at all.
+ *
+ * "PostHog already covers this in X" is a claim about posthog.com, so X has to
+ * be a page the corpus holds. That is the whole check: an editorial page is
+ * marketing copy by nature, so there is no kind to insist on and no quote to
+ * match. A page that is not there is dropped and the note keeps its words,
+ * with the titles the corpus holds filled in for the ones that are.
+ */
+function checkMarketingPages(verdict: NoAction, index: CorpusIndex, notes: string[]): NoAction {
+  if (!verdict.marketing) return verdict;
+  const pages: NoActionEvidence[] = [];
+  for (const entry of verdict.marketing.pages) {
+    const page = index.page(entry.url);
+    if (!page) {
+      notes.push(`dropped ${entry.url} from the marketing note: it is not a page in the corpus`);
+      continue;
+    }
+    pages.push({ ...entry, title: entry.title ?? page.title });
+  }
+  return { ...verdict, marketing: { ...verdict.marketing, pages } };
 }

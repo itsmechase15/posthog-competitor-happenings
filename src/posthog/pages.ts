@@ -18,7 +18,15 @@
 const DENIED_PREFIXES = ["/docs", "/handbook", "/questions", "/community", "/careers"];
 
 /** Marketing sections that run deeper than one path segment. */
-const ALLOWED_PREFIXES = ["/compare", "/blog", "/customers", "/tutorials"];
+const ALLOWED_PREFIXES = [
+  "/compare",
+  "/blog",
+  "/customers",
+  "/tutorials",
+  "/newsletter",
+  "/founders",
+  "/product-engineers",
+];
 
 /** The path of a posthog.com URL, or null for anything hosted elsewhere. */
 function postHogPath(url: string): string | null {

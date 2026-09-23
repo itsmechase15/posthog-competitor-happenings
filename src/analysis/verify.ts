@@ -1,5 +1,11 @@
 import { productForDocUrl, productsForAction } from "../posthog/products.js";
-import type { Analysis, PostHogDoc, PostHogRef, RecommendedAction } from "../types.js";
+import {
+  isContentAction,
+  type Analysis,
+  type PostHogDoc,
+  type PostHogRef,
+  type RecommendedAction,
+} from "../types.js";
 import { firstSentence, SPACED_EN_DASH, truncate } from "../util/text.js";
 
 /**
@@ -47,6 +53,11 @@ export function verifyAgainstDocs(analysis: Analysis, docs: PostHogDoc[]): DocsV
   const citedUrls = new Set(refs.map((ref) => ref.url));
 
   const actions = analysis.actions.map((action): RecommendedAction => {
+    // A piece to publish makes no claim about what PostHog ships: its detail
+    // saying PostHog's blog has nothing on the subject is about the blog, and
+    // reading it as a gap claim would cite a docs page for a post.
+    if (isContentAction(action)) return action;
+
     const relevant = relevantDocs(action, docs);
     const primary = relevant[0];
 

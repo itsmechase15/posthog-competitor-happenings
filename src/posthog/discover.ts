@@ -42,13 +42,25 @@ const GENERATED_REFERENCE_PREFIXES = [
 /**
  * Marketing sections that run deeper than one path segment.
  *
- * This is the same set the claims indexer has always read, so the pages that
- * carry PostHog's copy about a competitor stay in reach. It is an allowlist
- * rather than a denylist because the sitemap's long tail is community Q&A:
- * 7,700 pages of `/questions`, which mention Mixpanel constantly and are
- * nobody's marketing copy and nobody's product documentation.
+ * This is the set the claims indexer has always read, so the pages that carry
+ * PostHog's copy about a competitor stay in reach, plus the rest of PostHog's
+ * own writing – the newsletter and the two editorial sections – because a
+ * `consider_publishing` action is checked against what PostHog has already
+ * published, and a post that lives under `/founders` is as published as one
+ * under `/blog`. It is an allowlist rather than a denylist because the
+ * sitemap's long tail is community Q&A: 7,700 pages of `/questions`, which
+ * mention Mixpanel constantly and are nobody's marketing copy and nobody's
+ * product documentation.
  */
-const MARKETING_PREFIXES = ["/compare", "/blog", "/tutorials", "/customers"];
+const MARKETING_PREFIXES = [
+  "/compare",
+  "/blog",
+  "/tutorials",
+  "/customers",
+  "/newsletter",
+  "/founders",
+  "/product-engineers",
+];
 
 /**
  * Section roots that are indexes rather than pages, or sections whose contents

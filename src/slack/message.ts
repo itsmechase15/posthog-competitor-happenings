@@ -4,13 +4,15 @@ import { COMPETITORS } from "../config.js";
 import { actionTitleParts, IMPACT_EMOJI, IMPACT_LABEL, SOURCE_LABEL } from "../labels.js";
 import { entryUrl } from "../sources/link.js";
 import { rewriteForAction } from "../analysis/rewrite.js";
-import type {
-  ActionIssue,
-  Alert,
-  IssueRef,
-  PostHogRef,
-  RecommendedAction,
-  SourceId,
+import {
+  isContentAction,
+  productActions,
+  type ActionIssue,
+  type Alert,
+  type IssueRef,
+  type PostHogRef,
+  type RecommendedAction,
+  type SourceId,
 } from "../types.js";
 import {
   collapseWhitespace,
@@ -168,10 +170,22 @@ export function actionSectionText(
     ? escape(label)
     : `${escape(label)} ${feature.url ? link(feature.url, feature.label) : escape(feature.label)}`;
   const lines = [`*${title}*`, escape(firstSentence(action.detail, MAX_ACTION_CHARS))];
-  const preview = rewritePreview(rewrite);
+  const preview = rewritePreview(rewrite) ?? headlinePreview(action);
   if (preview) lines.push(preview);
   if (issue) lines.push(link(issue.url, issueLinkLabel(issue)));
   return lines.join("\n");
+}
+
+/**
+ * The headline of a piece to publish, under the ask for it. The same job the
+ * rewrite preview does for a page edit: a decision about copy needs a line of
+ * the copy, and the headline is the line a marketer decides on first. The
+ * draft itself is in the issue.
+ */
+export function headlinePreview(action: RecommendedAction): string | null {
+  if (!isContentAction(action) || !action.articleTitle) return null;
+  const tail = action.articleDraft ? " (draft in the issue)" : "";
+  return `> ${escape(`Working title: "${truncate(collapseWhitespace(action.articleTitle), MAX_REWRITE_CHARS)}"`)}${tail}`;
 }
 
 /**
@@ -293,18 +307,22 @@ export function buildSlackMessage(alert: Alert): SlackMessage {
   // One section per action, under a heading of its own, each linking the issue
   // opened for it. Slack puts real space between sections, so each action reads
   // as its own thing on a phone, with its own place to go for the detail.
+  //
+  // The product verdict comes first whenever there is no product action, and
+  // that includes an alert whose only action is a piece to publish: the
+  // reader learns the ship asks nothing of the product, then that marketing
+  // might want to write about it. The order is the argument.
   const entries = actionEntries(alert);
   blocks.push(section(`*${ACTION_HEADING}*`));
-  if (entries.length > 0) {
-    for (const entry of entries) {
-      blocks.push(
-        section(
-          actionSectionText(entry.action, entry.issue, rewriteForAction(analysis, entry.action)),
-        ),
-      );
-    }
-  } else {
+  if (productActions(entries.map((entry) => entry.action)).length === 0) {
     blocks.push(section(noActionSectionText(alert)));
+  }
+  for (const entry of entries) {
+    blocks.push(
+      section(
+        actionSectionText(entry.action, entry.issue, rewriteForAction(analysis, entry.action)),
+      ),
+    );
   }
 
   // `every` on an empty list is true, which used to put "GitHub issues not

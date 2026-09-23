@@ -6,15 +6,17 @@ import {
   LEGACY_IMPACTS,
   NO_ACTION_KINDS,
   REVIEW_VERDICTS,
+  productActions,
   toImpact,
   type ActionIssue,
   type Analysis,
   type FeatureImage,
+  type MarketingNote,
   type NoAction,
   type RecommendedAction,
 } from "../types.js";
 import { parseDate, sanitizeCopy } from "../util/text.js";
-import { UNSTATED_NO_ACTION_REASON } from "./noAction.js";
+import { shapeNoAction, UNSTATED_NO_ACTION_REASON } from "./noAction.js";
 import { asQuestions } from "./questions.js";
 
 /**
@@ -79,6 +81,14 @@ const detail = optionalText(900);
 const feature = optionalText(120);
 const gap = optionalText(400);
 const quote = optionalText(600);
+const articleTitle = optionalText(160);
+/**
+ * How long a draft may run. About two thousand words: a PostHog blog post is
+ * usually shorter, and past this the model is writing a guide rather than the
+ * post a marketer edits into one.
+ */
+export const MAX_ARTICLE_DRAFT_CHARS = 12_000;
+const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS);
 
 /** Small team names, blanks dropped. Validated against the catalog later. */
 const teamNames = z.preprocess(
@@ -108,7 +118,48 @@ const actionSchema = z.object({
   evidenceUrl: optionalText(500),
   evidence_quote: quote,
   evidenceQuote: quote,
+  article_title: articleTitle,
+  articleTitle,
+  article_draft: articleDraft,
+  articleDraft,
+  draft: articleDraft,
 });
+
+/** Pages named by URL, blanks dropped. Titles and quotes are optional on each. */
+const namedPages = z
+  .preprocess(
+    (value) =>
+      Array.isArray(value)
+        ? value.filter(
+            (entry) =>
+              typeof entry === "object" &&
+              entry !== null &&
+              typeof (entry as { url?: unknown }).url === "string" &&
+              (entry as { url: string }).url.trim() !== "",
+          )
+        : value,
+    z.array(
+      z.object({
+        url: z.string().min(1),
+        title: optionalText(300),
+        quote: optionalText(600),
+      }),
+    ),
+  )
+  .optional();
+
+/**
+ * The marketing half of a None: PostHog already covers this angle, or nothing
+ * here is worth a piece. A note with no words in it is no note.
+ */
+const marketingSchema = z
+  .object({
+    note: optionalText(600),
+    reason: optionalText(600),
+    pages: namedPages,
+    existing_pages: namedPages,
+  })
+  .optional();
 
 /**
  * The verdict when there are no actions. The kind is read loosely: a model that
@@ -119,27 +170,9 @@ const noActionSchema = z
     kind: optionalText(60),
     reason: optionalText(600),
     no_action_reason: optionalText(600),
-    evidence: z
-      .preprocess(
-        (value) =>
-          Array.isArray(value)
-            ? value.filter(
-                (entry) =>
-                  typeof entry === "object" &&
-                  entry !== null &&
-                  typeof (entry as { url?: unknown }).url === "string" &&
-                  (entry as { url: string }).url.trim() !== "",
-              )
-            : value,
-        z.array(
-          z.object({
-            url: z.string().min(1),
-            title: optionalText(300),
-            quote: optionalText(600),
-          }),
-        ),
-      )
-      .optional(),
+    evidence: namedPages,
+    marketing: marketingSchema,
+    content: marketingSchema,
   })
   .optional();
 
@@ -192,6 +225,8 @@ function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | nul
   const namedGap = parsed.gap ?? parsed.gap_today;
   const evidenceUrl = parsed.evidence_url ?? parsed.evidenceUrl;
   const evidenceQuote = parsed.evidence_quote ?? parsed.evidenceQuote;
+  const title = parsed.article_title ?? parsed.articleTitle;
+  const draft = parsed.article_draft ?? parsed.articleDraft ?? parsed.draft;
   return {
     type,
     detail: clean(detail),
@@ -202,6 +237,11 @@ function toAction(parsed: z.infer<typeof actionSchema>): RecommendedAction | nul
     // Not punctuation-corrected: a quote is checked character by character
     // against the stored page, and rewriting its dashes would fail that check.
     ...(evidenceQuote ? { evidenceQuote: evidenceQuote.trim() } : {}),
+    ...(title ? { articleTitle: clean(title) } : {}),
+    // Punctuated PostHog's way: this is the string most likely to be pasted
+    // into a posthog.com post, so an em dash in it is fixed here. Whitespace is
+    // kept, because the draft is markdown and its blank lines are paragraphs.
+    ...(draft ? { articleDraft: sanitizeCopy(draft).trim() } : {}),
   };
 }
 
@@ -242,18 +282,32 @@ function readNoAction(parsed: z.infer<typeof analysisSchema>): NoAction {
   const stated = parsed.no_action_reason ?? parsed.noActionReason;
   const reason = structured?.reason ?? structured?.no_action_reason ?? stated;
   const kind = NO_ACTION_KINDS.find((known) => known === structured?.kind?.trim());
+  const marketing = readMarketing(structured?.marketing ?? structured?.content);
 
-  return {
+  return shapeNoAction({
     kind: kind ?? "unverified",
     reason: clean(reason ?? UNSTATED_NO_ACTION_REASON),
-    evidence: (structured?.evidence ?? []).map((entry) => ({
-      url: entry.url.trim(),
-      ...(entry.title ? { title: clean(entry.title) } : {}),
-      // A quote is matched character by character against the stored page, so
-      // it is the one string here that is not repunctuated.
-      ...(entry.quote ? { quote: entry.quote.trim() } : {}),
-    })),
-  };
+    evidence: readPages(structured?.evidence ?? []),
+    ...(marketing ? { marketing } : {}),
+  });
+}
+
+function readPages(entries: Array<{ url: string; title?: string; quote?: string }>) {
+  return entries.map((entry) => ({
+    url: entry.url.trim(),
+    ...(entry.title ? { title: clean(entry.title) } : {}),
+    // A quote is matched character by character against the stored page, so
+    // it is the one string here that is not repunctuated.
+    ...(entry.quote ? { quote: entry.quote.trim() } : {}),
+  }));
+}
+
+function readMarketing(
+  parsed: z.infer<typeof marketingSchema>,
+): MarketingNote | undefined {
+  const note = parsed?.note ?? parsed?.reason;
+  if (!note) return undefined;
+  return { note: clean(note), pages: readPages(parsed?.pages ?? parsed?.existing_pages ?? []) };
 }
 
 /** Models drift between snake_case and camelCase; accept both and normalize. */
@@ -268,7 +322,10 @@ export function normalizeAnalysis(parsed: z.infer<typeof analysisSchema>): Analy
   const keyPoints = parsed.key_points ?? parsed.keyPoints ?? [];
   const openQuestions = parsed.open_questions ?? parsed.openQuestions ?? [];
   const pagesRead = parsed.pages_read ?? parsed.pagesRead ?? [];
-  const noAction = actions.length > 0 ? undefined : readNoAction(parsed);
+  // The product verdict is read whenever there is no product action. An alert
+  // whose only action is consider_publishing still has to say what the ship
+  // asks of the product, which is nothing, and why.
+  const noAction = productActions(actions).length > 0 ? undefined : readNoAction(parsed);
 
   return {
     impact,

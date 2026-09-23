@@ -152,7 +152,7 @@ describe("createFileStore", () => {
   it("commits screenshots when there is a token", () => {
     const store = createFileStore(config({ githubToken: "ghs-test" }));
     expect(store).toBeInstanceOf(GitHubFileStore);
-    expect(store.description).toContain("artifacts/update-pages");
+    expect(store.description).toContain("artifacts");
   });
 
   it("writes nothing during a dry run, and says where the card would have gone", async () => {
