@@ -2,16 +2,18 @@ import { COMPETITORS } from "../config.js";
 import { actionLabel } from "../labels.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { EVIDENCE_LABEL, TOC_FILENAME, type DocsWorkspace } from "../posthog/workspace.js";
-import { PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
+import { ARTICLE_RULES, PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
 import { describeProportion, MIN_GROWTH_WORDS } from "../analysis/proportion.js";
+import { countWords, EDITORIAL_DIRS, MIN_ARTICLE_WORDS } from "../analysis/article.js";
 import type { CorpusIndex } from "../posthog/retrieval.js";
 import { MAX_ACTION_CHARS } from "../slack/message.js";
-import type {
-  AnalyzedItem,
-  Impact,
-  PostHogDoc,
-  PostHogRef,
-  RecommendedAction,
+import {
+  isContentAction,
+  type AnalyzedItem,
+  type Impact,
+  type PostHogDoc,
+  type PostHogRef,
+  type RecommendedAction,
 } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
 import type { ReviewDecision } from "./schema.js";
@@ -114,6 +116,24 @@ function renderEdits(
     .join("\n");
 }
 
+/**
+ * A piece to publish, as filed: the headline, the pieces PostHog already has
+ * nearby, and the whole draft. The draft is shown whole because the draft is
+ * the recommendation, and a reviewer shown the first paragraph of a post is
+ * reviewing the first paragraph.
+ */
+function renderPiece(alert: AnalyzedItem, action: RecommendedAction): string[] {
+  const draft = action.articleDraft ?? "";
+  const verdict = alert.analysis.noAction;
+  const similar = action.similarPages ?? [];
+  return [
+    `Product verdict it sits next to: ${verdict ? `${verdict.kind} ${EN_DASH} ${verdict.reason}` : "(none recorded)"}`,
+    `Working title: ${action.articleTitle ?? "(none)"}`,
+    `PostHog pieces the corpus ranked nearest, which the analyst read:\n${similar.length > 0 ? similar.map((url) => `- ${url}`).join("\n") : "(none)"}`,
+    `Draft (${countWords(draft)} words):\n${draft ? `"""\n${draft}\n"""` : "(none, which is a revise on its own)"}`,
+  ];
+}
+
 /** One action exactly as it was filed, so both models judge the same thing. */
 export function renderFiledAction(
   alert: AnalyzedItem,
@@ -121,7 +141,7 @@ export function renderFiledAction(
   index: CorpusIndex | null = null,
 ): string {
   const competitor = COMPETITORS[alert.item.competitor].label;
-  return [
+  const lines = [
     `Competitor: ${competitor}`,
     `Signal: ${alert.item.title}`,
     `Signal URL: ${alert.item.url}`,
@@ -130,8 +150,12 @@ export function renderFiledAction(
     "",
     `Action title: ${actionLabel(action)}`,
     `Action type: ${action.type}`,
-    `PostHog feature named: ${action.feature ?? "(none)"}`,
     `Detail: ${truncate(action.detail, MAX_DETAIL_CHARS)}`,
+  ];
+  if (isContentAction(action)) return [...lines, ...renderPiece(alert, action)].join("\n");
+  return [
+    ...lines,
+    `PostHog feature named: ${action.feature ?? "(none)"}`,
     `Gap claimed: ${action.gap ?? "(none)"}`,
     `Evidence page: ${action.evidenceUrl ?? "(none)"}`,
     `Evidence quote: ${action.evidenceQuote ? `"${action.evidenceQuote}"` : "(none)"}`,
@@ -176,13 +200,16 @@ One of three, and the middle one is the interesting one.
   - The impact label does not match what the post shipped.
   - For an update_pages action: the copy proposed for the page is wrong about what PostHog does, or is a note about the edit rather than the words to put on the page, or restates what the page already says, or does not read as if it came off that page. An update_pages action with no proposed copy at all is a revise, not a drop: the recommendation may be right and the writing is missing.
   - For an update_pages action: the copy is out of proportion to the page it lands on. Each page above carries its length and how much this copy adds to it, so this is a measurement rather than a feeling: an edit may add up to a fifth of the page's own length, and never less than ${MIN_GROWTH_WORDS} words, on top of the line it replaces. A short page given a long competitive write-up is a revise asking for the one or two sentences that make the point, and naming what to cut ${EN_DASH} the competitor's pricing tiers, their rollout history, and the rest of their launch post go first. Where no short version is worth making, that is a drop: the page is not wrong, it just does not need this.
-- "drop": there is nothing to file. PostHog already does this and you can name the pages that show it, or the gap is about what a competitor charges rather than what the product does, or the action asks for documentation to be written.
+  - For a consider_publishing action: the draft says something about PostHog the docs do not support, or argues with the competitor's post instead of making PostHog's own case, or does not read like PostHog's blog ${EN_DASH} open two posts under ${EDITORIAL_DIRS.slice(0, 2)
+    .map((dir) => `\`${dir}\``)
+    .join(" or ")} and compare before you say so ${EN_DASH} or is under ${MIN_ARTICLE_WORDS} words. Name what to change and which PostHog fact to fix. A different headline or a paragraph you would have cut is style, and style is not a revise.
+- "drop": there is nothing to file. PostHog already does this and you can name the pages that show it, or the gap is about what a competitor charges rather than what the product does, or the action asks for documentation to be written. For a consider_publishing action: PostHog already publishes a piece on the same angle and you can name it, or the competitor's post is a product announcement after all, which makes this the wrong kind of action for it.
 
 The bar, which matters more than the list:
 - Do not revise for style, for tone, or because you would have written it differently. Revise for something that is wrong.
 - Do not drop because you could not confirm the gap. Confirming it is not your job. The analyst read the same corpus, and "I did not find it" is not "PostHog ships it". Drop only when you can point at pages that show PostHog does this.
 - Impact is what the competitor shipped, and nothing else: a brand-new feature is major, a new control on an existing one is notable, a post with no feature in it is minor. Whether PostHog has a gap never moves it. Only set "impact" when the label is wrong.
-- Only set "action_type" for a swap between consider_building and consider_enhancing. There is no path from a product action into update_pages or new_compare_page, or the other way: those send someone to edit posthog.com, and that is a different recommendation, not a corrected one.
+- Only set "action_type" for a swap between consider_building and consider_enhancing. There is no path from a product action into update_pages or new_compare_page, or the other way: those send someone to edit posthog.com, and that is a different recommendation, not a corrected one. consider_publishing never changes type either way: a piece to write is not a product gap misfiled, and a product gap is not a blog post.
 - "agree" is a normal answer and often the right one. An analyst that read the docs and wrote a checked claim usually got it right, and a review that revises everything it touches is a review nobody trusts.`;
 
 const CALIBRATION = `## What a revise looks like
@@ -251,7 +278,9 @@ export const REWRITE_RESPONSE_SHAPE = `{
       "proposed_text": "string (the exact copy to put on the page, in the page's own voice)",
       "suggested_edit": "string (one line: what is wrong and what you are changing)"
     }
-  ]
+  ],
+  "article_title": "string (consider_publishing only: the working headline, if it changes)",
+  "article_draft": "string (consider_publishing only: the whole piece in markdown, rewritten; never a fragment)"
 }`;
 
 function renderReviewerAsk(review: ReviewDecision, impact: Impact): string {
@@ -282,9 +311,20 @@ const PAGE_CHECKS = `- "proposed_text" is measured against the page it lands on:
 - Only a page this action already cites, and only one marketing writes. A "/docs/" URL is always the wrong answer: the docs are the evidence, never the target.
 - "suggested_edit" is the one line saying what is wrong and what you are changing. It never stands in for "proposed_text".`;
 
+const ARTICLE_CHECKS = `- "article_draft" is the whole piece, rewritten, in markdown. Never a fragment and never a list of changes: the draft you send replaces the draft that was filed, so a reply carrying only the paragraph you fixed files a one-paragraph post. It has to run at least ${MIN_ARTICLE_WORDS} words, and a draft that opens by describing itself is thrown out as a brief.
+- Every claim about PostHog in it comes off a page listed below. Where the reviewer said a PostHog fact is wrong, fix it from those pages or cut it; do not replace one unsupported claim with another.
+- The type never changes. A piece to publish stays a piece to publish, and "gap", "evidence_url", and "evidence_quote" are not its fields.
+- "article_title" changes only if the reviewer asked for the headline to change.`;
+
+function checksFor(action: RecommendedAction): string {
+  if (isContentAction(action)) return ARTICLE_CHECKS;
+  return isPageAction(action) ? PAGE_CHECKS : PRODUCT_CHECKS;
+}
+
 export function buildRewritePrompt(input: RewriteInput): string {
   const { alert, action, review } = input;
   const pageWork = isPageAction(action);
+  const contentWork = isContentAction(action);
 
   return `You are rewriting one recommended action for PostHog, after a second model read PostHog's own docs and said what is wrong with it.
 
@@ -294,13 +334,17 @@ Reply with a single JSON object and nothing else. No prose, no code fences. Leav
 
 ## What is checked after you write it
 Code re-runs the whole evidence gate on your answer before it reaches the issue, and a rewrite that fails it is thrown away with the original left standing. So:
-${pageWork ? PAGE_CHECKS : PRODUCT_CHECKS}
+${checksFor(action)}
 - "detail" opens with one sentence under ${MAX_ACTION_CHARS} characters that leads with the work to do, not with what PostHog lacks. That sentence is all Slack shows. Good: "Add a scheduled end time on experiments so a test can stop on its own ${EN_DASH} flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand."${
     pageWork
       ? ` For a page action it names the page and what it should say: "On the PostHog vs Amplitude compare, say Amplitude schedules an experiment stop and PostHog stops by hand."`
       : ""
+  }${
+    contentWork
+      ? ` For a piece to publish it names the piece and the angle: "Publish a PostHog take on whether to install the SDK or send events from your warehouse."`
+      : ""
   }
-${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}
+${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}${contentWork ? `\n${ARTICLE_RULES}\n` : ""}
 ## The action as filed
 ${renderFiledAction(alert, action, input.index ?? null)}
 
@@ -311,6 +355,10 @@ ${renderReviewerAsk(review, alert.analysis.impact)}
 Every page here is in PostHog's corpus, so a verbatim quote from one of these excerpts passes the check. A quote from anywhere else does not.${
     pageWork
       ? " For the page you are rewriting, this is also where its voice comes from: read the excerpt and write in it."
+      : ""
+  }${
+    contentWork
+      ? " The blog posts among them are where the voice comes from, and the docs among them are the only source for what PostHog does."
       : ""
   }
 ${renderDocs(input.docs)}

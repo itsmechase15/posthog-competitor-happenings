@@ -1,3 +1,4 @@
+import { noActionOf, renderNoAction } from "../analysis/noAction.js";
 import { asQuestions } from "../analysis/questions.js";
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
@@ -9,7 +10,9 @@ import { entryUrl } from "../sources/link.js";
 import { relatedTeams, relatedTeamsLabel } from "../teams.js";
 import {
   IMPACTS,
+  isContentAction,
   type AnalyzedItem,
+  type ArticleDraftVisual,
   type FeatureImage,
   type Impact,
   type IssueRef,
@@ -17,7 +20,7 @@ import {
   type PostHogRef,
   type RecommendedAction,
 } from "../types.js";
-import { SPACED_EN_DASH, truncate } from "../util/text.js";
+import { pageNameFromUrl, SPACED_EN_DASH, truncate } from "../util/text.js";
 
 const log = createLogger("github");
 
@@ -348,7 +351,7 @@ const MAX_DOCS_THAT_CHANGE = 6;
  * page is already the job they describe.
  */
 function docsThatWouldChange(alert: AnalyzedItem, action: RecommendedAction): string[] {
-  if (isPageAction(action)) return [];
+  if (isPageAction(action) || isContentAction(action)) return [];
   const verified = relevantDocs(action, alert.docs ?? []).map((doc) => doc.url);
   const cited = supportingRefs(alert, action)
     .filter(isDocsRef)
@@ -399,6 +402,74 @@ function bullets(values: string[], empty: string): string {
 }
 
 /**
+ * The product answer, on a publishing issue only.
+ *
+ * A piece to publish is recommended because the product answer was None, and
+ * somebody opening the issue cold should see that answer before the ask: it is
+ * what says this is a content job and not a product one. The same verdict
+ * Slack shows, rendered by the same function.
+ */
+function productVerdictSection(alert: AnalyzedItem, action: RecommendedAction): string | null {
+  if (!isContentAction(action) || !alert.analysis.noAction) return null;
+  const { marketing: _marketing, ...verdict } = noActionOf(alert.analysis);
+  return `## Product verdict\n${renderNoAction(verdict, { flavor: "markdown" })}`;
+}
+
+/**
+ * Whether PostHog already publishes on this angle, which is the first thing a
+ * marketer asks and the check the gate ran.
+ *
+ * The pages here passed the gate: the corpus ranked them nearest the headline
+ * and the analysis had read them and recommended writing anyway, so the
+ * decision that the angle differs is one a person should look at. Nothing
+ * nearby is said plainly, because it is the finding that makes the piece worth
+ * writing.
+ */
+function existingPiecesSection(action: RecommendedAction): string | null {
+  if (!isContentAction(action)) return null;
+  const pages = action.similarPages ?? [];
+  if (pages.length === 0) {
+    return `## Does PostHog already cover this?\n_No PostHog blog post, tutorial, or newsletter issue in the corpus is on this angle: the search for the headline and the ask came back with nothing close, so this would be new._`;
+  }
+  return [
+    "## Does PostHog already cover this?",
+    "The corpus ranked these PostHog pieces nearest the angle. The analysis read them and recommended writing anyway, so read them before you do and decide whether this is a new piece or an update to one of them.",
+    ...pages.map((url) => `- [${pageNameFromUrl(url)}](${url})`),
+  ].join("\n");
+}
+
+/**
+ * The draft, as a page and as copy.
+ *
+ * The pictures come first because they are what a marketer reads: the piece
+ * laid out, at reading width, a screen at a time. The caption says what they
+ * are of, because a reader seeing a laid-out post with PostHog's name near it
+ * deserves to be told it is a draft in a browser and not a page anywhere. The
+ * markdown under them is the deliverable: an editor pastes from it, and an
+ * issue whose pictures failed still carries the whole piece.
+ */
+function draftSection(action: RecommendedAction, visual: ArticleDraftVisual | null): string | null {
+  if (!isContentAction(action) || !action.articleDraft) return null;
+
+  const title = action.articleTitle ?? visual?.title ?? "Untitled";
+  const lines = [`## The draft`, "", `**Working title**${SPACED_EN_DASH}${title}`];
+  if (visual) lines.push("", `About ${visual.wordCount} words.`);
+
+  if (visual && visual.shots.length > 0) {
+    const several = visual.shots.length > 1;
+    lines.push(
+      "",
+      `_The draft laid out as a post${several ? `, in ${visual.shots.length} parts from the top down` : ""}, so it reads as one. This is a rendering of the copy below in a browser, not a posthog.com page. Nothing was published._`,
+    );
+    for (const shot of visual.shots) lines.push("", `![${shot.alt}](${shot.url})`);
+  }
+
+  const wrap = fence(action.articleDraft);
+  lines.push("", "**Copy this**", "", `${wrap}markdown`, action.articleDraft, wrap);
+  return lines.join("\n");
+}
+
+/**
  * The long form of one recommended action. Everything Slack cannot carry –
  * the full detail, page citations, suggested edits, open questions – lives
  * here, scoped to the one job this issue is asking for.
@@ -414,17 +485,25 @@ function bullets(values: string[], empty: string): string {
  * already taken and committed by the caller, because building this body is
  * synchronous and photographing a page is not. None is a normal answer: an
  * action of any other type has none, and an edit whose pictures failed still
- * arrives here carrying its diff and its copy.
+ * arrives here carrying its diff and its copy. `draft` is the same thing for a
+ * `consider_publishing` action: the piece laid out and photographed, or null.
+ *
+ * A publishing issue reads differently after the ask. It carries the product
+ * verdict it sits next to, whether PostHog already publishes on the angle, and
+ * the draft itself, and it skips the docs sections, which are about what the
+ * product does today and what a product change would make stale.
  */
 export function buildIssueBody(
   alert: AnalyzedItem,
   image: FeatureImage | null,
   action: RecommendedAction,
   visuals: PageEditVisual[] = [],
+  draft: ArticleDraftVisual | null = null,
 ): string {
   const { item, analysis, model } = alert;
   const competitor = COMPETITORS[item.competitor];
   const published = item.publishedAt?.toISOString().slice(0, 10) ?? "unknown";
+  const content = isContentAction(action);
 
   const futureDocs = docsThatWouldChange(alert, action);
 
@@ -433,11 +512,16 @@ export function buildIssueBody(
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## What you need to know\n${analysis.summary}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
+    productVerdictSection(alert, action),
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     evidenceSection(action),
+    existingPiecesSection(action),
+    draftSection(action, draft),
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
     `## Impact\n${impactScale(analysis.impact)}`,
-    pagesSection(alert, action, action.type === "update_pages" ? visuals : [], futureDocs),
+    content
+      ? null
+      : pagesSection(alert, action, action.type === "update_pages" ? visuals : [], futureDocs),
     docsThatWouldChangeSection(futureDocs),
     // Normalized once more on the way out: a question is the one thing this
     // section is for, and an analysis stored before that was true still
@@ -457,10 +541,11 @@ export function buildIssueDraft(
   image: FeatureImage | null,
   action: RecommendedAction,
   visuals: PageEditVisual[] = [],
+  draft: ArticleDraftVisual | null = null,
 ): IssueDraft {
   return {
     title: buildIssueTitle(alert, action),
-    body: buildIssueBody(alert, image, action, visuals),
+    body: buildIssueBody(alert, image, action, visuals, draft),
     labels: buildIssueLabels(alert, action),
   };
 }

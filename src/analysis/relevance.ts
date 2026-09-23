@@ -1,7 +1,7 @@
 import { COMPETITORS } from "../config.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { matchCapabilities, matchProducts } from "../posthog/products.js";
-import type { Analysis, RecommendedAction, StoredItem } from "../types.js";
+import { productActions, type Analysis, type RecommendedAction, type StoredItem } from "../types.js";
 import { firstSentence, stem, WORD_PATTERN } from "../util/text.js";
 import { withNoAction } from "./noAction.js";
 
@@ -182,7 +182,9 @@ export function enforceUpdatePagesTopic(analysis: Analysis, item: StoredItem): T
 
   if (actions.length === analysis.actions.length) return { analysis, notes: [] };
 
-  if (actions.length > 0) return { analysis: { ...analysis, actions }, notes };
+  // A piece to publish left standing is not a product action, so the product
+  // verdict still has to be written next to it.
+  if (productActions(actions).length > 0) return { analysis: { ...analysis, actions }, notes };
 
   return {
     analysis: withNoAction(
@@ -231,7 +233,7 @@ export function enforcePageTargets(analysis: Analysis): TopicGuard {
     );
 
   const actions = analysis.actions.filter((action) => !isPageAction(action));
-  if (actions.length > 0) return { analysis: { ...analysis, actions }, notes };
+  if (productActions(actions).length > 0) return { analysis: { ...analysis, actions }, notes };
 
   return {
     analysis: withNoAction(

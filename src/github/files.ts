@@ -23,10 +23,16 @@ const log = createLogger("github-files");
  * always holds the same bytes. That is what makes a branch-pinned raw URL safe
  * to embed, makes a second run the same morning free, and makes a revised edit
  * a new file rather than an old URL quietly showing new copy.
+ *
+ * The same store commits the pictures of a `consider_publishing` draft, under
+ * `artifacts/consider-publishing/`, for the same reason.
  */
 
-/** Where the screenshots live. Stable, so a raw URL keeps working. */
+/** Where the page before/after screenshots live. Stable, so a raw URL keeps working. */
 export const VISUAL_DIR = "artifacts/update-pages";
+
+/** Everything this store writes sits under here. */
+export const ARTIFACTS_DIR = "artifacts";
 
 export const RAW_BASE = "https://raw.githubusercontent.com";
 
@@ -61,7 +67,7 @@ export class GitHubFileStore implements FileStore {
     private readonly token: string,
     private readonly timeoutMs: number,
   ) {
-    this.description = `commits screenshots to ${repo}/${VISUAL_DIR}`;
+    this.description = `commits screenshots to ${repo}/${ARTIFACTS_DIR}`;
   }
 
   async put(path: string, bytes: Buffer, message: string): Promise<string | null> {

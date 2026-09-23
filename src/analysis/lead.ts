@@ -1,6 +1,6 @@
 import { isMarketingTarget } from "../posthog/pages.js";
 import { productsForAction } from "../posthog/products.js";
-import type { Analysis, PostHogRef, RecommendedAction } from "../types.js";
+import { isContentAction, type Analysis, type PostHogRef, type RecommendedAction } from "../types.js";
 import { firstSentence, pageNameFromUrl, titleFromUrl } from "../util/text.js";
 
 /**
@@ -79,6 +79,17 @@ function productLead(action: RecommendedAction): string {
 }
 
 /**
+ * A piece to publish is named by its headline. "This is a thought leadership
+ * post about SDKs" describes the competitor's post; the line Slack shows has
+ * to ask for PostHog's.
+ */
+function contentLead(action: RecommendedAction): string {
+  return action.articleTitle
+    ? `Publish a PostHog piece, "${action.articleTitle}"`
+    : "Publish a PostHog piece on this";
+}
+
+/**
  * Rewrite any action whose opening sentence buries the work. Nothing is
  * deleted: the model's own words follow the lead that was put in front of
  * them, so the issue still carries everything it said.
@@ -107,6 +118,10 @@ export function enforceActionLead(analysis: Analysis): LeadRewrite {
     }
 
     if (WORK_LEAD.test(lead)) return action;
+    if (isContentAction(action)) {
+      notes.push("led a consider_publishing action with the piece to write rather than theirs");
+      return { ...action, detail: `${contentLead(action)}: ${detail}` };
+    }
     notes.push(`led a ${action.type} action with the change to make rather than the gap`);
     return { ...action, detail: `${productLead(action)}: ${detail}` };
   });

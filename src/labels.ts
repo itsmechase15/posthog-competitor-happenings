@@ -34,17 +34,20 @@ export const ACTION_LABEL: Record<Action, string> = {
   new_compare_page: "New compare page",
   consider_building: "Consider building",
   consider_enhancing: "Consider enhancing",
+  consider_publishing: "Consider publishing",
 };
 
 /**
- * Who owns each action. Marketing writes the pages, product decides what gets
- * built, so an alert that needs both is two pieces of work for two teams.
+ * Who owns each action. Marketing writes the pages and the blog, product
+ * decides what gets built, so an alert that needs both is two pieces of work
+ * for two teams.
  */
 export const ACTION_OWNER: Record<Action, ActionOwner> = {
   update_pages: "marketing",
   new_compare_page: "marketing",
   consider_building: "product",
   consider_enhancing: "product",
+  consider_publishing: "marketing",
 };
 
 export function actionOwner(action: RecommendedAction): ActionOwner {

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { findProductByName } from "../posthog/products.js";
-import { extractJsonObject } from "../analysis/schema.js";
+import { extractJsonObject, MAX_ARTICLE_DRAFT_CHARS } from "../analysis/schema.js";
 import {
   ACTIONS,
   IMPACTS,
+  isContentAction,
   LEGACY_IMPACTS,
   REVIEW_VERDICTS,
   toImpact,
@@ -113,6 +114,9 @@ const editSchema = z.object({
   replacement_text: proposedText,
 });
 
+const articleTitle = optionalText(160);
+const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS);
+
 export const revisionSchema = z.object({
   type: actionToken,
   action: actionToken,
@@ -126,6 +130,10 @@ export const revisionSchema = z.object({
   impact: impactToken,
   suggested_edits: pageEdits(),
   page_edits: pageEdits(),
+  article_title: articleTitle,
+  articleTitle,
+  article_draft: articleDraft,
+  articleDraft,
 });
 
 function pageEdits() {
@@ -160,6 +168,9 @@ export interface Revision {
   evidenceQuote?: string;
   impact?: Impact;
   pageEdits: PageEdit[];
+  /** A `consider_publishing` rewrite: the headline, and the whole draft again. */
+  articleTitle?: string;
+  articleDraft?: string;
 }
 
 export function parseRevision(raw: string): Revision {
@@ -167,6 +178,8 @@ export function parseRevision(raw: string): Revision {
   const type = parsed.type ?? parsed.action;
   const evidenceUrl = parsed.evidence_url ?? parsed.evidenceUrl;
   const evidenceQuote = parsed.evidence_quote ?? parsed.evidenceQuote;
+  const title = parsed.article_title ?? parsed.articleTitle;
+  const draft = parsed.article_draft ?? parsed.articleDraft;
 
   return {
     ...(type ? { type } : {}),
@@ -179,6 +192,9 @@ export function parseRevision(raw: string): Revision {
     // rewriting its dashes would fail that check.
     ...(evidenceQuote ? { evidenceQuote: evidenceQuote.trim() } : {}),
     ...(parsed.impact ? { impact: toImpact(parsed.impact) } : {}),
+    ...(title ? { articleTitle: clean(title) } : {}),
+    // Whitespace kept: the draft is markdown and its blank lines are paragraphs.
+    ...(draft ? { articleDraft: sanitizeCopy(draft).trim() } : {}),
     pageEdits: (parsed.suggested_edits ?? parsed.page_edits ?? []).flatMap((edit) => {
       const suggestedEdit = edit.suggested_edit ?? edit.suggestedEdit;
       const proposed = edit.proposed_text ?? edit.proposedText ?? edit.replacement_text;
@@ -257,6 +273,18 @@ export function mergeRevision(
   if (revision.gap) revised.gap = revision.gap;
   if (revision.evidenceUrl) revised.evidenceUrl = revision.evidenceUrl;
   if (revision.evidenceQuote) revised.evidenceQuote = revision.evidenceQuote;
+
+  // A draft belongs to a piece to publish and nowhere else. A writer that
+  // hands a product action an article has written the wrong thing, and the
+  // article is dropped rather than filed under a gap.
+  if (revision.articleTitle || revision.articleDraft) {
+    if (isContentAction(action)) {
+      if (revision.articleTitle) revised.articleTitle = revision.articleTitle;
+      if (revision.articleDraft) revised.articleDraft = revision.articleDraft;
+    } else {
+      notes.push(`dropped an article draft from a ${action.type} rewrite, which is not a piece to publish`);
+    }
+  }
 
   if (revision.feature && revision.feature !== action.feature) {
     const product = findProductByName(revision.feature);

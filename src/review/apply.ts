@@ -4,25 +4,29 @@ import type { Config } from "../config.js";
 import { buildIssueBody, buildIssueLabels, buildIssueTitle, type IssueEditor } from "../github/issue.js";
 import { actionLabel, REVIEW_LABEL, REVIEW_PASS_DONE } from "../labels.js";
 import { createLogger } from "../log.js";
+import type { DraftVisualMaker } from "../media/draftVisual.js";
 import type { PageVisualMaker } from "../media/visual.js";
 import { topUpDocsForActions } from "../posthog/docs.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { bestExcerpt, terms, type CorpusIndex } from "../posthog/retrieval.js";
 import type { DocsWorkspace } from "../posthog/workspace.js";
-import type {
-  ActionIssue,
-  ActionReview,
-  Analysis,
-  AnalyzedItem,
-  FeatureImage,
-  IssueRef,
-  NoAction,
-  PostHogDoc,
-  PostHogRef,
-  RecommendedAction,
+import {
+  isContentAction,
+  productActions,
+  type ActionIssue,
+  type ActionReview,
+  type Analysis,
+  type AnalyzedItem,
+  type FeatureImage,
+  type IssueRef,
+  type MarketingNote,
+  type NoAction,
+  type PostHogDoc,
+  type PostHogRef,
+  type RecommendedAction,
 } from "../types.js";
-import { SPACED_EN_DASH } from "../util/text.js";
-import { evidenceFor, renderNoAction, withNoAction } from "../analysis/noAction.js";
+import { SPACED_EN_DASH, truncate } from "../util/text.js";
+import { evidenceFor, noActionOf, renderNoAction, withNoAction } from "../analysis/noAction.js";
 import { mergeRevision } from "./schema.js";
 import type { Reviewer, ReviewOutcome } from "./reviewer.js";
 import type { ActionWriter } from "./writer.js";
@@ -94,6 +98,8 @@ export interface ReviewPassInput {
    * an issue never keeps a picture of copy it no longer asks for.
    */
   visuals?: PageVisualMaker;
+  /** The same for a revised draft: laid out and photographed again from the new copy, or text only. */
+  drafts?: DraftVisualMaker;
   index: CorpusIndex;
   workspace: DocsWorkspace | null;
   budget: ReviewBudget;
@@ -126,22 +132,36 @@ export async function reviewActions(input: ReviewPassInput): Promise<ReviewPassR
   }
 
   const actions = surviving.map((entry) => entry.action);
-  const reviewed: Analysis = { ...analysis, actions };
+  let reviewed: Analysis = { ...analysis, actions };
 
-  return {
-    analysis:
-      actions.length === 0 && dropped.length > 0
-        ? withNoAction(reviewed, droppedVerdict(dropped, input.reviewer?.model, input.index))
-        : reviewed,
-    issues: surviving,
-    notes,
-  };
+  // The product side first: a run of dropped product actions with none left
+  // standing is the reviewer's verdict, in its own words. A dropped piece to
+  // publish is then a line about the blog under whatever verdict there is –
+  // the analyst's, if the alert never had a product action, or the reviewer's.
+  const droppedProduct = dropped.filter((entry) => !entry.content);
+  const droppedContent = dropped.filter((entry) => entry.content);
+  if (productActions(actions).length === 0 && droppedProduct.length > 0) {
+    reviewed = withNoAction(
+      reviewed,
+      droppedVerdict(droppedProduct, input.reviewer?.model, input.index),
+    );
+  }
+  if (droppedContent.length > 0 && productActions(actions).length === 0) {
+    reviewed = withNoAction(reviewed, {
+      ...noActionOf(reviewed),
+      marketing: droppedPiece(droppedContent, input.reviewer?.model, input.index),
+    });
+  }
+
+  return { analysis: reviewed, issues: surviving, notes };
 }
 
 /** One action the reviewer closed, and what it read before closing it. */
 interface DroppedAction {
   reason: string;
   pages: string[];
+  /** Whether it was a piece to publish, which is a line about the blog rather than a product verdict. */
+  content: boolean;
 }
 
 /** What one action's review left behind. */
@@ -240,7 +260,10 @@ async function reviewOne(
       "not_planned",
       withLabels(target.labels, REVIEW_LABEL.dropped, REVIEW_PASS_DONE),
     );
-    return { analysis, dropped: { reason: outcome.reason, pages } };
+    return {
+      analysis,
+      dropped: { reason: outcome.reason, pages, content: isContentAction(target.action) },
+    };
   }
 
   return revise(input, target, alert, outcome, review, notes);
@@ -355,10 +378,11 @@ async function revise(
   // revised diff would be the one wrong picture this whole thing exists to
   // avoid. A capture that fails leaves the body with its text layers.
   const revisedVisuals = (await input.visuals?.make(revisedAlert, checked.action)) ?? [];
+  const revisedDraft = (await input.drafts?.make(revisedAlert, checked.action)) ?? null;
 
   const landed = await input.editor.update(target.issue, {
     title: buildIssueTitle(revisedAlert, checked.action),
-    body: buildIssueBody(revisedAlert, input.image, checked.action, revisedVisuals),
+    body: buildIssueBody(revisedAlert, input.image, checked.action, revisedVisuals, revisedDraft),
     labels: withLabels(
       buildIssueLabels(revisedAlert, checked.action),
       REVIEW_LABEL.revised,
@@ -413,10 +437,14 @@ export function rewriteDocs(
   const seen = new Set(docs.map((doc) => doc.url));
   const found: PostHogDoc[] = [];
 
+  // For a piece to publish, the PostHog posts the corpus ranked nearest it:
+  // they are where a rewritten draft gets its voice from.
   const targets =
     action.type === "update_pages" || action.type === "new_compare_page"
       ? refs.filter((ref) => isMarketingTarget(ref.url)).map((ref) => ref.url)
-      : [];
+      : isContentAction(action)
+        ? (action.similarPages ?? [])
+        : [];
 
   for (const url of [...targets, ...readUrls]) {
     if (seen.has(url)) continue;
@@ -515,6 +543,11 @@ function fields(action: RecommendedAction, refs: PostHogRef[], impact: string): 
         `- Copy for it: ${ref.proposedText ? `"${ref.proposedText}"` : "(none proposed)"}`,
       );
     }
+  } else if (isContentAction(action)) {
+    lines.push(
+      `- Working title: ${action.articleTitle ?? "(none)"}`,
+      `- Draft opens: ${action.articleDraft ? `"${truncate(action.articleDraft.replace(/\s+/g, " "), 300)}"` : "(none)"}`,
+    );
   } else {
     lines.push(
       `- Feature: ${action.feature ?? "(none)"}`,
@@ -575,5 +608,23 @@ function droppedVerdict(
     kind: "dropped_on_review",
     reason: `${by} read PostHog's docs and closed ${what}. ${dropped.map((entry) => entry.reason).join(" ")}`,
     evidence: pages.map((url) => evidenceFor(index, url)),
+  };
+}
+
+/**
+ * The line about the blog when the reviewer closed the piece to publish, in
+ * the reviewer's own words and with the pages it read: usually the PostHog
+ * post that already covers the angle, which is the answer the note is for.
+ */
+function droppedPiece(
+  dropped: DroppedAction[],
+  model: string | undefined,
+  index: CorpusIndex,
+): MarketingNote {
+  const by = model ? `\`${model}\`` : "The reviewer";
+  const pages = [...new Set(dropped.flatMap((entry) => entry.pages))];
+  return {
+    note: `${by} closed the piece to publish that was filed here. ${dropped.map((entry) => entry.reason).join(" ")}`,
+    pages: pages.map((url) => evidenceFor(index, url)),
   };
 }

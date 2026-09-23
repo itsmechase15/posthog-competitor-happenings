@@ -1001,8 +1001,25 @@ describe("buildAnalysisPrompt", () => {
     it("says zero actions is a normal answer and asks for the reason", () => {
       expect(withRefs).toContain('"actions" is 0 to 3 things PostHog should do');
       expect(withRefs).toContain("Zero is a normal answer and often the right one");
-      expect(withRefs).toContain('a "no_action" object saying which kind of nothing it is');
+      expect(withRefs).toContain(
+        'a "no_action" object saying which kind of nothing the product answer is',
+      );
       expect(withRefs).toContain('"no_action"');
+    });
+
+    it("asks for the product verdict next to a piece to publish, not instead of it", () => {
+      expect(withRefs).toContain("an empty \"actions\" array, or one holding only consider_publishing");
+      expect(withRefs).toContain(
+        "required whenever there is no product action, including next to a consider_publishing action",
+      );
+    });
+
+    it("gives the not-a-gap note its shape: what the piece is, and that it is not an announcement", () => {
+      expect(withRefs).toContain(
+        "It's not an announcement of a new feature or product.",
+      );
+      expect(withRefs).toContain('Do not add "no impact on current PostHog products"');
+      expect(withRefs).toContain("naming the piece and saying it is not an announcement already says that");
     });
 
     it("holds already_covered to the same evidence bar as a gap", () => {

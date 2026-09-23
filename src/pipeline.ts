@@ -15,10 +15,11 @@ import {
   type IssueEditor,
 } from "./github/issue.js";
 import { createLogger } from "./log.js";
+import { createDraftVisualMaker, type DraftVisualMaker } from "./media/draftVisual.js";
 import { createPageVisualMaker, type PageVisualMaker } from "./media/visual.js";
 import { resolveFeatureImage } from "./media/image.js";
 import { refreshDocsCorpus } from "./posthog/corpus.js";
-import { buildCorpusIndex } from "./posthog/retrieval.js";
+import { buildCorpusIndex, type CorpusIndex } from "./posthog/retrieval.js";
 import { writeDocsWorkspace } from "./posthog/workspace.js";
 import { buildSlackMessage, type SlackMessage } from "./slack/message.js";
 import { postQuietDayNote } from "./slack/quietDay.js";
@@ -171,11 +172,24 @@ function createReviewServices(config: Config): ReviewServices {
  * never edited after the fact, and an alert whose every action was dropped shows
  * **None** with the reason.
  */
+/** Everything that puts a picture on an issue: the page before/after, and the draft laid out. */
+interface IssueMedia {
+  pages: PageVisualMaker;
+  drafts: DraftVisualMaker;
+}
+
+function createIssueMedia(config: Config, index: CorpusIndex): IssueMedia {
+  const media = { pages: createPageVisualMaker(config, index), drafts: createDraftVisualMaker(config) };
+  log.info(`page edit before/after: ${media.pages.description}`);
+  log.info(`draft pictures: ${media.drafts.description}`);
+  return media;
+}
+
 async function prepareAlert(
   config: Config,
   issues: IssueCreator,
   review: ReviewServices,
-  visuals: PageVisualMaker,
+  media: IssueMedia,
   analyzed: AnalyzedItem,
   context: RunContext,
 ): Promise<PreparedAlert> {
@@ -183,10 +197,17 @@ async function prepareAlert(
 
   const targets: ReviewTarget[] = [];
   // One action at a time, because an `update_pages` action gets the live page
-  // photographed before and after per page it edits, and the body has to carry
+  // photographed before and after per page it edits, a `consider_publishing`
+  // action gets its draft laid out and photographed, and the body has to carry
   // the pictures from the moment the issue is opened.
   for (const action of analyzed.analysis.actions) {
-    const draft = buildIssueDraft(analyzed, image, action, await visuals.make(analyzed, action));
+    const draft = buildIssueDraft(
+      analyzed,
+      image,
+      action,
+      await media.pages.make(analyzed, action),
+      await media.drafts.make(analyzed, action),
+    );
     targets.push({
       action,
       issue: await issues.create(draft),
@@ -202,7 +223,8 @@ async function prepareAlert(
     editor: review.editor,
     reviewer: review.reviewer,
     writer: review.writer,
-    visuals,
+    visuals: media.pages,
+    drafts: media.drafts,
     index: context.index,
     workspace: context.workspace,
     budget: review.budget,
@@ -327,8 +349,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
 
   try {
     const { context } = await prepareCorpus(config, store);
-    const visuals = createPageVisualMaker(config, context.index);
-    log.info(`page edit before/after: ${visuals.description}`);
+    const media = createIssueMedia(config, context.index);
 
     const { candidates } = await collectCandidates(config);
     const wanted = normalizeUrl(targetUrl);
@@ -371,7 +392,7 @@ export async function runSingleItem(config: Config, targetUrl: string): Promise<
     }
     if (!analyzed) throw new Error(`analysis produced nothing for ${targetUrl}`);
 
-    const { alert } = await prepareAlert(config, issues, review, visuals, analyzed, context);
+    const { alert } = await prepareAlert(config, issues, review, media, analyzed, context);
     const message = buildSlackMessage(alert);
     const analysisId = await store.recordAnalysis({
       itemId: stored.id,
@@ -412,8 +433,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
   try {
     const corpus = await prepareCorpus(config, store);
     summary.notes.push(...corpus.notes);
-    const visuals = createPageVisualMaker(config, corpus.context.index);
-    log.info(`page edit before/after: ${visuals.description}`);
+    const media = createIssueMedia(config, corpus.context.index);
 
     const collection = await collectCandidates(config);
     summary.candidates = collection.candidates.length;
@@ -446,7 +466,7 @@ export async function runCycle(config: Config): Promise<RunSummary> {
 
     const fresh: PendingPost[] = [];
     for (const entry of analyzed) {
-      const prepared = await prepareAlert(config, issues, review, visuals, entry, corpus.context);
+      const prepared = await prepareAlert(config, issues, review, media, entry, corpus.context);
       const alert = prepared.alert;
       summary.issuesOpened += prepared.opened;
       summary.issuesClosed += prepared.closed;

@@ -25,8 +25,28 @@ export const ACTIONS = [
   "new_compare_page",
   "consider_building",
   "consider_enhancing",
+  "consider_publishing",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
+
+/**
+ * The one action that is not about the competitor's product.
+ *
+ * The other four answer "what did they ship, and what should PostHog's product
+ * or pages do about it". `consider_publishing` answers a different question,
+ * asked after that one comes back **None**: the piece is thought leadership,
+ * an explainer, or an event write-up, PostHog publishes nothing on the same
+ * angle, and marketing might want to. So it sits next to the product verdict
+ * rather than replacing it, and an alert can carry both.
+ */
+export function isContentAction(action: Pick<RecommendedAction, "type">): boolean {
+  return action.type === "consider_publishing";
+}
+
+/** The actions about the product ship, which is what the product verdict is about. */
+export function productActions<T extends Pick<RecommendedAction, "type">>(actions: T[]): T[] {
+  return actions.filter((action) => !isContentAction(action));
+}
 
 /**
  * One thing PostHog should do about a competitor signal. An alert often needs
@@ -57,6 +77,26 @@ export interface RecommendedAction {
   evidenceUrl?: string;
   /** Words quoted from `evidenceUrl`. Checked against the stored page body. */
   evidenceQuote?: string;
+  /**
+   * The working title of the piece a `consider_publishing` action asks for.
+   * Required with the draft: a headline is what a marketer decides on first.
+   */
+  articleTitle?: string;
+  /**
+   * The draft itself, in markdown, in PostHog's blog voice. Required for
+   * `consider_publishing` and the reason the action exists: "consider
+   * publishing something about X" is a job with the writing left in it, and
+   * the analyst had PostHog's own blog posts open to match. Rendered into the
+   * issue as a page somebody can read and as copy somebody can edit.
+   */
+  articleDraft?: string;
+  /**
+   * PostHog's own pieces nearest the draft's angle, as URLs: what the corpus
+   * search for the headline found that the analysis had read and recommended
+   * past. Named in the issue so whoever picks it up compares before writing.
+   * Set by the evidence gate, never by the model.
+   */
+  similarPages?: string[];
 }
 
 /** A competitor signal before it has been written to the database. */
@@ -142,6 +182,24 @@ export interface NoAction {
    * them rather than published as a claim nobody can check.
    */
   evidence: NoActionEvidence[];
+  /**
+   * The answer to the second question, asked once the product answer is None:
+   * does this piece change anything about PostHog's marketing content? Set
+   * when it is answered without an action – PostHog already publishes a
+   * similar piece, or there is nothing here worth one. When the answer is a
+   * new piece, the `consider_publishing` action carries it instead.
+   */
+  marketing?: MarketingNote;
+}
+
+/**
+ * One line about PostHog's own content, and the pages it points at. The pages
+ * are marketing pages by definition – a blog post, a tutorial, a newsletter
+ * issue – so they are checked for being in the corpus and nothing else.
+ */
+export interface MarketingNote {
+  note: string;
+  pages: NoActionEvidence[];
 }
 
 export interface Analysis {
@@ -157,7 +215,13 @@ export interface Analysis {
    * dropped rather than filed.
    */
   actions: RecommendedAction[];
-  /** Why there is nothing to do, in full. Set whenever `actions` is empty. */
+  /**
+   * The product verdict when there is no product action: why the ship asks
+   * nothing of PostHog's product or pages, in full. Set whenever `actions`
+   * holds no product action, which includes an alert whose only action is
+   * `consider_publishing` – that one is about PostHog's content, and the
+   * product answer still has to be given next to it.
+   */
   noAction?: NoAction;
   /**
    * The same verdict as one string. Written alongside `noAction` so a row
@@ -272,6 +336,30 @@ export interface PageShots {
 export interface PageEditVisual extends PageEditPlan {
   shots: PageShots | null;
   copyMissingLive: boolean;
+}
+
+/**
+ * A `consider_publishing` draft rendered as a page and photographed, so a
+ * marketer reading the issue sees the piece rather than a fence of markdown.
+ *
+ * The picture is of the draft laid out as a post, and it says so: there is no
+ * posthog.com page to photograph for an article nobody has written. `shots`
+ * is empty when nothing could be rendered or committed, and the issue carries
+ * the draft in text either way.
+ */
+export interface ArticleDraftVisual {
+  title: string;
+  wordCount: number;
+  capturedOn: string;
+  /** In reading order, top of the page first. */
+  shots: DraftShot[];
+}
+
+export interface DraftShot {
+  url: string;
+  alt: string;
+  /** Where the PNG went in the repo, relative to its root. */
+  path: string;
 }
 
 /** Who picks the work up. Marketing owns the pages, product owns the roadmap. */

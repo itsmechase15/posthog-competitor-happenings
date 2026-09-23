@@ -132,6 +132,56 @@ gap's own bar: the page is in the corpus, it is documentation, and the quote is
 on the stored copy. A verdict left with no page that passes is downgraded to
 "the gap could not be confirmed" naming the one that failed, never quietly kept.
 
+## A not-a-gap note names the piece, then stops
+
+Most of what a competitor publishes ships nothing. The note for one of those
+says what the piece is and that it is not an announcement, in two sentences:
+
+- Good: "This is a thought leadership article about whether to install
+  Amplitude's SDK or send events from a warehouse. It's not an announcement of
+  a new feature or product."
+- Bad: "No impact on current PostHog products."
+- Also bad: "...so PostHog's Experiments product has nothing to answer."
+
+The bad lines are true and say nothing the good one did not. The first is vague
+about the piece; the other two close on PostHog in a company's voice, when
+naming the piece and saying it is not an announcement already covers it. The
+prompt asks for the shape, and
+[`trimNotAGapReason`](../src/analysis/noAction.ts) cuts the flourish off the
+end of a sentence when one comes back anyway – only from the end, and only
+where the sentence survives the cut, because cutting the middle out of
+somebody's sentence is rewriting it. A test greps `src/` for the flourish so
+code never writes it either.
+
+PostHog's voice rules are for copy PostHog publishes. They apply to a page
+rewrite and to a drafted article, not to this note, which is the bot talking
+to a colleague.
+
+## A piece to publish is a draft, in PostHog's blog voice
+
+Once the product answer on a piece that ships nothing is None, the analyst asks
+whether PostHog publishes anything on the same angle. Where it does not, the
+answer is a `consider_publishing` action, and like a page edit it carries the
+words rather than a request for them: `article_title` is the working headline
+and `article_draft` is the whole piece in markdown.
+
+The voice comes from PostHog's own posts. The corpus holds them under
+`pages/blog/` and `pages/tutorials/`, and `ARTICLE_RULES` in
+[`src/analysis/prompt.ts`](../src/analysis/prompt.ts) has the analyst open two
+or three on a nearby topic and match how they are written before it writes a
+word. Every claim about PostHog in the draft comes off a docs page opened this
+run, the piece is PostHog's take rather than a rebuttal of theirs, and the
+style rules above apply to all of it – it is the longest string the bot writes,
+so it is where the slips happen.
+
+[`articleProblem`](../src/analysis/article.ts) is the code half: a draft that
+is missing, has no headline, runs under 300 words, or opens by describing the
+post is dropped as a brief. `similarPieces` in the same file searches PostHog's
+own writing for the headline and the ask, and a piece on the same angle that
+the analysis never opened drops the action and puts a **Marketing** line under
+the None naming the page. The issue lays the draft out as a post and
+photographs it, then carries the whole draft in a fence for an editor.
+
 ## Open questions are questions
 
 The heading says "Open questions", so every line under it asks something. What
@@ -389,7 +439,13 @@ have been allowed to be written that way in the first place.
 - [`src/analysis/noAction.ts`](../src/analysis/noAction.ts) is the one renderer
   for an alert that recommends nothing. `gateActions` reads the verdict off
   what it blocked, the reviewer's drops write their own, and Slack and the
-  closed issue both render the same title, sentence, and links.
+  closed issue both render the same title, sentence, and links. Its
+  `trimNotAGapReason` cuts the product flourish off a not-a-gap note on the
+  way in, and its **Marketing** line carries the second answer under the
+  first.
+- [`src/analysis/article.ts`](../src/analysis/article.ts) judges a piece to
+  publish: whether there is a draft, whether it is long enough to be one, and
+  whether PostHog already published it on a page nobody opened.
 - [`src/review/`](../src/review/) reviews every action after its issue is open:
   `prompt.ts` states the bar for agreeing, revising, and dropping, `schema.ts`
   bounds what a rewrite may change, and `apply.ts` re-runs the checks above on

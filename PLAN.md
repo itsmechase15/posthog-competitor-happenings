@@ -202,7 +202,11 @@ what the alert would say and the log shows what the issue edits would have been.
   confirm; `dropped_on_review` is the reviewer closing everything; `unanalyzed`
   is a run with no key. Rendered once, in
   [`src/analysis/noAction.ts`](./src/analysis/noAction.ts), for Slack and for
-  the GitHub issue a reviewer closed. The four action types:
+  the GitHub issue a reviewer closed. A `not_a_gap` note for a piece that
+  ships nothing says what the piece is and that it is not an announcement of
+  a new feature or product, and stops there: the flourish about PostHog's
+  product that used to close it is cut by `trimNotAGapReason` when it comes
+  back anyway. The five action types:
   - update pages (existing compare/content)
   - new compare page
   - consider building (PostHog has nothing like this)
@@ -210,6 +214,14 @@ what the alert would say and the log shows what the issue edits would have been.
     enhance, so the line reads "Consider enhancing Experiments – ..." rather
     than a label with a vague gap after it. Enhancing means reaching parity
     with what the competitor shipped, or beating it
+  - consider publishing (marketing content, not product). For a piece that
+    ships nothing, once the product verdict is None: PostHog's blog,
+    tutorials, and newsletter have nothing on the same angle, so here is the
+    piece, drafted in PostHog's blog voice. Sits next to `noAction` rather
+    than replacing it, so `noAction` is set whenever there is no *product*
+    action. Where PostHog already covers the angle, the None carries
+    `noAction.marketing` naming the page instead. See
+    [The marketing question](#the-marketing-question)
 - Action copy focuses on the gap / why PostHog has nothing like it – not generic "why care"
 - Update pages has a bar of its own. PostHog marketing, product marketing, and
   compare pages are only worth editing when one of these holds:
@@ -361,6 +373,39 @@ served instead of it, no token, a dry run, a refused commit: the issue is filed
 in text, saying the same thing in words. A dry run still takes both shots to a
 temp directory and logs the paths. `SKIP_PAGE_VISUALS=true` turns it off. A
 revise re-photographs, because the copy is what a revise changes.
+
+### The marketing question
+The product verdict is not the last word on a piece that ships nothing. After
+`no_action` says a post is thought leadership, an explainer, a practice piece,
+or an event write-up, the analyst asks whether PostHog publishes anything on
+the same angle, searching `/blog`, `/tutorials`, `/newsletter`, `/founders`,
+and `/product-engineers` in the corpus – the newsletter and the two editorial
+sections were added to the corpus for this – and answers one of three ways:
+PostHog already has a similar piece (a marketing line under the None, with the
+page), nothing here is worth a piece (the same line, no page), or a
+`consider_publishing` action carrying `article_title` and `article_draft`.
+
+The draft is the deliverable. The analyst opens two or three real PostHog posts
+on a nearby topic first and matches how they are written, every claim about
+PostHog comes off a docs page it opened this run, and the piece is PostHog's
+take rather than a rebuttal. Between 300 and 1,800 words, and a draft under 300
+is dropped as a brief by `articleProblem` in
+[`src/analysis/article.ts`](./src/analysis/article.ts).
+
+The gate judges the two sides apart. A piece whose headline and ask lead to a
+PostHog piece the analysis never opened is dropped as already published, and
+the None gets the marketing line naming it – the coverage check, for content. A
+piece the analyst read past is kept, and the issue names the nearby pieces so a
+marketer compares first. No block on the content side ever reaches the product
+verdict, `update_pages` keeps its own bar, and impact stays what the post
+shipped. Slack shows the product None first and the action under it, with the
+working title quoted. The issue reads news, product verdict, ask, whether
+PostHog already covers this, then the draft – laid out as a post in a headless
+browser and photographed a screen at a time, captioned as a rendering of a
+draft with nothing published, committed to `artifacts/consider-publishing/`,
+and the whole draft in a fence under the pictures. The review pass reviews it
+like any other action, the writer returns the whole draft again on a revise,
+and a dropped piece becomes a marketing line under the None.
 
 A private channel first; a PostHog channel later. Whichever it is, the id lives
 in `SLACK_CHANNEL_ID`, never in the code.

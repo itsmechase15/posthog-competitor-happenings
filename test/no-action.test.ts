@@ -6,9 +6,12 @@ import {
   noActionOf,
   noActionTitle,
   renderNoAction,
+  shapeNoAction,
+  trimNotAGapReason,
   UNSTATED_NO_ACTION_REASON,
   withNoAction,
 } from "../src/analysis/noAction.js";
+import { parseAnalysis } from "../src/analysis/schema.js";
 import { NO_ACTION_KINDS, type Analysis, type NoAction } from "../src/types.js";
 
 const covered: NoAction = {
@@ -148,19 +151,106 @@ describe("withNoAction", () => {
 });
 
 /**
+ * The shape a "not a product gap" note has: what the piece is, and that it is
+ * not an announcement. The flourish about PostHog's product that used to close
+ * it – "nothing here asks anything of PostHog's product", "PostHog's
+ * Experiments product has nothing to answer" – says the same thing a second
+ * time in a company's voice, so it is cut, and only where a sentence survives
+ * the cut.
+ */
+describe("trimNotAGapReason", () => {
+  it("cuts the flourish off the Amplitude SDK note and keeps what the piece is", () => {
+    expect(
+      trimNotAGapReason(
+        "This is a thought-leadership post making the case for installing Amplitude's SDK over warehouse-only ingestion, so no capability shipped and nothing here asks anything of PostHog's product.",
+      ),
+    ).toBe(
+      "This is a thought-leadership post making the case for installing Amplitude's SDK over warehouse-only ingestion, so no capability shipped.",
+    );
+  });
+
+  it("cuts the product flourish off the Mixpanel event write-up note", () => {
+    expect(
+      trimNotAGapReason(
+        "No capability shipped here – this is an event write-up and thought leadership about experimentation practice, so PostHog's Experiments product has nothing to answer.",
+      ),
+    ).toBe(
+      "No capability shipped here – this is an event write-up and thought leadership about experimentation practice.",
+    );
+  });
+
+  it("drops a sentence that is nothing but the flourish", () => {
+    expect(
+      trimNotAGapReason(
+        "This is a thought leadership article about SDK versus warehouse ingestion. It's not an announcement of a new feature or product. No impact on current PostHog products.",
+      ),
+    ).toBe(
+      "This is a thought leadership article about SDK versus warehouse ingestion. It's not an announcement of a new feature or product.",
+    );
+  });
+
+  it("leaves the shape Chase asked for exactly as written", () => {
+    const good =
+      "This is a thought leadership article about whether to install Amplitude's SDK or send events from a warehouse. It's not an announcement of a new feature or product.";
+    expect(trimNotAGapReason(good)).toBe(good);
+  });
+
+  it("leaves a sentence alone when the flourish is in the middle of it, rather than rewrite it", () => {
+    const middle =
+      "Nothing here asks anything of PostHog's product because the post is a recap of their conference talks.";
+    expect(trimNotAGapReason(middle)).toBe(middle);
+  });
+
+  it("never empties a reason", () => {
+    expect(trimNotAGapReason("No impact on current PostHog products.")).toBe(
+      "No impact on current PostHog products.",
+    );
+  });
+
+  it("only shapes the analyst's own not-a-gap, and only when there is something to cut", () => {
+    expect(shapeNoAction(covered)).toBe(covered);
+    const plain = { kind: "not_a_gap" as const, reason: "This is a customer story.", evidence: [] };
+    expect(shapeNoAction(plain)).toBe(plain);
+  });
+
+  it("runs on the way in, so the note Slack shows is the trimmed one", () => {
+    const parsed = parseAnalysis(
+      JSON.stringify({
+        impact: "minor",
+        summary: "Amplitude argues for installing its SDK over warehouse-only ingestion.",
+        actions: [],
+        no_action: {
+          kind: "not_a_gap",
+          reason:
+            "This is a thought leadership article about installing Amplitude's SDK versus sending events from a warehouse, so nothing here asks anything of PostHog's product.",
+        },
+      }),
+    );
+    expect(parsed.noAction?.reason).toBe(
+      "This is a thought leadership article about installing Amplitude's SDK versus sending events from a warehouse.",
+    );
+    expect(parsed.noActionReason).toBe(parsed.noAction?.reason);
+  });
+});
+
+/**
  * The platitudes this feature exists to delete, checked by grep.
  *
  * Each of these was true, said nothing, and read like a bug: a reader who saw
  * one could not tell whether PostHog ships the thing, whether the launch was
  * irrelevant, or whether the run had fallen over. A verdict has a kind, a
  * sentence about this launch, and the pages it rests on, so there is nothing
- * left for a generic line to do.
+ * left for a generic line to do. The last three are the flourish a not-a-gap
+ * note used to close on, which code must never write either.
  */
 describe("no generic no-action copy survives in src/", () => {
   const BANNED = [
     "survived the evidence checks",
     "no reason was recorded",
     "did not say why",
+    "No impact on current PostHog products.",
+    "product has nothing to answer.",
+    "asks anything of PostHog's product.",
   ];
 
   function sourceFiles(dir: string): string[] {

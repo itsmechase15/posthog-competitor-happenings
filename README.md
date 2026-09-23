@@ -280,6 +280,83 @@ verdict whose pages all fail is downgraded to "the gap could not be confirmed"
 naming the page that could not be checked, because a claim whose basis we cannot
 find cannot be rewritten into a true one without inventing it.
 
+**A "not a product gap" note says what the piece is.** Most of what a competitor
+publishes ships nothing: thought leadership, an explainer, an event write-up. The
+note for one of those has two sentences and no flourish – "This is a thought
+leadership article about whether to install Amplitude's SDK or send events from
+a warehouse. It's not an announcement of a new feature or product." Not "no
+impact on current PostHog products", not "PostHog's Experiments product has
+nothing to answer": naming the piece and saying it is not an announcement
+already says that, in a colleague's voice rather than a company's. The prompt
+asks for the shape, and `trimNotAGapReason` in
+[`src/analysis/noAction.ts`](./src/analysis/noAction.ts) cuts the flourish off
+the end of a sentence when one comes back anyway, and only where the sentence
+survives the cut.
+
+### The marketing question
+
+The product verdict is not the last word on a piece that ships nothing. Once the
+answer is **None – not a product gap**, the analyst asks one more thing: does
+PostHog publish anything on the same angle? It searches PostHog's own writing in
+the corpus – `/blog`, `/tutorials`, `/newsletter`, `/founders`,
+`/product-engineers` – and answers one of three ways:
+
+- **PostHog already has a similar piece.** The None carries a marketing line
+  under it naming the page: `Marketing: PostHog's blog already covers the SDK
+  versus warehouse choice. See: Should you install the SDK…`. No action.
+- **Nothing here is worth a PostHog piece** – a recap of their own event, a
+  customer story about them. The same line, saying so, with no page.
+- **PostHog has nothing on the angle and a reader would want it.** A
+  `consider_publishing` action, marketing's fifth action type, with the piece
+  drafted. Slack shows the product None first and the action under it:
+
+```
+Recommended action(s)
+
+None – not a product gap
+This is a thought leadership article about whether to install Amplitude's SDK
+or send events from a warehouse. It's not an announcement of a new feature or
+product.
+
+Consider publishing
+Publish a PostHog take on whether to install the SDK or send events from your
+warehouse – Amplitude has one, and PostHog's blog has nothing on the choice.
+> Working title: "Should you install the SDK, or send events from your
+  warehouse?" (draft in the issue)
+Access GitHub issue #96
+```
+
+The action carries the draft, not a request for one. `article_draft` is the
+whole piece in markdown, written after the analyst has opened two or three real
+PostHog posts on a nearby topic and matched how they are written, with every
+claim about PostHog read off a docs page it opened this run. The GitHub issue
+reads news, product verdict, ask, then **Does PostHog already cover this?** –
+the PostHog pieces the corpus ranked nearest, which the analyst read and
+recommended past, or a line saying nothing close exists – then **The draft**:
+the piece laid out as a post and photographed a screen at a time, captioned as
+a rendering of a draft with nothing published, and the whole draft in a fence
+under the pictures for an editor to copy. The PNGs are committed to
+[`artifacts/consider-publishing/`](./artifacts/consider-publishing/README.md)
+the way the page before/after is, and the issue is labelled
+`action:consider-publishing`, `owner:marketing`, and routed to Editorial.
+
+**It is an extra path, and it never moves the product answer.** The gate in
+[`src/analysis/evidence.ts`](./src/analysis/evidence.ts) judges the two sides
+apart: the product verdict is decided by the product actions and what blocked
+them, and a piece to publish is checked on its own terms by
+[`src/analysis/article.ts`](./src/analysis/article.ts). A piece with no draft,
+no headline, or a draft under 300 words is dropped as a brief. A piece whose
+headline and ask lead to a PostHog blog post, tutorial, or newsletter issue the
+analysis never opened is dropped as already published, and the None gets the
+marketing line naming the page – the same shape as the coverage check on a gap,
+for the same reason. Neither block touches the product verdict, `update_pages`
+keeps its own bar, and impact stays what the post shipped. The review pass
+reviews a piece like any other action: a reviewer that can name the PostHog post
+that already covers the angle drops it, a reviewer that finds a PostHog fact the
+docs do not support asks for a rewrite, the writer returns the whole draft again,
+the draft is re-checked and re-photographed, and a dropped piece becomes a
+marketing line under the None rather than a verdict about the product.
+
 **Without `CURSOR_API_KEY` the bot still posts.** Analysis falls back to
 restating the source, and those messages are labeled "not model-analyzed" so
 nobody mistakes one for a recommendation. The fallback recommends nothing at

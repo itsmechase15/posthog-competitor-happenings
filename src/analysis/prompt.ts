@@ -10,6 +10,8 @@ import { EN_DASH, truncate } from "../util/text.js";
 // The proportion rule is stated to the model in the same numbers the gate
 // measures with, so a rewrite written to the rule is a rewrite that passes it.
 import { MIN_GROWTH_WORDS } from "./proportion.js";
+// The same for a draft: the length the gate wants is the length the prompt asks for.
+import { EDITORIAL_DIRS, MAX_ARTICLE_WORDS, MIN_ARTICLE_WORDS } from "./article.js";
 
 const MAX_BODY_CHARS = 4_000;
 const MAX_CLAIM_CHARS = 400;
@@ -151,6 +153,21 @@ export const PAGE_REWRITE_RULES = `Every update_pages action ships the rewrite w
 7. Everything in the PostHog writing style section below applies to it, and it is the string most likely to end up on posthog.com unedited.
 "suggested_edit" stays what it always was: one line saying what is wrong and what you are changing. It is the summary of the rewrite, never a substitute for it.`;
 
+/**
+ * What makes a `consider_publishing` recommendation a draft rather than a
+ * request for one. Stated once and asked for twice, like the page rewrite
+ * rules: the analyst writes the piece, and the review's writer rewrites it when
+ * a reviewer says what is wrong with it. `src/analysis/article.ts` is the code
+ * half, and it measures both the same way.
+ */
+export const ARTICLE_RULES = `Every consider_publishing action ships the piece with it, in "article_title" and "article_draft" on the action. This is not optional and the action is dropped without it:
+1. Read PostHog's own posts first. The corpus holds PostHog's blog and tutorials as files under ${EDITORIAL_DIRS.map((dir) => `\`${dir}\``).join(" and ")}: open two or three on a nearby topic and match how they are written before you write a word. Their voice, how they open, how long a paragraph runs, how they use headings, how often they say "we". A draft that reads as if it came from somewhere else is a draft somebody has to rewrite, and matching real PostHog posts is the whole reason you have them.
+2. Write the piece, not a brief. "article_draft" is the article in markdown, ready for an editor to work on: a first paragraph that says what the reader gets, headings, short paragraphs, and a close that tells them what to do next. Between ${MIN_ARTICLE_WORDS} and ${MAX_ARTICLE_WORDS} words. An outline, a list of talking points, or anything that says what "the post should cover" is a brief, and a draft under ${MIN_ARTICLE_WORDS} words is dropped as one.
+3. Every claim about PostHog comes off a docs page you opened this run. The draft may say what PostHog does only where the corpus says so, and it names no feature the docs do not describe. Where the honest answer is "it depends", write that.
+4. It is PostHog's take on the question, not a rebuttal. Do not name the competitor's post, do not argue with it, and do not mention this analysis. A competitor gets a mention only where a reader of PostHog's blog would expect one.
+5. Everything in the PostHog writing style section applies, and this is the longest string you will write, so it is where the slips happen: no em dashes, no "leverage", no "seamless", no "simply".
+"article_title" is the working headline: concrete, in sentence case the way PostHog writes headlines, and without a colon-and-subtitle.`;
+
 export const SYSTEM_RULES = `You are a competitive-intelligence analyst for PostHog, an open-source product analytics platform.
 You read one thing a competitor shipped and decide what PostHog should do about it.
 
@@ -166,23 +183,27 @@ Rules:
   Nothing else moves it. Not how strategic the launch feels, not whether PostHog has a gap here, not how much PostHog customers will ask about it, not how loudly it was written up.
   Worked examples. A scheduled end time on experiments they already ship is notable, because Experiments existed and this is a new control on it. Serving customer events through the customer's own domain, which they never offered, is major, because it is a capability they did not have. A post about their new office, or a roundup of last quarter's releases, is minor.
 - "actions" is 0 to 3 things PostHog should do, most important first.
-  Zero is a normal answer and often the right one. A competitor shipping something PostHog already does well asks nothing of PostHog. So does a competitor shipping something PostHog has deliberately not built. When you recommend nothing, send an empty "actions" array and a "no_action" object saying which kind of nothing it is:
+  Zero is a normal answer and often the right one. A competitor shipping something PostHog already does well asks nothing of PostHog. So does a competitor shipping something PostHog has deliberately not built. Whenever you recommend no product action – an empty "actions" array, or one holding only consider_publishing – send a "no_action" object saying which kind of nothing the product answer is:
   - "already_covered": PostHog ships the thing that just shipped elsewhere. This is a claim about PostHog's product and it carries evidence like any gap does: one to three docs pages in "evidence", each with the page URL and a quote copied from it verbatim. A page that is not in the corpus, is not documentation, or does not contain the quote is dropped, and a verdict left with no evidence is downgraded to "the gap could not be confirmed", so cite what you actually read.
-  - "not_a_gap": the launch asks nothing of the product. Pricing, plans, and packaging; company news, hiring, or a customer story; a capability PostHog chose not to build. Say which of those it is in "reason".
-  "reason" is one sentence either way, and it names the capability that shipped and what PostHog does about it. "Nothing to do here" is not a reason.
+  - "not_a_gap": the launch asks nothing of the product. Two shapes, and which one depends on whether anything shipped:
+    - A post that ships nothing – thought leadership, an explainer, a practice piece, an event write-up, a customer story, company news, hiring, pricing copy – gets two sentences: what the piece is, and that it is not an announcement. "This is a thought leadership article about whether to install Amplitude's SDK or send events from a warehouse. It's not an announcement of a new feature or product." Name the piece's actual subject. Then stop. Do not add "no impact on current PostHog products", "nothing here asks anything of PostHog's product", or "PostHog's Experiments product has nothing to answer": naming the piece and saying it is not an announcement already says that, and the flourish is cut on the way in.
+    - A real capability PostHog chose not to build, or pricing and packaging on a real feature: one sentence naming the capability and why the product owes it nothing.
+  "reason" names what the piece is or what shipped, in the reader's terms. "Nothing to do here" is not a reason.
   Never pad the list. One action that survives being checked is worth more than three that read well.
 - Each action has a "type", a "detail", and, for the two product actions, a "gap", an "evidence_url", and an "evidence_quote". "type" is one of:
   - update_pages: a PostHog marketing, product marketing, or compare page is now wrong, understates what PostHog does, or is contradicted by the competitor's own comparison page. It has a bar of its own, below.
   - new_compare_page: this deserves a comparison page PostHog does not have.
   - consider_building: PostHog has nothing like this.
   - consider_enhancing: PostHog has something adjacent with a real gap. Name the PostHog feature to enhance in "feature", e.g. "Experiments", "Session replay", "Surveys". Slack shows the title as "Consider enhancing Experiments", so an action with no feature reads as saying nothing. Enhancing means reaching parity with what the competitor shipped, or beating it.
-- The other three action types take no "feature". Leave the key out rather than sending it empty.
+  - consider_publishing: the piece ships nothing, and PostHog's blog, tutorials, and newsletter have nothing on the same angle. This is marketing's action about PostHog's own content, not a product action: it sits next to the product verdict in "no_action" rather than replacing it, and it carries the draft. The marketing question section below says when to use it.
+- The other four action types take no "feature". Leave the key out rather than sending it empty.
 ${TEAM_RULES}
 - "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy.
 - Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
   - consider_enhancing and consider_building: name the change first, then the gap behind it if it still fits. Good: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand." The bad one is true and it is evidence, but it names no change, so it belongs in a later sentence.
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
+  - consider_publishing: name the piece to write and the angle. Good: "Publish a PostHog take on whether to install the SDK or send events from your warehouse – Amplitude has one, and PostHog's blog has nothing on the choice." Bad: "This is a thought leadership post about SDKs." The bad one describes their post; the good one asks for ours.
 - "posthog_refs" cites PostHog URLs from the corpus. Only cite URLs that exist in it. Include "suggested_edit" when an action is update_pages or new_compare_page, and "proposed_text" whenever the action is update_pages. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things that change what PostHog should do and that you could not settle. This is where an unproven gap goes. It is a better answer than an action, not a worse one.
 - Write every open question as a question. It opens with Is, Are, Does, Do, Can, Will, Which, What, How, or "Do we know", and it ends with a question mark, because the reader's job is to answer it. "Is Headless generally available on every Mixpanel plan, or only on Enterprise?" is a question. "Whether Headless is generally available" is a note you left yourself: it names the doubt and asks nobody anything, and it is rewritten into a question or dropped before it reaches the issue. One question per entry, and name the thing you could not check inside it. A sentence of context after the question mark is fine.
@@ -204,6 +225,12 @@ What is not a gap:
 - A capability PostHog has under a different name. Check what PostHog calls it before deciding it is absent.
 - A compare page PostHog already publishes. Before asking for new_compare_page, check the corpus for one: posthog.com/compare holds every comparison page there is, and asking for one that exists is the same mistake as asking to build something PostHog ships.
 
+The marketing question. The product verdict is not the last word on a piece that ships nothing. Once "no_action" says a post is thought leadership, an explainer, a practice piece, or an event write-up, ask one more thing: does PostHog publish anything on the same angle? Search the corpus – ${EDITORIAL_DIRS.map((dir) => `\`${dir}\``).join(", ")} – for the subject in PostHog's words as well as the competitor's, and open what comes back. Then answer one of three ways:
+  - PostHog already has a similar piece: say so in "no_action.marketing", one line naming the angle it already covers, with the pages in "pages". No action.
+  - PostHog has nothing on the angle, and a reader of PostHog's blog would want it: add one consider_publishing action, carrying the draft, and keep "no_action" for the product verdict next to it.
+  - It is not worth a PostHog piece – a recap of their own event, a customer story about them, company news: "no_action.marketing" says that in one line, with no pages.
+  This is marketing's question and it never moves the product answer. No product action is added because a piece would make a good post, update_pages keeps its own bar, and impact stays what the post shipped. A consider_publishing action is dropped on measurement when the corpus holds a similar blog post, tutorial, or newsletter issue that you never opened, so open what the search returns before you recommend writing, and cite what you opened.
+
 When update_pages is allowed. PostHog's marketing, product marketing, and compare pages are only worth editing when at least one of these is true, so recommend update_pages only then, and say in "detail" which one it is:
   1. A PostHog page is now wrong or misleading because of this launch. It says the competitor cannot do something they now do, or it claims a parity or an advantage this launch breaks.
   2. PostHog has an adjacent capability the docs confirm, and the page understates it or reads as if PostHog does not have it, on this launch's topic.
@@ -223,6 +250,8 @@ A docs page is evidence for what PostHog ships, never a page to edit: update_pag
 
 ${PAGE_REWRITE_RULES}
 
+${ARTICLE_RULES}
+
 ${STYLE_RULES}`;
 
 export const RESPONSE_SHAPE = `{
@@ -231,24 +260,34 @@ export const RESPONSE_SHAPE = `{
   "key_points": ["string", "string"],
   "actions": [
     {
-      "type": "update_pages" | "new_compare_page" | "consider_building" | "consider_enhancing",
+      "type": "update_pages" | "new_compare_page" | "consider_building" | "consider_enhancing" | "consider_publishing",
       "detail": "string",
       "feature": "string (the PostHog feature to enhance; required for consider_enhancing)",
       "teams": ["string (1 to ${MAX_TEAMS} small team names, exactly as listed)"],
       "gap": "string (what PostHog does not do today; required for the two product actions)",
       "evidence_url": "string (the PostHog docs page the gap was read off; required for the two product actions)",
-      "evidence_quote": "string (words copied from that page, verbatim; required for the two product actions)"
+      "evidence_quote": "string (words copied from that page, verbatim; required for the two product actions)",
+      "article_title": "string (the working headline; required for consider_publishing)",
+      "article_draft": "string (the whole piece in markdown, in PostHog's blog voice; required for consider_publishing)"
     }
   ],
   "no_action": {
     "kind": "already_covered" | "not_a_gap",
-    "reason": "string (one sentence; required when actions is empty)",
+    "reason": "string (one or two sentences; required whenever there is no product action, including next to a consider_publishing action)",
     "evidence": [
       {
         "url": "string (a PostHog docs page in the corpus; required for already_covered)",
         "quote": "string (words copied from that page, verbatim)"
       }
-    ]
+    ],
+    "marketing": {
+      "note": "string (one line on what this means for PostHog's own content, when no consider_publishing action carries the answer)",
+      "pages": [
+        {
+          "url": "string (the PostHog blog post, tutorial, or newsletter issue that already covers the angle)"
+        }
+      ]
+    }
   },
   "posthog_refs": [
     {
