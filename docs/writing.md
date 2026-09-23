@@ -257,10 +257,11 @@ has nothing to do.
 
 A GitHub issue is read by somebody who was not in the channel, so it opens the
 way the news does: **What you need to know**, then **More detail**, then
-**Recommended action**. The ask makes sense only after the launch does.
-Everything the ask stands on follows it – the gap, the teams, the impact, the
-docs, the open questions, the sources – in the order somebody checking the ask
-would want them.
+**Impact**, then **Recommended action**. The ask makes sense only after the
+launch does, and how much the launch matters is part of the launch.
+Everything the ask stands on follows it – the gap, the teams, the docs, the
+open questions, the sources – in the order somebody checking the ask would
+want them.
 
 The two docs sections under it are about different days, and they say so:
 

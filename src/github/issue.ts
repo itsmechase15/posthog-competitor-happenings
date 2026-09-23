@@ -1,4 +1,3 @@
-import { noActionOf, renderNoAction } from "../analysis/noAction.js";
 import { asQuestions } from "../analysis/questions.js";
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
@@ -20,7 +19,7 @@ import {
   type PostHogRef,
   type RecommendedAction,
 } from "../types.js";
-import { pageNameFromUrl, SPACED_EN_DASH, truncate } from "../util/text.js";
+import { SPACED_EN_DASH, truncate } from "../util/text.js";
 
 const log = createLogger("github");
 
@@ -402,43 +401,6 @@ function bullets(values: string[], empty: string): string {
 }
 
 /**
- * The product answer, on a publishing issue only.
- *
- * A piece to publish is recommended because the product answer was None, and
- * somebody opening the issue cold should see that answer before the ask: it is
- * what says this is a content job and not a product one. The same verdict
- * Slack shows, rendered by the same function.
- */
-function productVerdictSection(alert: AnalyzedItem, action: RecommendedAction): string | null {
-  if (!isContentAction(action) || !alert.analysis.noAction) return null;
-  const { marketing: _marketing, ...verdict } = noActionOf(alert.analysis);
-  return `## Product verdict\n${renderNoAction(verdict, { flavor: "markdown" })}`;
-}
-
-/**
- * Whether PostHog already publishes on this angle, which is the first thing a
- * marketer asks and the check the gate ran.
- *
- * The pages here passed the gate: the corpus ranked them nearest the headline
- * and the analysis had read them and recommended writing anyway, so the
- * decision that the angle differs is one a person should look at. Nothing
- * nearby is said plainly, because it is the finding that makes the piece worth
- * writing.
- */
-function existingPiecesSection(action: RecommendedAction): string | null {
-  if (!isContentAction(action)) return null;
-  const pages = action.similarPages ?? [];
-  if (pages.length === 0) {
-    return `## Does PostHog already cover this?\n_No PostHog blog post, tutorial, or newsletter issue in the corpus is on this angle: the search for the headline and the ask came back with nothing close, so this would be new._`;
-  }
-  return [
-    "## Does PostHog already cover this?",
-    "The corpus ranked these PostHog pieces nearest the angle. The analysis read them and recommended writing anyway, so read them before you do and decide whether this is a new piece or an update to one of them.",
-    ...pages.map((url) => `- [${pageNameFromUrl(url)}](${url})`),
-  ].join("\n");
-}
-
-/**
  * The draft, as a page and as copy.
  *
  * The pictures come first because they are what a marketer reads: the piece
@@ -479,12 +441,12 @@ function draftSection(action: RecommendedAction, visual: ArticleDraftVisual | nu
  * the full detail, page citations, suggested edits, open questions – lives
  * here, scoped to the one job this issue is asking for.
  *
- * What the competitor shipped comes first and the ask comes third, because
+ * What the competitor shipped comes first and the ask comes after it, because
  * somebody who opens this cold needs the news before a job makes sense: the
- * summary, then the detail behind it, then what PostHog should do about it.
- * Everything the ask stands on – the gap, the teams, the impact, the docs, the
- * open questions – follows the ask, in the order somebody checking it asks for
- * it.
+ * summary, the detail behind it, how much it matters, then what PostHog
+ * should do about it. Everything the ask stands on – the gap, the teams, the
+ * docs, the open questions – follows the ask, in the order somebody checking
+ * it asks for it.
  *
  * `visuals` are the photographed page edits for an `update_pages` action,
  * already taken and committed by the caller, because building this body is
@@ -493,10 +455,9 @@ function draftSection(action: RecommendedAction, visual: ArticleDraftVisual | nu
  * arrives here carrying its diff and its copy. `draft` is the same thing for a
  * `consider_publishing` action: the piece laid out and photographed, or null.
  *
- * A publishing issue reads differently after the ask. It carries the product
- * verdict it sits next to, whether PostHog already publishes on the angle, and
- * the draft itself, and it skips the docs sections, which are about what the
- * product does today and what a product change would make stale.
+ * A publishing issue reads differently after the ask. It carries the draft
+ * itself, and it skips the docs sections, which are about what the product
+ * does today and what a product change would make stale.
  */
 export function buildIssueBody(
   alert: AnalyzedItem,
@@ -517,13 +478,11 @@ export function buildIssueBody(
     image ? `<img src="${image.url}" alt="${image.altText}" width="720" />` : null,
     `## What you need to know\n${analysis.summary}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
-    productVerdictSection(alert, action),
+    `## Impact\n${impactScale(analysis.impact)}`,
     `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
     evidenceSection(action),
-    existingPiecesSection(action),
     draftSection(action, draft),
     `## Related team(s)\n${relatedTeamsLabel(action)}`,
-    `## Impact\n${impactScale(analysis.impact)}`,
     content
       ? null
       : pagesSection(alert, action, action.type === "update_pages" ? visuals : [], futureDocs),

@@ -472,13 +472,12 @@ describe("the GitHub issue", () => {
     expect(buildIssueLabels(analyzed, piece)).toContain("team:editorial");
   });
 
-  it("reads news, product verdict, ask, then whether PostHog already covers it, then the draft", () => {
+  it("reads news, impact, ask, then the draft", () => {
     const order = [
       "## What you need to know",
-      "## Product verdict",
-      "**None \u2013 not a product gap**",
+      "## More detail",
+      "## Impact",
       "## Recommended action",
-      "## Does PostHog already cover this?",
       "## The draft",
       "## Related team(s)",
     ].map((heading) => body.indexOf(heading));
@@ -486,14 +485,12 @@ describe("the GitHub issue", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it("names the PostHog pieces the analysis read past, so somebody compares before writing", () => {
-    expect(body).toContain(`- [the import warehouse events page](${TUTORIAL})`);
-    expect(body).toContain("The analysis read them and recommended writing anyway");
-  });
-
-  it("says plainly when nothing nearby exists", () => {
+  it("leaves the product verdict and the coverage question to Slack and the ask", () => {
+    expect(body).not.toContain("## Product verdict");
+    expect(body).not.toContain("## Does PostHog already cover this?");
     const fresh = buildIssueBody(analyzed, null, piece, [], null);
-    expect(fresh).toContain("nothing close, so this would be new");
+    expect(fresh).not.toContain("## Product verdict");
+    expect(fresh).not.toContain("## Does PostHog already cover this?");
   });
 
   it("embeds every shot in order, with a caption naming the post it was staged on and that nothing was published", () => {
@@ -528,14 +525,6 @@ describe("the GitHub issue", () => {
     expect(textOnly).toContain("```markdown");
   });
 
-  it("puts no product verdict on a product issue", () => {
-    const product = buildIssueBody(
-      { ...analyzed, analysis: { ...analysis, actions: [{ type: "consider_building", detail: "Build it." }], noAction: undefined } },
-      null,
-      { type: "consider_building", detail: "Build it." },
-    );
-    expect(product).not.toContain("## Product verdict");
-  });
 });
 
 describe("the review pass", () => {

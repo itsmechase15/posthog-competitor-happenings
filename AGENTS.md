@@ -171,12 +171,12 @@ it.
  product verdict is None on a piece that ships nothing, the analyst asks
  whether PostHog publishes anything on the same angle. If it does, the None
  carries `noAction.marketing` naming the page. If not, a `consider_publishing`
- action files an issue with the product verdict, a draft of the piece in
- PostHog's blog voice, and the draft laid out and photographed. Three things
+ action files an issue with a draft of the piece in PostHog's blog voice, and
+ the draft laid out and photographed. Three things
  keep it from weakening the product bar, so keep all three: `noAction` is set
  whenever there is no *product* action (`productActions` in
- [`src/types.ts`](./src/types.ts)), so the product answer is always given
- next to the piece; the gate judges the two sides apart and no content block
+ [`src/types.ts`](./src/types.ts)), so the Slack alert always gives the
+ product answer next to the piece; the gate judges the two sides apart and no content block
  ever reaches the product verdict; and it is an extra path, never a fallback
  for an unverified gap or a page edit that failed its bar. The draft is
  checked by [`src/analysis/article.ts`](./src/analysis/article.ts): there is
