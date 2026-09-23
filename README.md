@@ -330,9 +330,7 @@ The action carries the draft, not a request for one. `article_draft` is the
 whole piece in markdown, written after the analyst has opened two or three real
 PostHog posts on a nearby topic and matched how they are written, with every
 claim about PostHog read off a docs page it opened this run. The GitHub issue
-reads news, product verdict, ask, then **Does PostHog already cover this?** –
-the PostHog pieces the corpus ranked nearest, which the analyst read and
-recommended past, or a line saying nothing close exists – then **The draft**:
+reads news, impact, ask, then **The draft**:
 the piece as it would read on posthog.com, photographed a screen at a time,
 and the whole draft in a fence under the pictures for an editor to copy. The
 PNGs are committed to

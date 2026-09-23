@@ -406,8 +406,8 @@ piece the analyst read past is kept, and the issue names the nearby pieces so a
 marketer compares first. No block on the content side ever reaches the product
 verdict, `update_pages` keeps its own bar, and impact stays what the post
 shipped. Slack shows the product None first and the action under it, with the
-working title quoted. The issue reads news, product verdict, ask, whether
-PostHog already covers this, then the draft – staged into a real posthog.com
+working title quoted. The issue reads news, impact, ask, then the
+draft – staged into a real posthog.com
 blog post in the same headless browser the page before/after uses, with the
 post's headline, body, byline, and tables of contents swapped for the draft's,
 a "Proposed draft · not published" stamp above the headline, and the page

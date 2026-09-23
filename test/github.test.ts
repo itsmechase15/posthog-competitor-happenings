@@ -220,16 +220,18 @@ describe("buildIssueDraft", () => {
     }
   });
 
-  it("leads with the news, then the detail, then the ask, then what the ask stands on", () => {
+  it("leads with the news, then the detail, then how much it matters, then the ask", () => {
     for (const body of [draft.body, buildIssueDraft(analyzed, image, productAction).body]) {
       const headings = [...body.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
-      expect(headings.slice(0, 3)).toEqual([
+      expect(headings.slice(0, 4)).toEqual([
         "What you need to know",
         "More detail",
+        "Impact",
         "Recommended action",
       ]);
-      expect(headings.indexOf("Impact")).toBeGreaterThan(headings.indexOf("Recommended action"));
-      expect(headings.indexOf("Open questions")).toBeGreaterThan(headings.indexOf("Impact"));
+      expect(headings.indexOf("Open questions")).toBeGreaterThan(
+        headings.indexOf("Recommended action"),
+      );
       expect(headings.at(-1)).toBe("Sources");
     }
 
@@ -238,9 +240,10 @@ describe("buildIssueDraft", () => {
       gap: "PostHog experiments have no scheduled stop.",
     });
     const gapHeadings = [...withGap.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
-    expect(gapHeadings.slice(0, 4)).toEqual([
+    expect(gapHeadings.slice(0, 5)).toEqual([
       "What you need to know",
       "More detail",
+      "Impact",
       "Recommended action",
       "The gap this closes",
     ]);
