@@ -7,7 +7,7 @@ import {
   teamsOwningFeature,
   type PostHogTeam,
 } from "./posthog/teams.js";
-import type { RecommendedAction } from "./types.js";
+import { isContentAction, type RecommendedAction } from "./types.js";
 
 /**
  * Which PostHog small teams an issue is for.
@@ -94,7 +94,11 @@ export function relatedTeams(action: RecommendedAction): PostHogTeam[] {
   const suggested = suggestedTeams(action);
   if (suggested.length > 0) return [...new Set(suggested)].slice(0, MAX_TEAMS);
 
-  const derived = new Set([...featureOwners(action), ...matchTeams(actionText(action), MAX_TEAMS)]);
+  // A piece to publish is the blog's work first, whatever product it is about:
+  // the team that owns the product it mentions is who checks the facts, and
+  // goes second.
+  const owners = isContentAction(action) ? teamsOwningFeature("Blog") : featureOwners(action);
+  const derived = new Set([...owners, ...matchTeams(actionText(action), MAX_TEAMS)]);
   const teams = derived.size > 0 ? [...derived] : defaultTeams(action);
   return teams.slice(0, MAX_TEAMS);
 }
