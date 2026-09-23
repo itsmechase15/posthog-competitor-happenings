@@ -137,7 +137,11 @@ it.
  `update_pages` only: there is no before and after of a feature that does not
  exist. Every step fails soft – no browser, a page that will not load, no
  token, a refused commit – because an issue without the pictures says the same
- thing in words.
+ thing in words. The one other picture an issue carries is the
+ `consider_publishing` draft laid out as a post
+ ([`src/media/draftPage.ts`](./src/media/draftPage.ts)), which is a different
+ thing and labelled as one: the draft is the whole page, there is no live page
+ to stage it into, and the header and caption say it is a draft.
 - **The review pass is not that pass.** Once an action's issue is open, a
  different model reads the same corpus and says agree, revise, or drop, and a
  revise is rewritten once and re-gated by the same code. Five things make it a
@@ -149,7 +153,33 @@ it.
  and it becomes the forbidden pass. See [`src/review/`](./src/review/) and the
  [Review section of PLAN.md](./PLAN.md#review-every-action-once).
 - **Zero actions is a normal answer**, rendered as **None** with a reason. Do
-  not reintroduce a rule that an alert has to recommend something.
+ not reintroduce a rule that an alert has to recommend something. For a piece
+ that ships nothing, the reason says what the piece is and that it is not an
+ announcement of a new feature or product, and stops: "This is a thought
+ leadership article about X. It's not an announcement of a new feature or
+ product." Never "no impact on current PostHog products" or "PostHog's
+ Experiments product has nothing to answer" – `trimNotAGapReason` in
+ [`src/analysis/noAction.ts`](./src/analysis/noAction.ts) cuts that flourish,
+ and a test greps `src/` for it. PostHog's voice rules apply to the drafted
+ article below, not to this note.
+- **`consider_publishing` is a content action, not a product one.** After the
+ product verdict is None on a piece that ships nothing, the analyst asks
+ whether PostHog publishes anything on the same angle. If it does, the None
+ carries `noAction.marketing` naming the page. If not, a `consider_publishing`
+ action files an issue with the product verdict, a draft of the piece in
+ PostHog's blog voice, and the draft laid out and photographed. Three things
+ keep it from weakening the product bar, so keep all three: `noAction` is set
+ whenever there is no *product* action (`productActions` in
+ [`src/types.ts`](./src/types.ts)), so the product answer is always given
+ next to the piece; the gate judges the two sides apart and no content block
+ ever reaches the product verdict; and it is an extra path, never a fallback
+ for an unverified gap or a page edit that failed its bar. The draft is
+ checked by [`src/analysis/article.ts`](./src/analysis/article.ts): there is
+ one, it has a headline, it runs at least 300 words, and no PostHog blog
+ post, tutorial, or newsletter issue on the angle went unread. The picture on
+ the issue is the draft laid out as a post, and it says so in its header and
+ caption – there is no live page to photograph for a piece nobody has written,
+ and it must not be dressed up as one.
 - **A run with no alerts in it still says so.** Silence reads the same as a
   broken cron from inside the channel, so `runCycle` ends with one line saying
   nothing shipped, posted once, after every alert has been tried. See
