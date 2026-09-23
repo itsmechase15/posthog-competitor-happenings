@@ -76,14 +76,14 @@ const requiredText = (max: number, field: string) =>
   z.preprocess((value) => capText(value, max, field), z.string().min(1).max(max));
 
 /** Blank entries are dropped rather than failing the list they are in. */
-const lineList = (max: number, field: string) =>
+const lineList = (max: number, field: string, maxChars = MAX_LINE_CHARS) =>
   z.preprocess(
     (value) =>
       capList(
         Array.isArray(value)
           ? value
               .filter((entry) => typeof entry !== "string" || entry.trim() !== "")
-              .map((entry) => capText(entry, MAX_LINE_CHARS, field))
+              .map((entry) => capText(entry, maxChars, field))
           : value,
         max,
         field,
@@ -94,7 +94,19 @@ const lineList = (max: number, field: string) =>
 /** A bullet, an open question, a page title: one line, not a paragraph. */
 const MAX_LINE_CHARS = 600;
 
+/**
+ * How long one "More detail" bullet may be.
+ *
+ * Wider than the other lines because the last bullet is not a fragment: it
+ * says what the competitor is selling in the piece and what a PostHog answer
+ * would have to take on, which the prompt asks for in about 400 characters.
+ * The budget sits well above the ask so a so-what written a little long
+ * arrives whole rather than stopping on the clause that made it worth reading.
+ */
+export const MAX_KEY_POINT_CHARS = 800;
+
 const lines = lineList(8, "lines");
+const keyPointLines = lineList(8, "key_points", MAX_KEY_POINT_CHARS);
 
 /** A paragraph of replacement copy, which runs longer than a one-line instruction. */
 const proposedText = optionalText(1_200, "proposed_text");
@@ -321,8 +333,8 @@ export const analysisSchema = z.object({
   /** Phase 1 rows and older model replies call the same field severity. */
   severity: impactToken.optional(),
   summary: requiredText(600, "summary"),
-  key_points: lines.optional(),
-  keyPoints: lines.optional(),
+  key_points: keyPointLines.optional(),
+  keyPoints: keyPointLines.optional(),
   actions: z.preprocess((value) => capList(value, 4, "actions"), z.array(actionSchema).max(4)).optional(),
   /** A single action is how rows written before this field looked. */
   action: actionToken.optional(),

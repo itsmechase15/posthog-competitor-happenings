@@ -157,6 +157,41 @@ PostHog's voice rules are for copy PostHog publishes. They apply to a page
 rewrite and to a drafted article, not to this note, which is the bot talking
 to a colleague.
 
+## The last detail bullet says what they are selling
+
+`key_points` are the two to four lines under **More detail**, and they are not
+four of the same thing. The lines above the last are facts: what the piece is,
+who wrote it, who it is for, what it claims only their tool does, what it
+concedes. Each one is a fragment under 160 characters, which is what Slack
+renders a bullet to.
+
+The last line is the so-what, and it has a different job: it says what the
+competitor is selling in this piece. The product or paid layer the argument
+leads to, and what a reader has to accept to buy it, written so a PostHog
+marketer can see what a piece positioned against it would have to answer.
+
+- Good: "The argument lands on their SDK as the collection layer their
+  analytics platform needs on top of the warehouse: session replay, heatmaps,
+  and pre-login attribution exist only if their library is on the page, so a
+  warehouse-first team installs it anyway. A PostHog answer has to say which of
+  those PostHog gets from warehouse sources and which of them need posthog-js."
+- Bad: "Closes by pointing at their install docs and their agent."
+- Also bad: "A pitch for their analytics platform."
+
+The two bad lines name the pitch and hand a marketer nothing to write against.
+The good one is a brief. It runs longer than a fragment, so it gets the room:
+`MAX_SO_WHAT_CHARS` in [`src/slack/message.ts`](../src/slack/message.ts) is 400
+characters for the last bullet against 160 for the ones above it, the prompt
+asks for the same numbers, and `MAX_KEY_POINT_CHARS` in
+[`src/analysis/schema.ts`](../src/analysis/schema.ts) holds 800 so a so-what
+written a little long arrives whole instead of stopping on the clause that made
+it worth reading. One rich last line beats four thin ones: three key points
+whose last line is a brief are better than four whose last line is a closer.
+
+This matters most on a piece that ships nothing, and most of all next to a
+`consider_publishing` action, where the so-what is the brief the draft was
+written from.
+
 ## A piece to publish is a draft, in PostHog's blog voice
 
 Once the product answer on a piece that ships nothing is None, the analyst asks
@@ -187,6 +222,48 @@ question the piece answers. The issue stages the draft into a real posthog.com
 blog post in a headless browser and photographs it, so it reads as the post it
 would be, then carries the whole draft in a fence for an editor.
 
+## The ask above that draft is a brief, not a retelling
+
+The `detail` on a `consider_publishing` action is what a product marketer reads
+under **Recommended action**, above the draft itself, so it answers what to
+write, what it argues against, and what it stands on. It has two parts, in this
+order.
+
+The lead is one to three short sentences. The first names the piece and the
+angle and stands alone, because Slack shows that sentence and nothing else. The
+ones after it say how PostHog should position the piece against the pitch the
+last key point named, and which PostHog products it rests on, by the names the
+docs use. Positioning and products never go in the first sentence: that
+sentence is the ask.
+
+Then `**What's in the draft**` on a line of its own, and three to five markdown
+bullets under it, one per beat, in the draft's order. Beats, not the draft. A
+paragraph retelling the whole piece is what this replaces, and the piece is
+already in `article_draft` and under **The draft** in the issue.
+
+```markdown
+**Consider publishing** – Publish a PostHog take on whether you need an SDK or
+can send events from your warehouse.
+Position it against the pitch that the SDK is the layer a warehouse cannot
+replace: PostHog ships both sides, so the honest answer names what the
+warehouse covers and what it does not.
+Lean on warehouse sources and the capture API for what SQL-first teams already
+have, and on session replay, surveys, and experiments for what needs posthog-js
+on the page.
+
+**What's in the draft**
+- What warehouse sources and the capture API already answer.
+- The three things that need the SDK on the page, and why.
+- A person join resolves at query time, so flags and experiments never see it.
+- The hybrid setup most teams land on, and when warehouse-only is right.
+```
+
+The model writes those line breaks as `\n` inside the JSON string, and
+`buildIssueBody` keeps them: the label shares a line with the lead, and every
+markdown block the detail wrote below it keeps its own blank line, so the beats
+render as bullets rather than as a paragraph GitHub might not break up. A
+`detail` of one paragraph renders exactly as it always did.
+
 ## A length budget shortens a string, never the analysis
 
 Every cap on what a model writes is a rendering budget: how much of a field
@@ -208,8 +285,9 @@ read the reviewer's verdict and the rewrite, because a long reason should cost
 a long comment rather than a skipped review.
 
 Two things follow. The budgets are generous – `detail` is 2,000 characters,
-three or four paragraphs – so a cut is a line in the log worth reading rather
-than a daily event. And the prompts state them, so a reply written to the rule
+three or four paragraphs, and a key point is 800 against the 400 the prompt
+asks the last one to stay under – so a cut is a line in the log worth reading
+rather than a daily event. And the prompts state them, so a reply written to the rule
 is never cut at all: a model told "under 2,000 characters" writes under it, and
 a model told nothing discovers the limit by losing a sentence.
 
@@ -256,12 +334,13 @@ has nothing to do.
 ## An issue reads news, detail, ask
 
 A GitHub issue is read by somebody who was not in the channel, so it opens the
-way the news does: **What you need to know**, then **More detail**, then
-**Impact**, then **Recommended action**. The ask makes sense only after the
-launch does, and how much the launch matters is part of the launch.
-Everything the ask stands on follows it – the gap, the teams, the docs, the
-open questions, the sources – in the order somebody checking the ask would
-want them.
+way the news does: **What you need to know**, then **More detail**, whose last
+bullet says what the competitor is selling, then **Impact**, then **Recommended
+action**, which keeps whatever markdown the ask wrote under its opening line.
+The ask makes sense only after the launch does, and how much the launch matters
+is part of the launch. Everything the ask stands on follows it – the gap, the
+teams, the docs, the open questions, the sources – in the order somebody
+checking the ask would want them.
 
 The two docs sections under it are about different days, and they say so:
 
@@ -473,6 +552,10 @@ have been allowed to be written that way in the first place.
   carry. It is the only check here that can fail copy nothing is wrong with.
 - [`asQuestions`](../src/analysis/questions.ts) makes every open question a
   question, in `normalizeAnalysis` and again in the issue body.
+- `buildIssueBody` in [`src/github/issue.ts`](../src/github/issue.ts) keeps the
+  markdown an ask was written in: the action label shares a line with the lead,
+  and every block the detail wrote below it – a brief's **What's in the draft**
+  bullets, most of all – keeps a blank line of its own so it renders as one.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.

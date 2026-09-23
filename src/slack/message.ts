@@ -77,7 +77,18 @@ export const ACTION_HEADING = "Recommended action(s)";
 
 /** Short enough that nothing in the message wraps into a wall of text. */
 const MAX_LEAD_CHARS = 240;
-const MAX_POINT_CHARS = 160;
+export const MAX_POINT_CHARS = 160;
+/**
+ * How long the last "More detail" bullet may run.
+ *
+ * Every bullet above it is a fact about the piece, and a fact fits in a line.
+ * The last one is the so-what: what the competitor is selling here, and what a
+ * PostHog piece on the same angle would have to answer. That does not fit in a
+ * line, and cut to one it turns into the closer it replaced ("a pitch for
+ * their platform"), which names the pitch and hands a marketer nothing. So it
+ * gets the room to be useful, here and in the budget the prompt asks for.
+ */
+export const MAX_SO_WHAT_CHARS = 400;
 const MAX_POINTS = 4;
 /**
  * The one sentence under an action title, which leads with the work to do and
@@ -142,14 +153,20 @@ export function knowSourceLink(alert: Alert): string | null {
 /**
  * The bullets that elaborate on the one sentence, never repeat it. Analyses
  * written before key points existed fall back to the rest of their summary.
+ *
+ * The last bullet is the so-what and keeps four times the room of the ones
+ * above it, because it is the one a reader acts on.
  */
 export function detailPoints(alert: Alert): string[] {
   const { keyPoints, summary } = alert.analysis;
   const source = keyPoints.length > 0 ? keyPoints : sentences(summary).slice(1);
-  return source
-    .map((point) => truncate(point.trim(), MAX_POINT_CHARS))
+  const points = source
+    .map((point) => point.trim())
     .filter(Boolean)
     .slice(0, MAX_POINTS);
+  return points.map((point, index) =>
+    truncate(point, index === points.length - 1 ? MAX_SO_WHAT_CHARS : MAX_POINT_CHARS),
+  );
 }
 
 /**

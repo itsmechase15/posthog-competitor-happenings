@@ -73,8 +73,11 @@ Every alert has the same parts, in this order:
    A brand-new feature is major, an enhancement of a feature they already had
    is notable, and a post with neither in it is minor. See
    [How impact is rated](#how-impact-is-rated).
-5. **More detail.** Two to four short bullets under their own heading, so it
-   never reads as a second summary.
+5. **More detail.** Two to four bullets under their own heading, so it never
+   reads as a second summary. The ones above the last are facts about the
+   piece; the last says what the competitor is selling in it and what a PostHog
+   answer would have to take on, so it gets more room than the others. See
+   [docs/writing.md](./docs/writing.md#the-last-detail-bullet-says-what-they-are-selling).
 6. **Recommended action(s).** Each action is its own block: a bold title, one
    short sentence, and a link to that action's issue. The sentence leads with
    the work, because it is the only line the reader gets. "Consider enhancing"
