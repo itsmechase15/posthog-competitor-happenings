@@ -187,6 +187,40 @@ question the piece answers. The issue stages the draft into a real posthog.com
 blog post in a headless browser and photographs it, so it reads as the post it
 would be, then carries the whole draft in a fence for an editor.
 
+## A length budget shortens a string, never the analysis
+
+Every cap on what a model writes is a rendering budget: how much of a field
+Slack, an issue, or a page has room for. None of them is a fact about the
+reply, so none of them refuses one.
+
+They used to. Each was a `max` in the Zod schema, so a single field over its
+cap failed the parse, `analyzeItems` dropped the item, and the alert said
+**None – not analyzed this run** with a restatement of the competitor's post
+under it. That happened on 2026-09-23: a `consider_publishing` action whose
+`detail` ran about a thousand characters against a cap of 900 cost the whole
+analysis, after three minutes of reading four thousand docs pages.
+
+Now `capText` and `capList` in
+[`src/analysis/schema.ts`](../src/analysis/schema.ts) cut the string at a word
+boundary, or keep the first entries of the list, and log which field was cut
+and by how much. Everything else the reply said survives. The same helpers
+read the reviewer's verdict and the rewrite, because a long reason should cost
+a long comment rather than a skipped review.
+
+Two things follow. The budgets are generous – `detail` is 2,000 characters,
+three or four paragraphs – so a cut is a line in the log worth reading rather
+than a daily event. And the prompts state them, so a reply written to the rule
+is never cut at all: a model told "under 2,000 characters" writes under it, and
+a model told nothing discovers the limit by losing a sentence.
+
+The related rule: a field holds what it is for. A draft belongs in
+`article_draft`, and a `consider_publishing` action whose `detail` carries a
+markdown heading and a post's worth of prose after it has the draft moved
+across on the way in, with what sat above it kept as the detail. Nothing is
+written that the model did not write – the alternative is a truncated post
+filed as a recommendation, or an action dropped for having no draft when the
+reply contained one.
+
 ## Open questions are questions
 
 The heading says "Open questions", so every line under it asks something. What
@@ -455,6 +489,9 @@ have been allowed to be written that way in the first place.
   `prompt.ts` states the bar for agreeing, revising, and dropping, `schema.ts`
   bounds what a rewrite may change, and `apply.ts` re-runs the checks above on
   the result and throws away a rewrite that fails them.
+- `capText` and `capList` in [`src/analysis/schema.ts`](../src/analysis/schema.ts)
+  hold every model string to the budget the surfaces have room for by
+  shortening it and logging, so no cap can cost an analysis.
 - `sanitizeCopy` in [`src/util/text.ts`](../src/util/text.ts) rewrites em
   dashes as spaced en dashes and curly quotes as straight ones. It runs over
   every model string in `normalizeAnalysis`, and again over every Slack text

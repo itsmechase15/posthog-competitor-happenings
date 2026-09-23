@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { findProductByName } from "../posthog/products.js";
-import { extractJsonObject, MAX_ARTICLE_DRAFT_CHARS } from "../analysis/schema.js";
+import {
+  capList,
+  capText,
+  extractJsonObject,
+  MAX_ARTICLE_DRAFT_CHARS,
+  MAX_DETAIL_CHARS,
+} from "../analysis/schema.js";
 import {
   ACTIONS,
   IMPACTS,
@@ -34,22 +40,44 @@ function blankAsMissing(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
 
-const optionalText = (max: number) =>
-  z.preprocess(blankAsMissing, z.string().min(1).max(max).optional());
+/**
+ * The same budgets the analysis reply is read with, and the same rule about
+ * them: a cap shortens and logs rather than throwing. A reviewer that writes
+ * a long reason should cost a long comment, not a skipped review, and a
+ * rewrite that runs over should be cut, not thrown away with the correction
+ * in it.
+ */
+const optionalText = (max: number, field: string) =>
+  z.preprocess(
+    (value) => capText(blankAsMissing(value), max, field),
+    z.string().min(1).max(max).optional(),
+  );
 
 const urls = z.preprocess(
   (value) =>
-    Array.isArray(value)
-      ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "")
-      : value,
+    capList(
+      Array.isArray(value)
+        ? value
+            .filter((entry) => typeof entry === "string" && entry.trim() !== "")
+            .map((entry) => capText(entry, 1_000, "pages_checked"))
+        : value,
+      12,
+      "pages_checked",
+    ),
   z.array(z.string().min(1)).max(12).optional(),
 );
 
 const lines = z.preprocess(
   (value) =>
-    Array.isArray(value)
-      ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "")
-      : value,
+    capList(
+      Array.isArray(value)
+        ? value
+            .filter((entry) => typeof entry === "string" && entry.trim() !== "")
+            .map((entry) => capText(entry, 900, "changes"))
+        : value,
+      6,
+      "changes",
+    ),
   z.array(z.string().min(1)).max(6).optional(),
 );
 
@@ -58,7 +86,7 @@ const actionToken = z.preprocess(blankAsMissing, z.enum(ACTIONS).optional());
 
 export const reviewSchema = z.object({
   verdict: z.enum(REVIEW_VERDICTS),
-  reason: z.string().min(1).max(900),
+  reason: z.preprocess((value) => capText(value, 900, "review reason"), z.string().min(1).max(900)),
   pages_checked: urls,
   pagesChecked: urls,
   changes: lines,
@@ -103,30 +131,30 @@ export function parseReview(raw: string): ReviewDecision {
 }
 
 /** A paragraph of replacement copy, which runs longer than a one-line instruction. */
-const proposedText = optionalText(1_200);
+const proposedText = optionalText(1_200, "proposed_text");
 
 const editSchema = z.object({
-  url: z.string().min(1),
-  suggested_edit: optionalText(600),
-  suggestedEdit: optionalText(600),
+  url: z.preprocess((value) => capText(value, 1_000, "page url"), z.string().min(1)),
+  suggested_edit: optionalText(600, "suggested_edit"),
+  suggestedEdit: optionalText(600, "suggested_edit"),
   proposed_text: proposedText,
   proposedText,
   replacement_text: proposedText,
 });
 
-const articleTitle = optionalText(160);
-const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS);
+const articleTitle = optionalText(160, "article_title");
+const articleDraft = optionalText(MAX_ARTICLE_DRAFT_CHARS, "article_draft");
 
 export const revisionSchema = z.object({
   type: actionToken,
   action: actionToken,
-  detail: optionalText(900),
-  gap: optionalText(400),
-  feature: optionalText(120),
-  evidence_url: optionalText(500),
-  evidenceUrl: optionalText(500),
-  evidence_quote: optionalText(600),
-  evidenceQuote: optionalText(600),
+  detail: optionalText(MAX_DETAIL_CHARS, "detail"),
+  gap: optionalText(400, "gap"),
+  feature: optionalText(120, "feature"),
+  evidence_url: optionalText(500, "evidence_url"),
+  evidenceUrl: optionalText(500, "evidence_url"),
+  evidence_quote: optionalText(600, "evidence_quote"),
+  evidenceQuote: optionalText(600, "evidence_quote"),
   impact: impactToken,
   suggested_edits: pageEdits(),
   page_edits: pageEdits(),
@@ -140,10 +168,14 @@ function pageEdits() {
   return z.preprocess(
     (value) =>
       Array.isArray(value)
-        ? value.filter((entry) => {
-            if (typeof entry !== "object" || entry === null) return false;
-            return typeof (entry as { url?: unknown }).url === "string";
-          })
+        ? capList(
+            value.filter((entry) => {
+              if (typeof entry !== "object" || entry === null) return false;
+              return typeof (entry as { url?: unknown }).url === "string";
+            }),
+            4,
+            "page_edits",
+          )
         : value,
     z.array(editSchema).max(4).optional(),
   );
