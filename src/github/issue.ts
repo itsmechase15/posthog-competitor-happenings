@@ -442,11 +442,13 @@ function existingPiecesSection(action: RecommendedAction): string | null {
  * The draft, as a page and as copy.
  *
  * The pictures come first because they are what a marketer reads: the piece
- * laid out, at reading width, a screen at a time. The caption says what they
- * are of, because a reader seeing a laid-out post with PostHog's name near it
- * deserves to be told it is a draft in a browser and not a page anywhere. The
- * markdown under them is the deliverable: an editor pastes from it, and an
- * issue whose pictures failed still carries the whole piece.
+ * on posthog.com, in the site's own layout, a screen at a time. The caption
+ * says how the picture was made, because a reader seeing their own site with
+ * a post on it nobody has written deserves to be told which of the two is
+ * real: the layout is a live post's, staged in a browser tab with the draft in
+ * place of its copy, and nothing was published. The markdown under them is
+ * the deliverable: an editor pastes from it, and an issue whose pictures
+ * failed still carries the whole piece.
  */
 function draftSection(action: RecommendedAction, visual: ArticleDraftVisual | null): string | null {
   if (!isContentAction(action) || !action.articleDraft) return null;
@@ -457,9 +459,12 @@ function draftSection(action: RecommendedAction, visual: ArticleDraftVisual | nu
 
   if (visual && visual.shots.length > 0) {
     const several = visual.shots.length > 1;
+    const template = visual.stagedOn
+      ? `the live post at ${visual.stagedOn}`
+      : "a live posthog.com blog post";
     lines.push(
       "",
-      `_The draft laid out as a post${several ? `, in ${visual.shots.length} parts from the top down` : ""}, so it reads as one. This is a rendering of the copy below in a browser, not a posthog.com page. Nothing was published._`,
+      `_The draft as it would read on posthog.com${several ? `, in ${visual.shots.length} parts from the top down` : ""}: ${template}, opened in a headless browser with its headline and copy swapped for the draft and stamped as one, then photographed and thrown away. Nothing was published._`,
     );
     for (const shot of visual.shots) lines.push("", `![${shot.alt}](${shot.url})`);
   }

@@ -160,7 +160,7 @@ export const REQUIREMENTS: Requirement[] = [
     need: "optional",
     home: "local",
     purpose:
-      "Stop photographing the page for the before/after on an update_pages issue and the laid-out draft on a consider_publishing issue, which is the one thing here that runs a browser and commits to the repo",
+      "Stop photographing the page for the before/after on an update_pages issue and the draft staged on a blog post for a consider_publishing issue, which is the one thing here that runs a browser and commits to the repo",
     howToGet: "Set it to true where there is no Chromium, or to keep the repo clean of artifacts",
     without: "nothing – unset is the daily job's behaviour, which is to take them",
   },

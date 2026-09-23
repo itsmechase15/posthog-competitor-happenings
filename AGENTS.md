@@ -138,10 +138,15 @@ it.
  exist. Every step fails soft – no browser, a page that will not load, no
  token, a refused commit – because an issue without the pictures says the same
  thing in words. The one other picture an issue carries is the
- `consider_publishing` draft laid out as a post
- ([`src/media/draftPage.ts`](./src/media/draftPage.ts)), which is a different
- thing and labelled as one: the draft is the whole page, there is no live page
- to stage it into, and the header and caption say it is a draft.
+ `consider_publishing` draft, and it is taken the same way
+ ([`src/media/draftPage.ts`](./src/media/draftPage.ts)): a real posthog.com
+ blog post is opened through the same `openLivePage`, its headline, body,
+ byline, and tables of contents become the draft's in that tab's DOM, a
+ stamp above the headline says it is a proposed draft, and the page is
+ photographed a screen at a time. It has to look like posthog.com – same
+ chrome, same type, same column – because a marketer is deciding whether to
+ publish it there. A generic reading column of the draft was tried and
+ rejected as a mock of a page: do not bring it back.
 - **The review pass is not that pass.** Once an action's issue is open, a
  different model reads the same corpus and says agree, revise, or drop, and a
  revise is rewritten once and re-gated by the same code. Five things make it a
@@ -177,9 +182,10 @@ it.
  checked by [`src/analysis/article.ts`](./src/analysis/article.ts): there is
  one, it has a headline, it runs at least 300 words, and no PostHog blog
  post, tutorial, or newsletter issue on the angle went unread. The picture on
- the issue is the draft laid out as a post, and it says so in its header and
- caption – there is no live page to photograph for a piece nobody has written,
- and it must not be dressed up as one.
+ the issue is the draft staged into a real posthog.com blog post's page, with
+ a stamp saying it is a proposed draft and the borrowed post's authors hidden,
+ and the caption names the post it was staged on and says nothing was
+ published.
 - **A run with no alerts in it still says so.** Silence reads the same as a
   broken cron from inside the channel, so `runCycle` ends with one line saying
   nothing shipped, posted once, after every alert has been tried. See
