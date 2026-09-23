@@ -269,20 +269,35 @@ describe("the prompt", () => {
     expect(prompt).toContain(`as a fragment under ${MAX_POINT_CHARS} characters`);
   });
 
-  it("asks a publishing detail for the positioning, the products, and the draft's beats", () => {
+  it("keeps the ask and the reason as prose, and starts the bullets after them", () => {
     expect(prompt).toContain('For consider_publishing, "detail" is the brief a marketer acts on');
+    expect(prompt).toContain("It is prose first and bullets after");
+    expect(prompt).toContain("A prose lead of one or two sentences, with no bullets in it");
     expect(prompt).toContain(
-      "how PostHog should position the piece against what the competitor is selling",
+      'The second says why PostHog can own the angle, in what PostHog actually ships: "PostHog can own this because it ships both sides, warehouse sources and the SDK."',
     );
-    expect(prompt).toContain("which PostHog products the piece rests on, by the names the docs use");
-    expect(prompt).toContain(`Then "**What's in the draft**" on a line of its own`);
-    expect(prompt).toContain('each starting with "- "');
-    expect(prompt).toContain("Beats, not the draft.");
-    // Slack still shows one sentence, so the extra lines go under it.
+    expect(prompt).toContain("the lead is the ask and the reason, and nothing else belongs in it");
+    expect(prompt).toContain('Then a blank line and markdown bullets, each starting with "- "');
+    // Slack still shows one sentence, so everything else goes below it.
     expect(prompt).toContain("Slack shows that sentence and nothing else");
     expect(prompt).toContain(
       "The positioning, the PostHog products to highlight, and the draft's beats go in the lines under it, never in this sentence.",
     );
+  });
+
+  it("asks the bullets for the positioning, the products, and the draft's beats", () => {
+    expect(prompt).toContain(
+      "how PostHog should position the piece against what the competitor is selling, which is the pitch you named in the last key point",
+    );
+    expect(prompt).toContain("which PostHog products the piece leads with, by the names the docs use");
+    expect(prompt).toContain(
+      'the draft, with its beats nested under that bullet as lines starting with two spaces and "- "',
+    );
+    expect(prompt).toContain("Beats, not the draft.");
+    // The worked example is the shape itself, prose lead and nested beats.
+    expect(prompt).toContain("PostHog can own this because it ships both sides");
+    expect(prompt).toContain("\\n\\n- Position against:");
+    expect(prompt).toContain("- Draft covers:\\n  - What warehouse sources");
   });
 
   it("does not ask for the sections that were taken out", () => {
@@ -309,12 +324,20 @@ describe("docs/writing.md", () => {
     expect(prose).toContain("One rich last line beats four thin ones");
   });
 
-  it("states the shape of a publishing ask: lead, positioning, products, then beats", () => {
+  it("states the split: prose ask and reason, then bullets", () => {
     expect(writing).toContain("## The ask above that draft is a brief, not a retelling");
-    expect(prose).toContain("how PostHog should position the piece against the pitch");
-    expect(prose).toContain("which PostHog products it rests on, by the names the docs use");
-    expect(writing).toContain("**What's in the draft**");
+    expect(prose).toContain("It is prose first and bullets after");
+    expect(prose).toContain("PostHog can own this because it ships both sides");
+    expect(prose).toContain(
+      "turning it into bullets would take the argument out of it",
+    );
+    expect(prose).toContain(
+      "how to position the piece against the pitch the last key point named, which PostHog products to lead with, and what the draft covers",
+    );
     expect(prose).toContain("Beats, not the draft.");
+    // The worked example carries the shape, nested beats and all.
+    expect(writing).toContain("- Position against:");
+    expect(writing).toContain("- Draft covers:\n  - What warehouse sources");
   });
 });
 
@@ -596,41 +619,41 @@ describe("the GitHub issue", () => {
   });
 
   /**
-   * The brief as the prompt asks for it: the ask, how to position it, the
-   * products it rests on, then the draft's beats as bullets. Everything below
-   * the first line is markdown, and the issue has to render it as markdown.
+   * The brief as the prompt asks for it: the ask and the reason PostHog can
+   * own the angle as prose, then bullets for the positioning, the products,
+   * and the draft's beats nested under the last one.
    */
   const brief = [
-    "Publish a PostHog take on whether you need an SDK or can send events from your warehouse.",
-    "Position it against the pitch that the SDK is the layer a warehouse cannot replace: PostHog ships both sides, so the honest answer names what the warehouse covers and what it does not.",
-    "Lean on warehouse sources and the capture API for what SQL-first teams already have, and on session replay, surveys, and experiments for what needs posthog-js on the page.",
+    "Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.",
     "",
-    "**What's in the draft**",
-    "- What warehouse sources and the capture API already answer.",
-    "- The three things that need the SDK on the page, and why.",
-    "- A person join resolves at query time, so flags and experiments never see it.",
-    "- The hybrid setup most teams land on, and when warehouse-only is right.",
+    "- Position against: their pitch that the SDK is the layer a warehouse cannot replace. PostHog's answer names what the warehouse covers and what it does not.",
+    "- Lead with: warehouse sources and the capture API for what SQL-first teams already have, then session replay, surveys, and experiments for what needs posthog-js on the page.",
+    "- Draft covers:",
+    "  - What warehouse sources and the capture API already answer.",
+    "  - The three things that need the SDK on the page, and why.",
+    "  - A person join resolves at query time, so flags and experiments never see it.",
   ].join("\n");
 
-  it("renders a brief's sub-bullets as bullets, not as more of the label's paragraph", () => {
+  it("keeps the prose lead on the label's line and the bullets in a block of their own", () => {
     const body = buildIssueBody(analyzed, null, { ...piece, detail: brief }, [], null);
     expect(body).toContain(
-      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on whether you need an SDK or can send events from your warehouse.",
+      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.\n\n- Position against:",
     );
-    // A blank line before the list is what makes it a list.
+    // The beats stay nested under the bullet they belong to.
     expect(body).toContain(
-      "\n\n**What's in the draft**\n- What warehouse sources and the capture API already answer.\n- The three things that need the SDK on the page, and why.",
+      "- Draft covers:\n  - What warehouse sources and the capture API already answer.\n  - The three things that need the SDK on the page, and why.",
     );
-    expect(body).toContain("posthog-js on the page.");
+    // No bullet swallowed into the prose, and no prose left in the list.
+    expect(body).not.toContain("both sides, warehouse sources and the SDK. - Position against:");
     // The draft itself is still the draft's section, not the ask.
     expect(body.indexOf("## Recommended action")).toBeLessThan(body.indexOf("## The draft"));
   });
 
   it("gives a list its own block even when the model left no blank line before it", () => {
-    const tight = `Publish a PostHog take on the SDK question.\n**What's in the draft**\n- The parts a warehouse covers.\n- The parts that need posthog-js.`;
+    const tight = `Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.`;
     const body = buildIssueBody(analyzed, null, { ...piece, detail: tight }, [], null);
     expect(body).toContain(
-      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on the SDK question.\n\n**What's in the draft**\n- The parts a warehouse covers.",
+      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.",
     );
   });
 
@@ -639,7 +662,7 @@ describe("the GitHub issue", () => {
     expect(body).toContain(`## Recommended action\n**Consider publishing** \u2013 ${piece.detail}`);
   });
 
-  it("shows Slack the first sentence of a brief and none of the beats", () => {
+  it("shows Slack the first sentence of a brief and none of the bullets", () => {
     const alert: Alert = {
       ...analyzed,
       image: { url: "https://cdn.invalid/hero.png", altText: "Amplitude SDK", origin: "page" },
@@ -648,10 +671,10 @@ describe("the GitHub issue", () => {
     };
     const text = renderMessageText(buildSlackMessage(alert));
     expect(text).toContain(
-      "*Consider publishing*\nPublish a PostHog take on whether you need an SDK or can send events from your warehouse.",
+      "*Consider publishing*\nPublish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice.",
     );
-    expect(text).not.toContain("What's in the draft");
-    expect(text).not.toContain("- The hybrid setup");
+    expect(text).not.toContain("Position against:");
+    expect(text).not.toContain("Draft covers:");
   });
 });
 

@@ -226,43 +226,50 @@ would be, then carries the whole draft in a fence for an editor.
 
 The `detail` on a `consider_publishing` action is what a product marketer reads
 under **Recommended action**, above the draft itself, so it answers what to
-write, what it argues against, and what it stands on. It has two parts, in this
-order.
+write, what it argues against, and what it stands on. It is prose first and
+bullets after, and the split is where the reading changes from an argument to a
+checklist.
 
-The lead is one to three short sentences. The first names the piece and the
-angle and stands alone, because Slack shows that sentence and nothing else. The
-ones after it say how PostHog should position the piece against the pitch the
-last key point named, and which PostHog products it rests on, by the names the
-docs use. Positioning and products never go in the first sentence: that
-sentence is the ask.
+The prose lead is one or two sentences. The first names the piece and the angle
+and stands alone, because Slack shows that sentence and nothing else. The
+second says why PostHog can own the angle, in what PostHog actually ships:
+"PostHog can own this because it ships both sides." Then it stops. That much
+reads as a recommendation somebody made, and turning it into bullets would take
+the argument out of it.
 
-Then `**What's in the draft**` on a line of its own, and three to five markdown
-bullets under it, one per beat, in the draft's order. Beats, not the draft. A
-paragraph retelling the whole piece is what this replaces, and the piece is
-already in `article_draft` and under **The draft** in the issue.
+The bullets carry the rest, because the rest is a list somebody works through:
+how to position the piece against the pitch the last key point named, which
+PostHog products to lead with, and what the draft covers, with its beats nested
+under that last bullet. Three to five beats, one line each, in the draft's
+order. Beats, not the draft. A paragraph retelling the whole piece is what the
+bullets replace, and the piece is already in `article_draft` and under **The
+draft** in the issue.
 
 ```markdown
 **Consider publishing** – Publish a PostHog take on whether you need an SDK or
-can send events from your warehouse.
-Position it against the pitch that the SDK is the layer a warehouse cannot
-replace: PostHog ships both sides, so the honest answer names what the
-warehouse covers and what it does not.
-Lean on warehouse sources and the capture API for what SQL-first teams already
-have, and on session replay, surveys, and experiments for what needs posthog-js
-on the page.
+can send events from your warehouse – Amplitude has one and PostHog's blog has
+nothing on the choice. PostHog can own this because it ships both sides,
+warehouse sources and the SDK.
 
-**What's in the draft**
-- What warehouse sources and the capture API already answer.
-- The three things that need the SDK on the page, and why.
-- A person join resolves at query time, so flags and experiments never see it.
-- The hybrid setup most teams land on, and when warehouse-only is right.
+- Position against: their pitch that the SDK is the layer a warehouse cannot
+  replace. PostHog's answer names what the warehouse covers and what it does
+  not, rather than arguing for one side.
+- Lead with: warehouse sources and the capture API for what SQL-first teams
+  already have, then session replay, surveys, and experiments for what needs
+  posthog-js on the page.
+- Draft covers:
+  - What warehouse sources and the capture API already answer.
+  - The three things that need the SDK on the page, and why.
+  - A person join resolves at query time, so flags and experiments never see it.
+  - The hybrid setup most teams land on, and when warehouse-only is right.
 ```
 
 The model writes those line breaks as `\n` inside the JSON string, and
-`buildIssueBody` keeps them: the label shares a line with the lead, and every
-markdown block the detail wrote below it keeps its own blank line, so the beats
-render as bullets rather than as a paragraph GitHub might not break up. A
-`detail` of one paragraph renders exactly as it always did.
+`buildIssueBody` keeps them: the label shares a line with the prose lead, and
+every markdown block the detail wrote below it keeps its own blank line, so the
+bullets render as bullets and the nested beats as sub-bullets rather than as a
+paragraph GitHub might not break up. A `detail` of one paragraph renders
+exactly as it always did.
 
 ## A length budget shortens a string, never the analysis
 
