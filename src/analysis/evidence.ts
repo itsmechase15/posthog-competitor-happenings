@@ -495,7 +495,9 @@ function checkArticle(action: RecommendedAction, context: CoverageContext): Bloc
     return block(
       action,
       "article_exists",
-      `PostHog already publishes on this angle, on pages the analysis never opened: ${urls.join(", ")}`,
+      `PostHog already publishes a piece whose headline asks the same question, on pages the analysis never opened: ${unread
+        .map((hit) => `"${hit.title}" (${hit.url})`)
+        .join(", ")}`,
       urls,
     );
   }

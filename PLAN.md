@@ -392,9 +392,16 @@ take rather than a rebuttal. Between 300 and 1,800 words, and a draft under 300
 is dropped as a brief by `articleProblem` in
 [`src/analysis/article.ts`](./src/analysis/article.ts).
 
-The gate judges the two sides apart. A piece whose headline and ask lead to a
-PostHog piece the analysis never opened is dropped as already published, and
-the None gets the marketing line naming it – the coverage check, for content. A
+The gate judges the two sides apart. A piece PostHog already published, on a
+page the analysis never opened, is dropped, and the None gets the marketing
+line naming it – the coverage check, for content. "Already published" is
+judged by headline, not by body: the page's own title has to carry at least
+half of the draft title's distinctive words, and two of them, and a how-to
+(`/tutorials/`, or a title opening "How to") never covers a piece that asks a
+question. Same reader question, not same product area – a Django tutorial that
+installs the SDK is not a piece on whether to, and the three body-search
+matches that blocked the Amplitude SDK piece on 2026-09-23 are the regression
+test. A
 piece the analyst read past is kept, and the issue names the nearby pieces so a
 marketer compares first. No block on the content side ever reaches the product
 verdict, `update_pages` keeps its own bar, and impact stays what the post

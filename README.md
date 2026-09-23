@@ -365,11 +365,28 @@ text.
 apart: the product verdict is decided by the product actions and what blocked
 them, and a piece to publish is checked on its own terms by
 [`src/analysis/article.ts`](./src/analysis/article.ts). A piece with no draft,
-no headline, or a draft under 300 words is dropped as a brief. A piece whose
-headline and ask lead to a PostHog blog post, tutorial, or newsletter issue the
-analysis never opened is dropped as already published, and the None gets the
-marketing line naming the page – the same shape as the coverage check on a gap,
-for the same reason. Neither block touches the product verdict, `update_pages`
+no headline, or a draft under 300 words is dropped as a brief. A piece PostHog
+has already published, on a page the analysis never opened, is dropped, and the
+None gets the marketing line naming the page – the same shape as the coverage
+check on a gap, for the same reason.
+
+"Already published" is held to a precise bar, because a false match here kills
+the piece silently while a miss reaches a marketer with the nearby posts named.
+`similarPieces` searches PostHog's editorial pages for the draft's words to find
+candidates, then judges each by its **headline**: a page is the same piece when
+its own title carries at least half of the draft title's distinctive words, and
+at least two of them – "install, SDK, send, events, warehouse" for "Should you
+install the SDK, or send events from your warehouse?". Same reader question,
+not same product area. That is what a body search cannot tell apart: a Django
+set-up tutorial, a data study, and an RSS how-to all use "install", "SDK", and
+"events" from top to bottom and asked none of that question, and they were the
+three pages that wrongly blocked the Amplitude SDK piece on 2026-09-23 when the
+gate scored bodies against the top hit. One more rule of shape: a how-to –
+anything under `/tutorials/`, or a title that opens "How to" – never covers a
+piece that asks a question, because "How to send warehouse events to PostHog"
+shares most of the words and answers none of the whether. The regression is in
+[`test/article.test.ts`](./test/article.test.ts). Neither block touches the
+product verdict, `update_pages`
 keeps its own bar, and impact stays what the post shipped. The review pass
 reviews a piece like any other action: a reviewer that can name the PostHog post
 that already covers the angle drops it, a reviewer that finds a PostHog fact the

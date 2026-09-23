@@ -235,6 +235,12 @@ describe("the prompt", () => {
     expect(prompt).toContain("This is marketing's question and it never moves the product answer.");
   });
 
+  it("says what similar means: the same reader question, not the same product area", () => {
+    expect(prompt).toContain("Similar means the same reader question or thesis, not the same product area");
+    expect(prompt).toContain("a tutorial on installing the SDK in a Django app");
+    expect(prompt).toContain("give the draft a headline that says what question it answers");
+  });
+
   it("asks for the draft, in PostHog's voice, matched against PostHog's own posts", () => {
     expect(prompt).toContain("Every consider_publishing action ships the piece with it");
     expect(prompt).toContain("open two or three on a nearby topic and match how they are written");
@@ -546,7 +552,9 @@ describe("the review pass", () => {
     expect(prompt).toContain("Try both on one product area and compare what you can answer.");
     expect(prompt).toContain("Product verdict it sits next to: not_a_gap");
     expect(prompt).toContain("For a consider_publishing action: the draft says something about PostHog the docs do not support");
-    expect(prompt).toContain("PostHog already publishes a piece on the same angle and you can name it");
+    expect(prompt).toContain(
+      "PostHog already publishes a piece on the same angle – the same reader question or thesis, not the same product area",
+    );
   });
 
   it("asks the writer for the whole piece again, never a fragment", () => {
