@@ -171,6 +171,26 @@ export function unreachableHint(connectionString: string): string | null {
   return null;
 }
 
+/**
+ * Whether the database has not had `migrations/004_quiet_days.sql` applied yet.
+ *
+ * Migrations here are applied by hand, so the code lands before the table does.
+ * The empty-day line exists to stop the channel going silent, and failing this
+ * read would silence it, so a missing table falls back to the behaviour it had
+ * before the table existed: say it, and say loudly what is missing. Any other
+ * complaint about this table is a bug and still fails the query.
+ */
+export function isMissingQuietDays(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { code?: unknown }).code === "42P01" &&
+    /quiet_days/.test(error.message)
+  );
+}
+
+const MISSING_QUIET_DAYS =
+  "the quiet_days table is missing, so the empty-day line cannot be held to one a day. Apply migrations/004_quiet_days.sql";
+
 export class PostgresStore implements Store {
   private readonly pool: pg.Pool;
 
@@ -335,6 +355,39 @@ export class PostgresStore implements Store {
       }
     }
     return pending;
+  }
+
+  async quietDayNoteSent(day: string): Promise<boolean> {
+    try {
+      const result = await this.pool.query("SELECT 1 FROM quiet_days WHERE day = $1::date", [day]);
+      return result.rows.length > 0;
+    } catch (error) {
+      if (!isMissingQuietDays(error)) throw error;
+      // No table is no record, so the answer is honestly "nobody has been told".
+      // Behaves exactly as it did before the table existed, and the log says
+      // which file fixes it rather than leaving a morning silent.
+      log.error(MISSING_QUIET_DAYS);
+      return false;
+    }
+  }
+
+  /**
+   * `ON CONFLICT DO NOTHING` so the first run of the day owns the row: two runs
+   * overlapping is not supposed to happen, and if it ever does the second one
+   * must not overwrite the stamp that says when the channel heard.
+   */
+  async recordQuietDayNote(day: string, at: Date): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO quiet_days (day, posted_at)
+         VALUES ($1::date, $2)
+         ON CONFLICT (day) DO NOTHING`,
+        [day, at],
+      );
+    } catch (error) {
+      if (!isMissingQuietDays(error)) throw error;
+      log.error(MISSING_QUIET_DAYS);
+    }
   }
 
   async listPageMeta(): Promise<PageMeta[]> {

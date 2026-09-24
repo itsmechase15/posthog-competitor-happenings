@@ -193,16 +193,25 @@ it.
  a stamp saying it is a proposed draft and the borrowed post's authors hidden,
  and the caption names the post it was staged on and says nothing was
  published.
-- **A run with no alerts in it still says so.** Silence reads the same as a
-  broken cron from inside the channel, so `runCycle` ends with one line saying
-  nothing shipped, posted once, after every alert has been tried. See
+- **A run with no alerts in it still says so, once a day.** Silence reads the
+  same as a broken cron from inside the channel, so `runCycle` ends with one line
+  saying nothing shipped, posted once, after every alert has been tried. See
   `postQuietDayNote` in [`src/slack/quietDay.ts`](./src/slack/quietDay.ts). It
   is skipped on a run that had alerts to post – including ones Slack refused,
   because the next run retries those – on a run that collected nothing because
   every source failed, and on a first run that recorded a backlog silently. In
   each of those the line would be untrue rather than merely redundant. A forced
   post of one URL never reaches it: that path posts its own message, **None**
-  and all.
+  and all. It is also the one message with no item under it, so item dedupe
+  cannot hold it to one and the day does instead: the calendar day in
+  `America/Los_Angeles` goes into `quiet_days`
+  ([`migrations/004_quiet_days.sql`](./migrations/004_quiet_days.sql)) once Slack
+  has taken the message, and a second scheduled run of the same morning reads it
+  and stays quiet. Two runs a morning is normal, not a bug to fix in the cron –
+  the workflow schedules both DST offsets and only turns away a run that is too
+  early, because GitHub delays and sometimes drops a scheduled run and the
+  second entry is the second chance. The zone lives in one place and a test in
+  `test/workflows.test.ts` holds the workflow to it.
 - **A length cap shortens the string, never the reply.** Every cap on what a
  model writes is a rendering budget, so `capText` and `capList` in
  [`src/analysis/schema.ts`](./src/analysis/schema.ts) cut and log rather than

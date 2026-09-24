@@ -106,6 +106,14 @@ class UnreachableDatabaseFallback implements Store {
     return this.attempt((store) => store.getUnpostedAnalyses(...args));
   }
 
+  quietDayNoteSent(...args: Parameters<Store["quietDayNoteSent"]>) {
+    return this.attempt((store) => store.quietDayNoteSent(...args));
+  }
+
+  recordQuietDayNote(...args: Parameters<Store["recordQuietDayNote"]>) {
+    return this.attempt((store) => store.recordQuietDayNote(...args));
+  }
+
   listPageMeta() {
     return this.attempt((store) => store.listPageMeta());
   }
@@ -188,6 +196,18 @@ class ReadOnlyStore implements Store {
 
   getUnpostedAnalyses(...args: Parameters<Store["getUnpostedAnalyses"]>) {
     return this.inner.getUnpostedAnalyses(...args);
+  }
+
+  /**
+   * Read, like every other read here: a dry run on a day whose empty-day line
+   * has already gone out should say so rather than print a second copy of it.
+   */
+  quietDayNoteSent(...args: Parameters<Store["quietDayNoteSent"]>) {
+    return this.inner.quietDayNoteSent(...args);
+  }
+
+  async recordQuietDayNote() {
+    // No-op in dry run. Nothing was posted, so nothing is owed a stamp.
   }
 
   listPageMeta() {

@@ -133,6 +133,17 @@ A forced post of a single URL is not this path at all. It already posts its own
 message, **None** and a reason included, so it never gets an empty-day line on
 top of it.
 
+It is also one line a day, not one a run. Two scheduled runs share a Pacific
+morning whenever GitHub is late with the earlier one – that is what happened on
+2026-09-24, when both cron entries landed at around 11am PT and the channel was
+told the same thing 48 minutes apart. Every other message the bot sends is
+deduped by the item behind it, and this one has no item, so the day it went out
+is recorded in `quiet_days` and a later run that morning reads it and stays
+quiet. The day is a calendar day in `America/Los_Angeles`, the zone the cron is
+written in, so a run on a winter evening cannot count as tomorrow. The stamp is
+written only once Slack has taken the message: a day nobody was told about is a
+day the next run should still tell.
+
 ## How impact is rated
 
 Impact answers one question: what did this post ship?
@@ -744,8 +755,12 @@ every morning. One run does 8 steps:
    good.
 
 GitHub's cron only speaks UTC, so the workflow is scheduled at both 14:00 and
-15:00 UTC and the job exits early on whichever one is not 07:00 in
-`America/Los_Angeles` that day.
+15:00 UTC for one 07:00 in `America/Los_Angeles`, and the job exits early only
+on a run that is too early for that. The later entry is left to run on a summer
+morning on purpose: GitHub delays scheduled workflows under load and sometimes
+drops them, so a second attempt is worth more than the minutes it costs. It
+finds nothing new, because every item it reads is already in `items`, and the
+one message with no item under it is held to one a day by `quiet_days`.
 
 Two caps keep a bad morning from becoming a flood: `MAX_ITEMS_PER_SOURCE` (8)
 on what one competitor and source can contribute, and `MAX_ITEMS_PER_RUN` (12)
@@ -778,12 +793,13 @@ that one posts as normal.
 | `src/github/issue.ts` | One issue draft per action, with its labels, and the editor a verdict writes through. |
 | `src/github/files.ts` | Commits both PNGs to this repo, so an issue can embed them. |
 | `src/slack/message.ts` | The Block Kit message. **Change this for a redesign.** |
-| `src/slack/quietDay.ts` | The one line a run with no alerts in it posts, and the runs that get no such line. |
+| `src/slack/quietDay.ts` | The one line a run with no alerts in it posts, once a Pacific day, and the runs that get no such line. |
 | `src/slack/post.ts` | `chat.postMessage`, the webhook fallback, and `--check-slack`. |
 | `src/setup/requirements.ts` | Every variable, what it is for, where the value comes from. `check-env` reads this. |
 | `migrations/001_init.sql` | The four tables. |
 | `migrations/002_close_data_api.sql` | Takes those tables off Supabase's Data API. |
 | `migrations/003_docs_corpus.sql` | Makes `pages` the corpus: kind, content hash, cache validators, retirement. |
+| `migrations/004_quiet_days.sql` | The days the channel was told nothing shipped, so two runs of one morning say it once. |
 | `docs/writing.md` | The copy rules, and where each one is enforced. |
 | `AGENTS.md` | Notes for a coding agent, including the rules about keys. |
 | `.env.example` | The shape of every variable. Never a value. |
@@ -875,8 +891,10 @@ Apply [`migrations/001_init.sql`](./migrations/001_init.sql) to create the four
 tables, then [`migrations/002_close_data_api.sql`](./migrations/002_close_data_api.sql)
 to take them off the Data API, then
 [`migrations/003_docs_corpus.sql`](./migrations/003_docs_corpus.sql) to give
-`pages` its corpus bookkeeping. The next section says why the second one is not
-optional. All three are safe to re-run.
+`pages` its corpus bookkeeping, then
+[`migrations/004_quiet_days.sql`](./migrations/004_quiet_days.sql) for the days
+the channel was told nothing shipped. The next section says why the second one
+is not optional. All four are safe to re-run.
 
 ### On Supabase, the tables are on the Data API until you say otherwise
 
@@ -1054,7 +1072,8 @@ And the tuning, which is right by default:
 ## State
 
 The bot keeps what it has seen in Postgres. Four tables, defined in
-[`migrations/001_init.sql`](./migrations/001_init.sql):
+[`migrations/001_init.sql`](./migrations/001_init.sql), and a fifth for the one
+message that has no item to dedupe against:
 
 - `items` – one row per competitor signal, unique on
   `(competitor, source, external_id)`. This is the dedupe key.
@@ -1064,6 +1083,10 @@ The bot keeps what it has seen in Postgres. Four tables, defined in
   kind of evidence each one is, what it last hashed to, what posthog.com called
   it, when an analyst last read it, and whether it has been retired.
 - `claims` – the individual competitor-mentioning paragraphs we can cite.
+- `quiet_days` – one row per Pacific day the channel was told that nothing
+  shipped, from [`migrations/004_quiet_days.sql`](./migrations/004_quiet_days.sql).
+  Two scheduled runs share a morning whenever GitHub is late with the first, and
+  this is what keeps them to one line between them.
 
 None of it is reachable over Supabase's Data API, by
 [`migrations/002_close_data_api.sql`](./migrations/002_close_data_api.sql). The

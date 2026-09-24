@@ -509,8 +509,10 @@ export async function runCycle(config: Config): Promise<RunSummary> {
     // Once, at the end, after every alert has been tried: a run that found
     // nothing says so rather than leaving the channel to guess whether the job
     // ran at all. `attempted` rather than `posted`, so an alert Slack refused
-    // does not get "nothing happened today" written over the top of it.
-    summary.quietDayPosted = await postQuietDayNote(poster, {
+    // does not get "nothing happened today" written over the top of it. The
+    // store is here because the line is one a day, not one a run, and two
+    // scheduled runs share a morning whenever GitHub is late with the first.
+    summary.quietDayPosted = await postQuietDayNote(poster, store, {
       candidates: summary.candidates,
       attempted: toPost.length,
       seeded: summary.seeded,

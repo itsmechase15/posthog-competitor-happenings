@@ -98,6 +98,21 @@ export interface Store {
   getUnpostedAnalyses(since: Date, limit: number): Promise<PendingPost[]>;
 
   /**
+   * Whether the channel has already been told that nothing shipped on this
+   * day, which is a calendar day in the zone the cron is set in.
+   *
+   * The empty-day line is the one thing a run posts that has no item under it,
+   * so it is the one thing item dedupe cannot keep to once. Two scheduled runs
+   * landing on the same morning is normal – the workflow schedules both DST
+   * offsets and only turns away a run that is too early – and the second of
+   * them has to stay quiet about the quiet day.
+   */
+  quietDayNoteSent(day: string): Promise<boolean>;
+
+  /** Record that the day's empty-day line went out. Writing it twice is a no-op. */
+  recordQuietDayNote(day: string, at: Date): Promise<void>;
+
+  /**
    * Every corpus row without its body, retired ones included. This is what the
    * refresh plans against: which URLs are known, what they last hashed to,
    * what the server called them, when each was read, and which are on their

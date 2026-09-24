@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SCHEDULE_TIME_ZONE } from "../src/slack/quietDay.js";
 
 
 /**
@@ -215,6 +216,19 @@ describe("workflow environments", () => {
       const ci = workflows.find(({ name }) => name === "ci.yml");
       expect(ci?.text).toContain(`playwright@${pinned} install --with-deps chromium-headless-shell`);
     });
+  });
+
+  /**
+   * The schedule's zone and the app's idea of a day have to be the same zone.
+   * The empty-day line goes out once per calendar day there, so a workflow
+   * moved to another zone would either say it twice on the day of the move or
+   * skip a morning – and it would do it silently, because the two facts live in
+   * different files.
+   */
+  it("schedules the daily run in the zone the empty-day line counts days in", () => {
+    const daily = workflows.find(({ name }) => name === "daily.yml");
+    expect(daily?.text).toContain(`TZ=${SCHEDULE_TIME_ZONE} date`);
+    expect(daily?.text).not.toMatch(/TZ=(?!America\/Los_Angeles)[\w/]+ date/);
   });
 
   /**

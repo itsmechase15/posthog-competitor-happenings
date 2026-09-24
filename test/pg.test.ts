@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { isUnreachable, PostgresStore, sslConfigFor, unreachableHint } from "../src/db/pg.js";
+import {
+  isMissingQuietDays,
+  isUnreachable,
+  PostgresStore,
+  sslConfigFor,
+  unreachableHint,
+} from "../src/db/pg.js";
 import type { CandidateItem, CompetitorId, PageKind, PostHogPage } from "../src/types.js";
 
 /**
@@ -17,7 +23,7 @@ const PORT = 55_432;
  * database would have. 003 is applied on top of 001 rather than folded into
  * it, which is also how it reaches production.
  */
-const migrations = ["001_init.sql", "003_docs_corpus.sql"].map((name) =>
+const migrations = ["001_init.sql", "003_docs_corpus.sql", "004_quiet_days.sql"].map((name) =>
   readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), "utf8"),
 );
 
@@ -124,6 +130,37 @@ describe("isUnreachable", () => {
     // Undefined table and wrong password are bugs, not reachability.
     expect(isUnreachable(withCode("42P01"))).toBe(false);
     expect(isUnreachable(withCode("28P01"))).toBe(false);
+  });
+});
+
+/**
+ * Migrations here are applied by hand, so the code reaches production before the
+ * table does. That morning has to read as it did before this table existed – the
+ * empty-day line goes out – rather than as a channel that went silent about
+ * being silent. Asserted on the error rather than against a database missing the
+ * table, because dropping a relation out from under a live connection crashes
+ * the embedded Postgres this suite runs on.
+ */
+describe("isMissingQuietDays", () => {
+  function undefinedTable(message: string): Error {
+    return Object.assign(new Error(message), { code: "42P01" });
+  }
+
+  it("recognises the table this migration adds", () => {
+    expect(isMissingQuietDays(undefinedTable('relation "quiet_days" does not exist'))).toBe(true);
+  });
+
+  it("leaves every other missing relation to fail the run", () => {
+    expect(isMissingQuietDays(undefinedTable('relation "items" does not exist'))).toBe(false);
+  });
+
+  it("leaves any other complaint about the table to fail the run", () => {
+    // A column that is not there, or a permission that is not granted, is a bug
+    // in this repo rather than a migration somebody has yet to apply.
+    expect(
+      isMissingQuietDays(Object.assign(new Error('column "day" does not exist'), { code: "42703" })),
+    ).toBe(false);
+    expect(isMissingQuietDays(new Error("quiet_days"))).toBe(false);
   });
 });
 
@@ -340,6 +377,33 @@ describe("PostgresStore", () => {
     const target = pending.find((row) => row.item.externalId === "single-issue-target");
     // The one issue belonged to the first action, so that is where it lands.
     expect(target?.issues.map((entry) => entry.issue?.number ?? null)).toEqual([9, null]);
+  });
+
+  /**
+   * The empty-day line is the one message with no item under it, so the day it
+   * went out is the only thing that keeps a second run of the same morning from
+   * repeating it.
+   */
+  describe("the days the channel heard that nothing shipped", () => {
+    it("reports a day it has not recorded, and the one it has", async () => {
+      expect(await store.quietDayNoteSent("2026-09-24")).toBe(false);
+
+      await store.recordQuietDayNote("2026-09-24", new Date("2026-09-24T18:00:51Z"));
+
+      expect(await store.quietDayNoteSent("2026-09-24")).toBe(true);
+      expect(await store.quietDayNoteSent("2026-09-25")).toBe(false);
+    });
+
+    it("keeps the first stamp when the same day is recorded twice", async () => {
+      await store.recordQuietDayNote("2026-09-26", new Date("2026-09-26T14:00:00Z"));
+      await store.recordQuietDayNote("2026-09-26", new Date("2026-09-26T15:00:00Z"));
+
+      const rows = await db.query<{ posted_at: string | Date }>(
+        "select posted_at from quiet_days where day = '2026-09-26'::date",
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(new Date(rows.rows[0]!.posted_at).toISOString()).toBe("2026-09-26T14:00:00.000Z");
+    });
   });
 
   it("ignores analyses older than the retry window", async () => {
