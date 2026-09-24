@@ -2,7 +2,12 @@ import { COMPETITORS } from "../config.js";
 import { actionLabel } from "../labels.js";
 import { isMarketingTarget } from "../posthog/pages.js";
 import { EVIDENCE_LABEL, TOC_FILENAME, type DocsWorkspace } from "../posthog/workspace.js";
-import { ARTICLE_RULES, PAGE_REWRITE_RULES, STYLE_RULES } from "../analysis/prompt.js";
+import {
+  ARTICLE_RULES,
+  PAGE_REWRITE_RULES,
+  PUBLISHING_BRIEF_RULES,
+  STYLE_RULES,
+} from "../analysis/prompt.js";
 import { MAX_DETAIL_CHARS } from "../analysis/schema.js";
 import { describeProportion, MIN_GROWTH_WORDS } from "../analysis/proportion.js";
 import { countWords, EDITORIAL_DIRS, MIN_ARTICLE_WORDS } from "../analysis/article.js";
@@ -350,7 +355,7 @@ ${checksFor(action)}
       ? ` For a piece to publish it names the piece and the angle: "Publish a PostHog take on whether to install the SDK or send events from your warehouse."`
       : ""
   }
-${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}${contentWork ? `\n${ARTICLE_RULES}\n` : ""}
+${pageWork ? `\n${PAGE_REWRITE_RULES}\n` : ""}${contentWork ? `\n${ARTICLE_RULES}\n\n${PUBLISHING_BRIEF_RULES}\n` : ""}
 ## The action as filed
 ${renderFiledAction(alert, action, input.index ?? null)}
 
