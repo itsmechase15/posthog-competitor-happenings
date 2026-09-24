@@ -261,6 +261,50 @@ function pageEditSection(visual: PageEditVisual): string {
 }
 
 /**
+ * A line that opens a markdown block of its own: a bullet, a numbered item, a
+ * heading, a quote, or a line that is only bold, which is how a brief labels
+ * the list under it.
+ */
+const BLOCK_LINE = /^\s*(?:[-*+][ \t]|\d+[.)][ \t]|#{1,6}[ \t]|>|\*\*)/;
+
+/**
+ * Split an action's `detail` into the part that shares a line with the action
+ * label and the part that has to keep its own.
+ *
+ * Most details are one paragraph and read as one line under the label. A
+ * publishing brief is not: it leads with the ask, says how to position the
+ * piece, and then lists the draft's beats as bullets. Run straight on after
+ * the label, those bullets are a paragraph GitHub may or may not break into a
+ * list, so the ask arrives as a wall of prose exactly where somebody is
+ * skimming for the beats. A blank line between the blocks is all markdown
+ * needs, and it changes nothing for a detail that has no second block.
+ */
+function splitLeadBlock(detail: string): { lead: string; rest: string } {
+  const lines = detail.split("\n");
+  if (lines.length === 1) return { lead: detail, rest: "" };
+  // A detail that opens on a block of its own puts all of it under the label.
+  if (BLOCK_LINE.test(lines[0] ?? "")) return { lead: "", rest: detail };
+
+  const at = lines.findIndex(
+    (line, index) => index > 0 && (line.trim() === "" || BLOCK_LINE.test(line)),
+  );
+  if (at === -1) return { lead: detail, rest: "" };
+  return { lead: lines.slice(0, at).join("\n").trim(), rest: lines.slice(at).join("\n").trim() };
+}
+
+/**
+ * The ask, with the action's own label in front of it. Everything the detail
+ * wrote as markdown below its opening lines keeps its own block, so a brief's
+ * sub-bullets render as sub-bullets.
+ */
+function recommendedActionSection(action: RecommendedAction): string {
+  const { lead, rest } = splitLeadBlock(action.detail.trim());
+  const label = actionLabel(action);
+  const head = lead ? `**${label}**${SPACED_EN_DASH}${lead}` : `**${label}**`;
+  return ["## Recommended action", head, ...(rest ? ["", rest] : [])].join("\n");
+}
+
+/**
  * Why a product action cites no docs page, said plainly.
  *
  * An empty section here used to read as a failed check, which is the opposite
@@ -479,7 +523,7 @@ export function buildIssueBody(
     `## What you need to know\n${analysis.summary}`,
     `## More detail\n${bullets(analysis.keyPoints, "The source gave nothing beyond the summary above.")}`,
     `## Impact\n${impactScale(analysis.impact)}`,
-    `## Recommended action\n**${actionLabel(action)}**${SPACED_EN_DASH}${action.detail}`,
+    recommendedActionSection(action),
     evidenceSection(action),
     draftSection(action, draft),
     `## Related team(s)\n${relatedTeamsLabel(action)}`,

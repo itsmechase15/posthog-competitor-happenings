@@ -4,8 +4,10 @@ import { FALLBACK_MODEL } from "../src/analysis/fallback.js";
 import {
   MAX_ARTICLE_DRAFT_CHARS,
   MAX_DETAIL_CHARS,
+  MAX_KEY_POINT_CHARS,
   parseAnalysis,
 } from "../src/analysis/schema.js";
+import { MAX_SO_WHAT_CHARS } from "../src/slack/message.js";
 import { parseReview, parseRevision } from "../src/review/schema.js";
 import type { Config } from "../src/config.js";
 import type { Store } from "../src/db/store.js";
@@ -137,6 +139,23 @@ describe("a reply longer than a budget", () => {
     );
     expect(parsed.actions).toHaveLength(1);
     expect((parsed.actions[0]?.articleDraft ?? "").length).toBeLessThanOrEqual(MAX_ARTICLE_DRAFT_CHARS);
+  });
+
+  /**
+   * The last key point is the so-what, and the prompt asks for up to
+   * `MAX_SO_WHAT_CHARS` of it. The schema budget sits above that on purpose:
+   * a so-what cut in half is the thin closer it was written to replace.
+   */
+  it("keeps a so-what last key point whole, and holds room above what the prompt asks for", () => {
+    expect(MAX_KEY_POINT_CHARS).toBeGreaterThanOrEqual(MAX_SO_WHAT_CHARS * 2);
+
+    const soWhat = `${"The piece argues for their SDK as the layer their platform needs on top of the warehouse. ".repeat(4)}A PostHog answer has to say which parts warehouse sources already cover.`;
+    expect(soWhat.length).toBeGreaterThan(MAX_SO_WHAT_CHARS);
+    expect(soWhat.length).toBeLessThanOrEqual(MAX_KEY_POINT_CHARS);
+
+    const parsed = parseAnalysis(reply({ key_points: ["An explainer for data teams.", soWhat] }));
+    expect(parsed.keyPoints).toEqual(["An explainer for data teams.", soWhat]);
+    expect(parsed.keyPoints[1]).not.toContain("\u2026");
   });
 
   it("keeps the first entries of a list that ran long rather than failing it", () => {

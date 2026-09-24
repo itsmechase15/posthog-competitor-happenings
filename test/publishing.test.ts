@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { checkActions } from "../src/analysis/analyze.js";
 import { gateActions } from "../src/analysis/evidence.js";
@@ -15,7 +16,12 @@ import { buildReviewPrompt, buildRewritePrompt } from "../src/review/prompt.js";
 import type { Reviewer } from "../src/review/reviewer.js";
 import { mergeRevision, parseRevision } from "../src/review/schema.js";
 import type { ActionWriter } from "../src/review/writer.js";
-import { buildSlackMessage, renderMessageText } from "../src/slack/message.js";
+import {
+  buildSlackMessage,
+  MAX_POINT_CHARS,
+  MAX_SO_WHAT_CHARS,
+  renderMessageText,
+} from "../src/slack/message.js";
 import { relatedTeams } from "../src/teams.js";
 import {
   isContentAction,
@@ -28,6 +34,7 @@ import {
   type RecommendedAction,
   type StoredItem,
 } from "../src/types.js";
+import { truncate } from "../src/util/text.js";
 import { corpus } from "./helpers.js";
 
 /**
@@ -245,6 +252,92 @@ describe("the prompt", () => {
     expect(prompt).toContain("Every consider_publishing action ships the piece with it");
     expect(prompt).toContain("open two or three on a nearby topic and match how they are written");
     expect(prompt).toContain('"article_draft"');
+  });
+
+  it("makes the last key point the so-what, with room to be one", () => {
+    expect(prompt).toContain("The last key point is the so-what");
+    expect(prompt).toContain(`up to ${MAX_SO_WHAT_CHARS} characters`);
+    expect(prompt).toContain("what the competitor is selling in this piece");
+    expect(prompt).toContain(
+      "written so a PostHog marketer can see what a piece positioned against it would have to answer",
+    );
+    // The thin closers this replaced, named as the mistake they are.
+    expect(prompt).toContain('Bad: "Closes by pointing at their install docs and their agent."');
+    expect(prompt).toContain('Also bad: "A pitch for their analytics platform."');
+    expect(prompt).toContain("Prefer one rich last line to four thin ones");
+    // The lines above it stay fragments, at the budget Slack renders them to.
+    expect(prompt).toContain(`as a fragment under ${MAX_POINT_CHARS} characters`);
+  });
+
+  it("keeps the ask and the reason as prose, and starts the bullets after them", () => {
+    expect(prompt).toContain('For consider_publishing, "detail" is the brief a marketer acts on');
+    expect(prompt).toContain("It is prose first and bullets after");
+    expect(prompt).toContain("A prose lead of one or two sentences, with no bullets in it");
+    expect(prompt).toContain(
+      'The second says why PostHog can own the angle, in what PostHog actually ships: "PostHog can own this because it ships both sides, warehouse sources and the SDK."',
+    );
+    expect(prompt).toContain("the lead is the ask and the reason, and nothing else belongs in it");
+    expect(prompt).toContain('Then a blank line and markdown bullets, each starting with "- "');
+    // Slack still shows one sentence, so everything else goes below it.
+    expect(prompt).toContain("Slack shows that sentence and nothing else");
+    expect(prompt).toContain(
+      "The positioning, the PostHog products to highlight, and the draft's beats go in the lines under it, never in this sentence.",
+    );
+  });
+
+  it("asks the bullets for the positioning, the products, and the draft's beats", () => {
+    expect(prompt).toContain(
+      "how PostHog should position the piece against what the competitor is selling, which is the pitch you named in the last key point",
+    );
+    expect(prompt).toContain("which PostHog products the piece leads with, by the names the docs use");
+    expect(prompt).toContain(
+      'the draft, with its beats nested under that bullet as lines starting with two spaces and "- "',
+    );
+    expect(prompt).toContain("Beats, not the draft.");
+    // The worked example is the shape itself, prose lead and nested beats.
+    expect(prompt).toContain("PostHog can own this because it ships both sides");
+    expect(prompt).toContain("\\n\\n- Position against:");
+    expect(prompt).toContain("- Draft covers:\\n  - What warehouse sources");
+  });
+
+  it("does not ask for the sections that were taken out", () => {
+    expect(prompt).not.toContain("Does PostHog already cover this?");
+    expect(prompt).not.toContain("Product verdict section");
+  });
+});
+
+/**
+ * The standing rules a person reads. The prompts are written from them, so a
+ * change to one that never reaches the other leaves the model and the
+ * handbook disagreeing about what an issue should say.
+ */
+describe("docs/writing.md", () => {
+  const writing = readFileSync(new URL("../docs/writing.md", import.meta.url), "utf8");
+  /** The prose is hard-wrapped, so a sentence is matched without its line breaks. */
+  const prose = writing.replace(/\s+/g, " ");
+
+  it("states the so-what rule for the last key point, with the budgets", () => {
+    expect(writing).toContain("## The last detail bullet says what they are selling");
+    expect(prose).toContain("it says what the competitor is selling in this piece");
+    expect(writing).toContain("MAX_SO_WHAT_CHARS");
+    expect(writing).toContain("MAX_KEY_POINT_CHARS");
+    expect(prose).toContain("One rich last line beats four thin ones");
+  });
+
+  it("states the split: prose ask and reason, then bullets", () => {
+    expect(writing).toContain("## The ask above that draft is a brief, not a retelling");
+    expect(prose).toContain("It is prose first and bullets after");
+    expect(prose).toContain("PostHog can own this because it ships both sides");
+    expect(prose).toContain(
+      "turning it into bullets would take the argument out of it",
+    );
+    expect(prose).toContain(
+      "how to position the piece against the pitch the last key point named, which PostHog products to lead with, and what the draft covers",
+    );
+    expect(prose).toContain("Beats, not the draft.");
+    // The worked example carries the shape, nested beats and all.
+    expect(writing).toContain("- Position against:");
+    expect(writing).toContain("- Draft covers:\n  - What warehouse sources");
   });
 });
 
@@ -525,6 +618,126 @@ describe("the GitHub issue", () => {
     expect(textOnly).toContain("```markdown");
   });
 
+  /**
+   * The brief as the prompt asks for it: the ask and the reason PostHog can
+   * own the angle as prose, then bullets for the positioning, the products,
+   * and the draft's beats nested under the last one.
+   */
+  const brief = [
+    "Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.",
+    "",
+    "- Position against: their pitch that the SDK is the layer a warehouse cannot replace. PostHog's answer names what the warehouse covers and what it does not.",
+    "- Lead with: warehouse sources and the capture API for what SQL-first teams already have, then session replay, surveys, and experiments for what needs posthog-js on the page.",
+    "- Draft covers:",
+    "  - What warehouse sources and the capture API already answer.",
+    "  - The three things that need the SDK on the page, and why.",
+    "  - A person join resolves at query time, so flags and experiments never see it.",
+  ].join("\n");
+
+  it("keeps the prose lead on the label's line and the bullets in a block of their own", () => {
+    const body = buildIssueBody(analyzed, null, { ...piece, detail: brief }, [], null);
+    expect(body).toContain(
+      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.\n\n- Position against:",
+    );
+    // The beats stay nested under the bullet they belong to.
+    expect(body).toContain(
+      "- Draft covers:\n  - What warehouse sources and the capture API already answer.\n  - The three things that need the SDK on the page, and why.",
+    );
+    // No bullet swallowed into the prose, and no prose left in the list.
+    expect(body).not.toContain("both sides, warehouse sources and the SDK. - Position against:");
+    // The draft itself is still the draft's section, not the ask.
+    expect(body.indexOf("## Recommended action")).toBeLessThan(body.indexOf("## The draft"));
+  });
+
+  it("gives a list its own block even when the model left no blank line before it", () => {
+    const tight = `Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.`;
+    const body = buildIssueBody(analyzed, null, { ...piece, detail: tight }, [], null);
+    expect(body).toContain(
+      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.",
+    );
+  });
+
+  it("leaves a one-paragraph ask exactly as it always rendered", () => {
+    const body = buildIssueBody(analyzed, null, piece, [], null);
+    expect(body).toContain(`## Recommended action\n**Consider publishing** \u2013 ${piece.detail}`);
+  });
+
+  it("shows Slack the first sentence of a brief and none of the bullets", () => {
+    const alert: Alert = {
+      ...analyzed,
+      image: { url: "https://cdn.invalid/hero.png", altText: "Amplitude SDK", origin: "page" },
+      analysis: { ...analysis, actions: [{ ...piece, detail: brief }] },
+      issues: [],
+    };
+    const text = renderMessageText(buildSlackMessage(alert));
+    expect(text).toContain(
+      "*Consider publishing*\nPublish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice.",
+    );
+    expect(text).not.toContain("Position against:");
+    expect(text).not.toContain("Draft covers:");
+  });
+});
+
+/**
+ * The bullets under "More detail". The lines above the last are facts about
+ * the piece; the last one says what the competitor is selling, which is the
+ * line a marketer writes against, so nothing between the model and the issue
+ * is allowed to cut it down to the closer it replaced.
+ */
+describe("the so-what bullet", () => {
+  const soWhat =
+    "The piece argues for their SDK as the collection layer their analytics platform needs on top of the warehouse: session replay, heatmaps, and pre-login attribution exist only if their library is on the page, so a warehouse-first team installs it anyway. A PostHog answer has to say which of those come from warehouse sources and which of them need posthog-js.";
+  const facts = [
+    "An explainer for data teams who already pipe product events into BigQuery or Snowflake, not an announcement.",
+    "Concedes the warehouse wins for reconciled orders and payments, and for teams with one approved collection path.",
+  ];
+  const points = [...facts, soWhat];
+
+  it("is longer than a fragment and shorter than the budget the prompt asks for", () => {
+    expect(soWhat.length).toBeGreaterThan(MAX_POINT_CHARS);
+    expect(soWhat.length).toBeLessThanOrEqual(MAX_SO_WHAT_CHARS);
+  });
+
+  it("survives the parse whole", () => {
+    const parsed = parseAnalysis(
+      JSON.stringify({
+        impact: "minor",
+        summary: analysis.summary,
+        key_points: points,
+        actions: [],
+        no_action: { kind: "not_a_gap", reason: verdict.reason },
+      }),
+    );
+    expect(parsed.keyPoints).toEqual(points);
+  });
+
+  it("reaches the issue in full, as the last bullet under More detail", () => {
+    const body = buildIssueBody(
+      { ...analyzed, analysis: { ...analysis, keyPoints: points } },
+      null,
+      piece,
+      [],
+      null,
+    );
+    expect(body).toContain(`## More detail\n- ${facts[0]}`);
+    expect(body).toContain(`- ${soWhat}`);
+    expect(body).not.toContain("\u2026");
+  });
+
+  it("keeps its room in Slack, where the lines above it stay fragments", () => {
+    const long = `${facts[0]} ${facts[1]} ${facts[0]}`;
+    const alert: Alert = {
+      ...analyzed,
+      image: { url: "https://cdn.invalid/hero.png", altText: "Amplitude SDK", origin: "page" },
+      analysis: { ...analysis, keyPoints: [long, soWhat] },
+      issues: [],
+    };
+    const rendered = renderMessageText(buildSlackMessage(alert));
+    expect(rendered).toContain(`\u2022 ${soWhat}`);
+    // The fact above it is held to the shorter budget, and says so with an ellipsis.
+    expect(rendered).toContain(`\u2022 ${truncate(long, MAX_POINT_CHARS)}`);
+    expect(rendered).toContain("\u2026");
+  });
 });
 
 describe("the review pass", () => {
