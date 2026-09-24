@@ -232,34 +232,57 @@ checklist.
 
 The prose lead is one or two sentences. The first names the piece and the angle
 and stands alone, because Slack shows that sentence and nothing else. The
-second says why PostHog can own the angle, in what PostHog actually ships:
-"PostHog can own this because it ships both sides." Then it stops. That much
-reads as a recommendation somebody made, and turning it into bullets would take
-the argument out of it.
+second says why PostHog can own the angle, in what PostHog actually ships, and
+it names the angle again as its subject instead of pointing back at it. Then it
+stops. That much reads as a recommendation somebody made, and turning it into
+bullets would take the argument out of it.
 
-The bullets carry the rest, because the rest is a list somebody works through:
-how to position the piece against the pitch the last key point named, which
-PostHog products to lead with, and what the draft covers, with its beats nested
-under that last bullet. Three to five beats, one line each, in the draft's
-order. Beats, not the draft. A paragraph retelling the whole piece is what the
-bullets replace, and the piece is already in `article_draft` and under **The
-draft** in the issue.
+Every sentence in the brief names what it is about. "this", "that", "it", "both
+sides", "the two halves", and "their" are allowed only where the noun they
+stand for is in the same sentence, because the reader is a marketer opening the
+issue cold and a pointer back to a sentence they have not read is a pointer to
+nothing. Name the competitor too.
+
+- Bad: "PostHog can own this because it ships both sides, warehouse sources and
+  the SDK." Nothing in that sentence says what "this" is, and "both sides" is
+  named after it is relied on.
+- Good: "PostHog can own the warehouse-versus-SDK question because it ships
+  both halves: data warehouse sources and the capture API on the warehouse
+  side, and posthog-js on the SDK side."
+
+The bullets carry the rest, because the rest is a list somebody works through.
+Three of them, in this order, each led by a bold label copied exactly, so
+nobody needs a legend for what a bullet is:
+
+- **Product(s) highlighted** – the PostHog products the piece features, by the
+  names the docs use, in the order the draft reaches them, each with the reader
+  it is for.
+- **Article positioning:** what the competitor is selling in this piece, which
+  is the pitch the last key point named, opening with the competitor's name;
+  then the stance the draft takes on it, opening with "The draft".
+- **Content outline:** the draft's beats nested under it. Three to five, one
+  line each, in the draft's order.
+
+Beats, not the draft. A paragraph retelling the whole piece is what the bullets
+replace, and the piece is already in `article_draft` and under **The draft** in
+the issue.
 
 ```markdown
 **Consider publishing** – Publish a PostHog take on whether you need an SDK or
 can send events from your warehouse – Amplitude has one and PostHog's blog has
-nothing on the choice. PostHog can own this because it ships both sides,
-warehouse sources and the SDK.
+nothing on the choice. PostHog can own the warehouse-versus-SDK question
+because it ships both halves: data warehouse sources and the capture API on the
+warehouse side, and posthog-js with session replay on the SDK side.
 
-- Position against: their pitch that the SDK is the layer a warehouse cannot
-  replace. PostHog's answer names what the warehouse covers and what it does
-  not, rather than arguing for one side.
-- Lead with: warehouse sources and the capture API for what SQL-first teams
-  already have, then session replay, surveys, and experiments for what needs
-  posthog-js on the page.
-- Draft covers:
+- **Product(s) highlighted** – data warehouse sources and the capture API, for
+  teams that already have a pipeline; then session replay, surveys, and
+  experiments, for what needs posthog-js on the page.
+- **Article positioning:** Amplitude says an SDK is the one layer a warehouse
+  cannot replace. The draft takes no side: the draft names what the warehouse
+  answers on its own and what it does not.
+- **Content outline:**
   - What warehouse sources and the capture API already answer.
-  - The three things that need the SDK on the page, and why.
+  - The three things that need posthog-js on the page, and why.
   - A person join resolves at query time, so flags and experiments never see it.
   - The hybrid setup most teams land on, and when warehouse-only is right.
 ```
@@ -270,6 +293,14 @@ every markdown block the detail wrote below it keeps its own blank line, so the
 bullets render as bullets and the nested beats as sub-bullets rather than as a
 paragraph GitHub might not break up. A `detail` of one paragraph renders
 exactly as it always did.
+
+The three labels live in `BRIEF_LABELS` in
+[`src/analysis/brief.ts`](../src/analysis/brief.ts), which both prompts ask for
+and `buildIssueBody` renders. An issue filed under an older prompt is
+re-rendered on every review, so `normalizeBriefLabels` rewrites the labels it
+was written with – `Position against:`, `Lead with:`, `Draft covers:` – into
+these. It moves the label and nothing else: the words after it are the
+recommendation, and a rename invents none of them.
 
 ## A length budget shortens a string, never the analysis
 
@@ -561,8 +592,11 @@ have been allowed to be written that way in the first place.
   question, in `normalizeAnalysis` and again in the issue body.
 - `buildIssueBody` in [`src/github/issue.ts`](../src/github/issue.ts) keeps the
   markdown an ask was written in: the action label shares a line with the lead,
-  and every block the detail wrote below it – a brief's **What's in the draft**
-  bullets, most of all – keeps a blank line of its own so it renders as one.
+  and every block the detail wrote below it – a brief's **Content outline:**
+  beats, most of all – keeps a blank line of its own so it renders as one. It
+  runs a brief's bullets through `normalizeBriefLabels` in
+  [`src/analysis/brief.ts`](../src/analysis/brief.ts) on the way out, so a
+  brief filed under an older prompt carries today's labels.
 - [`enforceActionLead`](../src/analysis/lead.ts) runs last, on the actions that
   survived, and makes each one open with the work it asks for, because that
   sentence is the whole recommendation in Slack.
