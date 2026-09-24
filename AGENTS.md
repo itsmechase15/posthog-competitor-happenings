@@ -179,9 +179,16 @@ it.
  product answer next to the piece; the gate judges the two sides apart and no content block
  ever reaches the product verdict; and it is an extra path, never a fallback
  for an unverified gap or a page edit that failed its bar. The draft is
- checked by [`src/analysis/article.ts`](./src/analysis/article.ts): there is
- one, it has a headline, it runs at least 300 words, and no PostHog blog
- post, tutorial, or newsletter issue on the angle went unread. The picture on
+  checked by [`src/analysis/article.ts`](./src/analysis/article.ts): there is
+  one, it has a headline, it runs at least 300 words, and no PostHog blog
+  post, tutorial, or newsletter issue on the angle went unread. The brief above
+  the draft has three labelled bullets in a fixed order, and the labels live in
+  [`src/analysis/brief.ts`](./src/analysis/brief.ts) rather than only inside a
+  prompt's example: **Product(s) highlighted**, **Article positioning:**, then
+  **Content outline:**. Every sentence in it names its own subject – "PostHog
+  can own this because it ships both sides" is the sentence the rule exists for
+  – and a brief filed under older labels is renamed at render time, never
+  rewritten. The picture on
  the issue is the draft staged into a real posthog.com blog post's page, with
  a stamp saying it is a proposed draft and the borrowed post's authors hidden,
  and the caption names the post it was staged on and says nothing was

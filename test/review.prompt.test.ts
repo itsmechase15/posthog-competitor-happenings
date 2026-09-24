@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BRIEF_LABEL_ORDER } from "../src/analysis/brief.js";
 import { buildReviewPrompt, buildRewritePrompt } from "../src/review/prompt.js";
 import { parseReview } from "../src/review/schema.js";
 import type { AnalyzedItem, RecommendedAction, StoredItem } from "../src/types.js";
@@ -285,5 +286,27 @@ describe("buildRewritePrompt", () => {
   it("says so when the reviewer listed no specific change", () => {
     const bare = buildRewritePrompt({ alert, action, review: { ...review, changes: [] }, docs });
     expect(bare).toContain("Changes it asked for: none listed");
+  });
+
+  /**
+   * A revise may replace `detail`, so the brief's shape is asked for again
+   * here. Without it a rewritten piece comes back in whatever shape the writer
+   * felt like, and the labels last exactly one review.
+   */
+  it("gives a piece to publish the brief's labels and the antecedent rule", () => {
+    const piece: RecommendedAction = {
+      type: "consider_publishing",
+      detail: "Publish a PostHog take on whether to install the SDK or send from your warehouse.",
+      articleTitle: "SDK or warehouse?",
+      articleDraft: "# SDK or warehouse?\n\nA draft.",
+    };
+    const prompt = buildRewritePrompt({ alert, action: piece, review, docs });
+    for (const label of BRIEF_LABEL_ORDER) expect(prompt).toContain(`"**${label}**"`);
+    expect(prompt).toContain('"PostHog can own this because it ships both sides" fails twice');
+  });
+
+  it("says nothing about the brief on a product action", () => {
+    for (const label of BRIEF_LABEL_ORDER) expect(prompt).not.toContain(label);
+    expect(prompt).not.toContain('For consider_publishing, "detail" is the brief');
   });
 });

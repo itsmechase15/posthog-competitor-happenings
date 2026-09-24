@@ -7,6 +7,9 @@ import { MAX_ACTION_CHARS, MAX_POINT_CHARS, MAX_SO_WHAT_CHARS } from "../slack/m
 // The length the reply is read with, stated to the model that writes it.
 import { MAX_DETAIL_CHARS } from "./schema.js";
 import { EVIDENCE_LABEL, TOC_FILENAME } from "../posthog/workspace.js";
+// The brief's bullet labels, so the prompt asks for the strings the issue
+// renders and the tests read, rather than for a copy of them.
+import { BRIEF_LABELS } from "./brief.js";
 import { MAX_TEAMS } from "../teams.js";
 import type { CompetitorClaim, PostHogClaim, PostHogDoc, StoredItem } from "../types.js";
 import { EN_DASH, truncate } from "../util/text.js";
@@ -171,6 +174,35 @@ export const ARTICLE_RULES = `Every consider_publishing action ships the piece w
 5. Everything in the PostHog writing style section applies, and this is the longest string you will write, so it is where the slips happen: no em dashes, no "leverage", no "seamless", no "simply".
 "article_title" is the working headline: concrete, in sentence case the way PostHog writes headlines, and without a colon-and-subtitle.`;
 
+/**
+ * The brief above that draft: what a marketer reads under **Recommended
+ * action** and acts on without opening anything else.
+ *
+ * Stated once and asked for twice, like `ARTICLE_RULES`. The analyst writes
+ * the brief, and the review's writer may rewrite `detail` on a revise, so a
+ * rewrite prompt that never saw this rule would hand back whatever shape it
+ * felt like and the labels would last exactly one review. The labels
+ * themselves come from `BRIEF_LABELS`, so the prompt that asks for them, the
+ * renderer that prints them, and the tests cannot drift apart.
+ */
+export const PUBLISHING_BRIEF_RULES = `For consider_publishing, "detail" is the brief a marketer acts on. It is prose first and bullets after, with the line breaks written as \\n inside the JSON string. The piece itself goes in "article_draft" and never in "detail", which is neither long enough to hold it nor where anything looks for it.
+1. A prose lead of one or two sentences, with no bullets in it. The first names the piece to write and the angle, and stands alone, because Slack shows that sentence and nothing else. The second says why PostHog can own the angle, in what PostHog actually ships, and it names the angle again as its subject rather than pointing back at it: "PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js on the SDK side." Then stop ${EN_DASH} the lead is the ask and the reason, and nothing else belongs in it.
+2. Every sentence in the brief says what it is about. "this", "that", "it", "both sides", "the two halves", and "their" are allowed only when the noun they stand for is in the same sentence, because the reader is a marketer opening the issue cold and a pointer back to a sentence they have not read is a pointer to nothing. "PostHog can own this because it ships both sides" fails twice ${EN_DASH} nothing in that sentence says what "this" is or what the sides are ${EN_DASH} and it is the sentence this rule exists for. Name the competitor: "Amplitude says", never "their pitch".
+3. Then a blank line and three markdown bullets, each starting with "- " and a bold label copied exactly from this list, in this order. The label says what the bullet is, so nobody needs a legend:
+  - "**${BRIEF_LABELS.products}**" ${EN_DASH} the PostHog products the piece features, by the names the docs use, in the order the draft reaches them, each with the reader it is for. This label carries no colon, so an en dash with a space either side separates it from the products.
+  - "**${BRIEF_LABELS.positioning}**" ${EN_DASH} first what the competitor is selling in this piece, which is the pitch you named in the last key point, opening with the competitor's name; then the stance the draft takes on it, opening with "The draft".
+  - "**${BRIEF_LABELS.outline}**" ${EN_DASH} the draft's beats nested under the bullet as lines starting with two spaces and "- ". Three to five beats, one line each, in the draft's own order.
+Beats, not the draft. A paragraph retelling the whole piece is what the bullets replace, and the piece is already in "article_draft".
+Worked example, line breaks and all: "Publish a PostHog take on whether you need an SDK or can send events from your warehouse ${EN_DASH} Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js with session replay on the SDK side.\\n\\n- **${BRIEF_LABELS.products}** ${EN_DASH} data warehouse sources and the capture API, for teams that already have a pipeline; then session replay, surveys, and experiments, for what needs posthog-js on the page.\\n- **${BRIEF_LABELS.positioning}** Amplitude says an SDK is the one layer a warehouse cannot replace. The draft takes no side: the draft names what the warehouse answers on its own and what it does not.\\n- **${BRIEF_LABELS.outline}**\\n  - What warehouse sources and the capture API already answer.\\n  - The three things that need posthog-js on the page, and why.\\n  - A person join resolves at query time, so flags and experiments never see it.\\n  - The hybrid setup most teams land on, and when warehouse-only is right."`;
+
+/** A block written to stand alone, put back under a bullet without reflowing it. */
+function indentAfterFirst(block: string, indent: string): string {
+  return block
+    .split("\n")
+    .map((line, at) => (at === 0 || line === "" ? line : `${indent}${line}`))
+    .join("\n");
+}
+
 export const SYSTEM_RULES = `You are a competitive-intelligence analyst for PostHog, an open-source product analytics platform.
 You read one thing a competitor shipped and decide what PostHog should do about it.
 
@@ -207,18 +239,11 @@ Rules:
 ${TEAM_RULES}
 - "detail" explains the work: what PostHog should change, what the competitor now does, and what PostHog does or does not do today. Never generic "why this matters" copy. A few short paragraphs at most, and under ${MAX_DETAIL_CHARS} characters ${EN_DASH} past that it is shortened on the way in, and the sentence it stops on is the one you cared about.
 - Open "detail" with one short sentence, under ${MAX_ACTION_CHARS} characters, that stands up alone: Slack shows that sentence and nothing else under the action title. Put the rest in later sentences, which the GitHub issue carries.
-- For consider_publishing, "detail" is the brief a marketer acts on. It is prose first and bullets after, with the line breaks written as \\n inside the JSON string. The piece itself goes in "article_draft" and never in "detail", which is neither long enough to hold it nor where anything looks for it.
-  1. A prose lead of one or two sentences, with no bullets in it. The first names the piece to write and the angle, and stands alone, because Slack shows that sentence and nothing else. The second says why PostHog can own the angle, in what PostHog actually ships: "PostHog can own this because it ships both sides, warehouse sources and the SDK." Then stop ${EN_DASH} the lead is the ask and the reason, and nothing else belongs in it.
-  2. Then a blank line and markdown bullets, each starting with "- ", in this order:
-    - how PostHog should position the piece against what the competitor is selling, which is the pitch you named in the last key point.
-    - which PostHog products the piece leads with, by the names the docs use.
-    - the draft, with its beats nested under that bullet as lines starting with two spaces and "- ". Three to five beats, one line each, in the draft's own order.
-  Beats, not the draft. A paragraph retelling the whole piece is what the bullets replace, and the piece is already in "article_draft".
-  Worked example, line breaks and all: "Publish a PostHog take on whether you need an SDK or can send events from your warehouse ${EN_DASH} Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.\\n\\n- Position against: their pitch that the SDK is the layer a warehouse cannot replace. PostHog's answer names what the warehouse covers and what it does not, rather than arguing for one side.\\n- Lead with: warehouse sources and the capture API for what SQL-first teams already have, then session replay, surveys, and experiments for what needs posthog-js on the page.\\n- Draft covers:\\n  - What warehouse sources and the capture API already answer.\\n  - The three things that need the SDK on the page, and why.\\n  - A person join resolves at query time, so flags and experiments never see it.\\n  - The hybrid setup most teams land on, and when warehouse-only is right."
+- ${indentAfterFirst(PUBLISHING_BRIEF_RULES, "  ")}
 - That opening sentence leads with the work, not with what PostHog lacks. A reader who sees only that line has to know what is being asked for:
   - consider_enhancing and consider_building: name the change first, then the gap behind it if it still fits. Good: "Add a scheduled end time on experiments so a test can stop on its own – flags already schedule changes, experiments stop by hand." Bad: "PostHog schedules flag changes, but an experiment still has to be stopped by hand." The bad one is true and it is evidence, but it names no change, so it belongs in a later sentence.
   - update_pages and new_compare_page: name the page and what it should say. Good: "On the PostHog vs Amplitude experiments compare, say Amplitude can schedule an experiment stop and PostHog stops by hand." Bad: "The compare page is out of date." A page action whose opening sentence does not say which page is unusable in Slack.
-  - consider_publishing: name the piece to write and the angle. Good: "Publish a PostHog take on whether to install the SDK or send events from your warehouse – Amplitude has one, and PostHog's blog has nothing on the choice." Bad: "This is a thought leadership post about SDKs." The bad one describes their post; the good one asks for ours. The positioning, the PostHog products to highlight, and the draft's beats go in the lines under it, never in this sentence.
+  - consider_publishing: name the piece to write and the angle. Good: "Publish a PostHog take on whether to install the SDK or send events from your warehouse – Amplitude has one, and PostHog's blog has nothing on the choice." Bad: "This is a thought leadership post about SDKs." The bad one describes their post; the good one asks for ours. The PostHog products the piece highlights, how it is positioned, and the draft's outline go in the labelled bullets under it, never in this sentence.
 - "posthog_refs" cites PostHog URLs from the corpus. Only cite URLs that exist in it. Include "suggested_edit" when an action is update_pages or new_compare_page, and "proposed_text" whenever the action is update_pages. Use an empty array when no cited page is genuinely relevant.
 - "open_questions" is 0 to 3 things that change what PostHog should do and that you could not settle. This is where an unproven gap goes. It is a better answer than an action, not a worse one.
 - Write every open question as a question. It opens with Is, Are, Does, Do, Can, Will, Which, What, How, or "Do we know", and it ends with a question mark, because the reader's job is to answer it. "Is Headless generally available on every Mixpanel plan, or only on Enterprise?" is a question. "Whether Headless is generally available" is a note you left yourself: it names the doubt and asks nobody anything, and it is rewritten into a question or dropped before it reaches the issue. One question per entry, and name the thing you could not check inside it. A sentence of context after the question mark is fine.

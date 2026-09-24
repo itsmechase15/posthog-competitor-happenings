@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { checkActions } from "../src/analysis/analyze.js";
+import { BRIEF_LABELS, BRIEF_LABEL_ORDER, normalizeBriefLabels } from "../src/analysis/brief.js";
 import { gateActions } from "../src/analysis/evidence.js";
 import { enforceActionLead } from "../src/analysis/lead.js";
 import { renderNoAction } from "../src/analysis/noAction.js";
@@ -161,6 +162,45 @@ describe("the action taxonomy", () => {
   });
 });
 
+describe("the brief's labels", () => {
+  it("holds Chase's three, in the order a marketer reads them", () => {
+    expect(BRIEF_LABEL_ORDER).toEqual([
+      "Product(s) highlighted",
+      "Article positioning:",
+      "Content outline:",
+    ]);
+  });
+
+  it("renames every label a brief has been filed under, bold or bare", () => {
+    const filed = [
+      "- Position against: Amplitude says the SDK is the layer.",
+      "- **Lead with:** data warehouse sources.",
+      "- What the draft covers, in order:",
+      "  - What the warehouse already answers.",
+    ].join("\n");
+    expect(normalizeBriefLabels(filed)).toBe(
+      [
+        `- **${BRIEF_LABELS.positioning}** Amplitude says the SDK is the layer.`,
+        `- **${BRIEF_LABELS.products}** \u2013 data warehouse sources.`,
+        `- **${BRIEF_LABELS.outline}**`,
+        "  - What the warehouse already answers.",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves a brief already in the new labels alone, and prose with it", () => {
+    const written = [
+      "PostHog can own the warehouse-versus-SDK question, because PostHog ships both halves.",
+      "",
+      `- **${BRIEF_LABELS.products}** \u2013 data warehouse sources.`,
+      `- **${BRIEF_LABELS.positioning}** Amplitude says the SDK is the layer.`,
+      `- **${BRIEF_LABELS.outline}**`,
+      "  - What the warehouse already answers.",
+    ].join("\n");
+    expect(normalizeBriefLabels(written)).toBe(written);
+  });
+});
+
 describe("parsing a reply with a piece to publish", () => {
   const reply = JSON.stringify({
     impact: "minor",
@@ -274,30 +314,60 @@ describe("the prompt", () => {
     expect(prompt).toContain("It is prose first and bullets after");
     expect(prompt).toContain("A prose lead of one or two sentences, with no bullets in it");
     expect(prompt).toContain(
-      'The second says why PostHog can own the angle, in what PostHog actually ships: "PostHog can own this because it ships both sides, warehouse sources and the SDK."',
+      "it names the angle again as its subject rather than pointing back at it",
+    );
+    expect(prompt).toContain(
+      '"PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js on the SDK side."',
     );
     expect(prompt).toContain("the lead is the ask and the reason, and nothing else belongs in it");
-    expect(prompt).toContain('Then a blank line and markdown bullets, each starting with "- "');
+    expect(prompt).toContain(
+      'Then a blank line and three markdown bullets, each starting with "- " and a bold label copied exactly from this list, in this order',
+    );
     // Slack still shows one sentence, so everything else goes below it.
     expect(prompt).toContain("Slack shows that sentence and nothing else");
     expect(prompt).toContain(
-      "The positioning, the PostHog products to highlight, and the draft's beats go in the lines under it, never in this sentence.",
+      "The PostHog products the piece highlights, how it is positioned, and the draft's outline go in the labelled bullets under it, never in this sentence.",
     );
   });
 
-  it("asks the bullets for the positioning, the products, and the draft's beats", () => {
+  it("asks the bullets for the products, the positioning, and the draft's outline, in that order", () => {
+    for (const label of BRIEF_LABEL_ORDER) expect(prompt).toContain(`"**${label}**"`);
+    // The order is Chase's: what the piece features, then what it answers, then
+    // what it says. A brief read in any other order asks a marketer to hold the
+    // products in their head while they read the positioning.
+    const at = BRIEF_LABEL_ORDER.map((label) => prompt.indexOf(`"**${label}**"`));
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+
     expect(prompt).toContain(
-      "how PostHog should position the piece against what the competitor is selling, which is the pitch you named in the last key point",
+      "the PostHog products the piece features, by the names the docs use, in the order the draft reaches them",
     );
-    expect(prompt).toContain("which PostHog products the piece leads with, by the names the docs use");
     expect(prompt).toContain(
-      'the draft, with its beats nested under that bullet as lines starting with two spaces and "- "',
+      "first what the competitor is selling in this piece, which is the pitch you named in the last key point",
+    );
+    expect(prompt).toContain(
+      'the draft\'s beats nested under the bullet as lines starting with two spaces and "- "',
     );
     expect(prompt).toContain("Beats, not the draft.");
     // The worked example is the shape itself, prose lead and nested beats.
-    expect(prompt).toContain("PostHog can own this because it ships both sides");
-    expect(prompt).toContain("\\n\\n- Position against:");
-    expect(prompt).toContain("- Draft covers:\\n  - What warehouse sources");
+    expect(prompt).toContain(`\\n\\n- **${BRIEF_LABELS.products}** \u2013 data warehouse sources`);
+    expect(prompt).toContain(`\\n- **${BRIEF_LABELS.positioning}** Amplitude says`);
+    expect(prompt).toContain(`- **${BRIEF_LABELS.outline}**\\n  - What warehouse sources`);
+  });
+
+  it("states the antecedent rule, with the sentence it exists for", () => {
+    expect(prompt).toContain(
+      '"this", "that", "it", "both sides", "the two halves", and "their" are allowed only when the noun they stand for is in the same sentence',
+    );
+    expect(prompt).toContain('"PostHog can own this because it ships both sides" fails twice');
+    expect(prompt).toContain('Name the competitor: "Amplitude says", never "their pitch".');
+  });
+
+  it("never shows the model a vague lead or an old label as the good example", () => {
+    // The one mention of the sentence is the Bad line naming it as the mistake.
+    expect(prompt.match(/can own this because/g)).toHaveLength(1);
+    expect(prompt).not.toContain("- Position against:");
+    expect(prompt).not.toContain("- Lead with:");
+    expect(prompt).not.toContain("- Draft covers:");
   });
 
   it("does not ask for the sections that were taken out", () => {
@@ -327,17 +397,38 @@ describe("docs/writing.md", () => {
   it("states the split: prose ask and reason, then bullets", () => {
     expect(writing).toContain("## The ask above that draft is a brief, not a retelling");
     expect(prose).toContain("It is prose first and bullets after");
-    expect(prose).toContain("PostHog can own this because it ships both sides");
+    expect(prose).toContain(
+      "it names the angle again as its subject instead of pointing back at it",
+    );
     expect(prose).toContain(
       "turning it into bullets would take the argument out of it",
     );
-    expect(prose).toContain(
-      "how to position the piece against the pitch the last key point named, which PostHog products to lead with, and what the draft covers",
-    );
     expect(prose).toContain("Beats, not the draft.");
     // The worked example carries the shape, nested beats and all.
-    expect(writing).toContain("- Position against:");
-    expect(writing).toContain("- Draft covers:\n  - What warehouse sources");
+    expect(writing).toContain(`- **${BRIEF_LABELS.products}** \u2013 data warehouse sources`);
+    expect(writing).toContain(`- **${BRIEF_LABELS.positioning}** Amplitude says`);
+    expect(writing).toContain(`- **${BRIEF_LABELS.outline}**\n  - What warehouse sources`);
+  });
+
+  it("states the antecedent rule with the same Bad and Good pair the prompt uses", () => {
+    expect(prose).toContain(
+      'are allowed only where the noun they stand for is in the same sentence',
+    );
+    expect(prose).toContain(
+      'Bad: "PostHog can own this because it ships both sides, warehouse sources and the SDK."',
+    );
+    expect(prose).toContain(
+      'Good: "PostHog can own the warehouse-versus-SDK question because it ships both halves',
+    );
+  });
+
+  it("names where the labels live and what happens to the ones they replaced", () => {
+    expect(prose).toContain("The three labels live in `BRIEF_LABELS` in");
+    expect(prose).toContain("src/analysis/brief.ts");
+    expect(prose).toContain("`normalizeBriefLabels` rewrites the labels it was written with");
+    // Only ever as the labels being renamed, never as a label to write.
+    expect(writing).not.toContain("- Position against:");
+    expect(writing).not.toContain("- Draft covers:");
   });
 });
 
@@ -620,40 +711,91 @@ describe("the GitHub issue", () => {
 
   /**
    * The brief as the prompt asks for it: the ask and the reason PostHog can
-   * own the angle as prose, then bullets for the positioning, the products,
-   * and the draft's beats nested under the last one.
+   * own the angle as prose, then the three labelled bullets, with the draft's
+   * beats nested under the last one.
    */
+  const LEAD =
+    "Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js with session replay on the SDK side.";
   const brief = [
-    "Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.",
+    LEAD,
     "",
-    "- Position against: their pitch that the SDK is the layer a warehouse cannot replace. PostHog's answer names what the warehouse covers and what it does not.",
-    "- Lead with: warehouse sources and the capture API for what SQL-first teams already have, then session replay, surveys, and experiments for what needs posthog-js on the page.",
-    "- Draft covers:",
+    `- **${BRIEF_LABELS.products}** \u2013 data warehouse sources and the capture API, for teams that already have a pipeline; then session replay, surveys, and experiments, for what needs posthog-js on the page.`,
+    `- **${BRIEF_LABELS.positioning}** Amplitude says an SDK is the one layer a warehouse cannot replace. The draft takes no side: the draft names what the warehouse answers on its own and what it does not.`,
+    `- **${BRIEF_LABELS.outline}**`,
     "  - What warehouse sources and the capture API already answer.",
-    "  - The three things that need the SDK on the page, and why.",
+    "  - The three things that need posthog-js on the page, and why.",
     "  - A person join resolves at query time, so flags and experiments never see it.",
   ].join("\n");
 
   it("keeps the prose lead on the label's line and the bullets in a block of their own", () => {
     const body = buildIssueBody(analyzed, null, { ...piece, detail: brief }, [], null);
     expect(body).toContain(
-      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own this because it ships both sides, warehouse sources and the SDK.\n\n- Position against:",
+      `## Recommended action\n**Consider publishing** \u2013 ${LEAD}\n\n- **${BRIEF_LABELS.products}**`,
     );
     // The beats stay nested under the bullet they belong to.
     expect(body).toContain(
-      "- Draft covers:\n  - What warehouse sources and the capture API already answer.\n  - The three things that need the SDK on the page, and why.",
+      `- **${BRIEF_LABELS.outline}**\n  - What warehouse sources and the capture API already answer.\n  - The three things that need posthog-js on the page, and why.`,
     );
     // No bullet swallowed into the prose, and no prose left in the list.
-    expect(body).not.toContain("both sides, warehouse sources and the SDK. - Position against:");
+    expect(body).not.toContain(`on the SDK side. - **${BRIEF_LABELS.products}**`);
     // The draft itself is still the draft's section, not the ask.
     expect(body.indexOf("## Recommended action")).toBeLessThan(body.indexOf("## The draft"));
   });
 
   it("gives a list its own block even when the model left no blank line before it", () => {
-    const tight = `Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.`;
+    const tight = `Publish a PostHog take on the SDK question. PostHog ships both halves of it: warehouse sources and posthog-js.\n- **${BRIEF_LABELS.products}** \u2013 data warehouse sources and session replay.\n- **${BRIEF_LABELS.positioning}** Amplitude says a warehouse cannot replace the SDK.`;
     const body = buildIssueBody(analyzed, null, { ...piece, detail: tight }, [], null);
     expect(body).toContain(
-      "## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on the SDK question. PostHog can own this because it ships both sides.\n\n- Position against: the pitch that a warehouse cannot replace the SDK.\n- Lead with: warehouse sources and session replay.",
+      `## Recommended action\n**Consider publishing** \u2013 Publish a PostHog take on the SDK question. PostHog ships both halves of it: warehouse sources and posthog-js.\n\n- **${BRIEF_LABELS.products}** \u2013 data warehouse sources and session replay.\n- **${BRIEF_LABELS.positioning}** Amplitude says a warehouse cannot replace the SDK.`,
+    );
+  });
+
+  /**
+   * Issue #104's brief, verbatim, which is what a review's PATCH re-renders.
+   * The labels it was filed under are the ones the rename exists for.
+   */
+  const filedUnderOldLabels = [
+    "Publish a PostHog take on whether you need posthog-js or can send events from your warehouse, because PostHog's blog has nothing on that choice today. PostHog can own this because it ships both sides: data warehouse sources with hundreds of connectors plus the capture API, and the SDK that captures session replay, autocapture, and heatmaps.",
+    "",
+    "- Position against: the pitch that a vendor SDK is the one layer a warehouse cannot replace. PostHog's version does not argue for a side.",
+    "- Lead with: data warehouse sources and the capture API for teams that already have a pipeline, then session replay, autocapture, and heatmaps for what needs the SDK.",
+    "- Draft covers:",
+    "  - What warehouse sources and the capture API already answer, including money and entitlement data.",
+    "  - What needs the SDK on the page: replay recordings, rage and dead clicks, and heatmaps.",
+  ].join("\n");
+
+  it("renames the labels a brief filed under the old prompt used", () => {
+    const body = buildIssueBody(
+      analyzed,
+      null,
+      { ...piece, detail: filedUnderOldLabels },
+      [],
+      null,
+    );
+    expect(body).toContain(
+      `- **${BRIEF_LABELS.positioning}** the pitch that a vendor SDK is the one layer a warehouse cannot replace.`,
+    );
+    expect(body).toContain(
+      `- **${BRIEF_LABELS.products}** \u2013 data warehouse sources and the capture API for teams that already have a pipeline`,
+    );
+    expect(body).toContain(
+      `- **${BRIEF_LABELS.outline}**\n  - What warehouse sources and the capture API already answer`,
+    );
+    for (const old of ["- Position against:", "- Lead with:", "- Draft covers:"]) {
+      expect(body).not.toContain(old);
+    }
+    // A rename never reaches prose: the lead is the analyst's, vague pronoun
+    // and all, because rewriting it would mean inventing what it meant.
+    expect(body).toContain(
+      "**Consider publishing** \u2013 Publish a PostHog take on whether you need posthog-js or can send events from your warehouse, because PostHog's blog has nothing on that choice today. PostHog can own this because it ships both sides:",
+    );
+  });
+
+  it("leaves a detail that carries no brief labels exactly as it was written", () => {
+    const plain = "On the SDK question, publish PostHog's take.\n\n- One thing.\n- Another thing.";
+    const body = buildIssueBody(analyzed, null, { ...piece, detail: plain }, [], null);
+    expect(body).toContain(
+      "## Recommended action\n**Consider publishing** \u2013 On the SDK question, publish PostHog's take.\n\n- One thing.\n- Another thing.",
     );
   });
 
@@ -673,8 +815,7 @@ describe("the GitHub issue", () => {
     expect(text).toContain(
       "*Consider publishing*\nPublish a PostHog take on whether you need an SDK or can send events from your warehouse \u2013 Amplitude has one and PostHog's blog has nothing on the choice.",
     );
-    expect(text).not.toContain("Position against:");
-    expect(text).not.toContain("Draft covers:");
+    for (const label of BRIEF_LABEL_ORDER) expect(text).not.toContain(label);
   });
 });
 
