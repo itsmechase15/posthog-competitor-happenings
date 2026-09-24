@@ -1,3 +1,4 @@
+import { normalizeBriefLabels } from "../analysis/brief.js";
 import { asQuestions } from "../analysis/questions.js";
 import { relevantDocs } from "../analysis/verify.js";
 import { COMPETITORS, type Config } from "../config.js";
@@ -301,7 +302,12 @@ function recommendedActionSection(action: RecommendedAction): string {
   const { lead, rest } = splitLeadBlock(action.detail.trim());
   const label = actionLabel(action);
   const head = lead ? `**${label}**${SPACED_EN_DASH}${lead}` : `**${label}**`;
-  return ["## Recommended action", head, ...(rest ? ["", rest] : [])].join("\n");
+  // A brief filed under an older prompt is re-rendered here on every PATCH, so
+  // its bullets take the labels a marketer is reading today. Only the labels
+  // move: the prose lead, the products, the positioning, and the beats are the
+  // recommendation, and renaming a label invents none of them.
+  const bullets = rest ? normalizeBriefLabels(rest) : "";
+  return ["## Recommended action", head, ...(bullets ? ["", bullets] : [])].join("\n");
 }
 
 /**
