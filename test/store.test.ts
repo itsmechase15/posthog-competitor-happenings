@@ -50,6 +50,17 @@ describe("MemoryStore", () => {
     expect(await store.countItems("amplitude", "changelog")).toBe(0);
   });
 
+  it("remembers which days the channel heard that nothing shipped", async () => {
+    const store = new MemoryStore();
+    const at = new Date("2026-09-24T18:00:51Z");
+
+    expect(await store.quietDayNoteSent("2026-09-24")).toBe(false);
+    await store.recordQuietDayNote("2026-09-24", at);
+
+    expect(await store.quietDayNoteSent("2026-09-24")).toBe(true);
+    expect(await store.quietDayNoteSent("2026-09-25")).toBe(false);
+  });
+
   it("ranks a page about the competitor above one that only name-drops it", async () => {
     const store = new MemoryStore();
     const claim = (url: string, paragraph: string) => ({

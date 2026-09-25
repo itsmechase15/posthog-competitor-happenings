@@ -16,6 +16,45 @@ const log = createLogger("slack");
  */
 export const QUIET_DAY_HEADLINE = "No new competitor products or features today";
 
+/**
+ * The zone a day means here.
+ *
+ * GitHub's cron speaks only UTC, so the daily workflow is scheduled at both
+ * 14:00 and 15:00 UTC for one 07:00 in Los Angeles, and the guard there only
+ * turns away a run that is too early – a delayed morning puts both entries
+ * through. "Today" therefore has to mean the calendar day the schedule was
+ * written in, or the run that lands at 00:30 UTC on a winter night counts as
+ * tomorrow and says the same thing twice.
+ */
+export const SCHEDULE_TIME_ZONE = "America/Los_Angeles";
+
+/** The calendar day in the schedule's zone, as `2026-09-24`. */
+export function scheduleDay(at: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SCHEDULE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+/**
+ * What the note needs from the store: whether the day already heard, and
+ * somewhere to say that it has.
+ *
+ * Narrower than the whole `Store` on purpose – this is the only state the
+ * message keeps, and a test of "twice in one day posts once" should not have to
+ * stand up a corpus to say so.
+ */
+export interface QuietDayNotes {
+  quietDayNoteSent(day: string): Promise<boolean>;
+  recordQuietDayNote(day: string, at: Date): Promise<void>;
+}
+
 /** What the run found, as far as deciding whether the day was quiet goes. */
 export interface QuietDayRun {
   /** Items collected from the feeds, new or already seen. */
@@ -93,16 +132,25 @@ export function buildQuietDayMessage(run: QuietDayRun): SlackMessage {
 }
 
 /**
- * Post the quiet-day message, once, if the run earned one.
+ * Post the quiet-day message, once a day, if the run earned one.
  *
  * Called once at the end of a cycle, after every alert has been tried, so a
- * run cannot post two of these however many sources it read. A failure is
- * logged and swallowed: this is the least important message the bot sends, and
- * it must never be the thing that fails a run whose alerts all went out.
+ * run cannot post two of these however many sources it read. Once a day on top
+ * of that, because a run is not a day: two scheduled runs land on the same
+ * Pacific morning whenever GitHub is late with the earlier one, and the day
+ * they both read is the same day. Every other message the bot sends is deduped
+ * by the item behind it, and this one has no item, so the day is what it
+ * dedupes on.
+ *
+ * A failure is logged and swallowed: this is the least important message the
+ * bot sends, and it must never be the thing that fails a run whose alerts all
+ * went out.
  */
 export async function postQuietDayNote(
   poster: SlackPoster,
+  notes: QuietDayNotes,
   run: QuietDayRun,
+  now = new Date(),
 ): Promise<boolean> {
   const skip = quietDaySkipReason(run);
   if (skip) {
@@ -112,10 +160,27 @@ export async function postQuietDayNote(
     return false;
   }
 
+  const day = scheduleDay(now);
+
+  try {
+    if (await notes.quietDayNoteSent(day)) {
+      log.info(`no quiet-day message: the channel was already told about ${day}`);
+      return false;
+    }
+  } catch (error) {
+    // Not knowing is not a reason to say it again. A database this run cannot
+    // read has already failed the steps that matter, and repeating the one
+    // message nobody needs twice is the failure this check exists to stop.
+    log.error(
+      `could not tell whether the quiet-day message for ${day} has gone out, so it is not being sent`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
+
   try {
     await poster.post(buildQuietDayMessage(run));
     log.info("nothing new from any competitor, so the channel was told so");
-    return true;
   } catch (error) {
     log.error(
       "failed to post the quiet-day message",
@@ -123,4 +188,17 @@ export async function postQuietDayNote(
     );
     return false;
   }
+
+  try {
+    // Only after Slack took it. A refused message left a day nobody was told
+    // about, and the next run should get to try again.
+    await notes.recordQuietDayNote(day, now);
+  } catch (error) {
+    log.error(
+      `posted the quiet-day message for ${day} but could not record it, so a later run today may repeat it`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+
+  return true;
 }

@@ -26,6 +26,7 @@ export class MemoryStore implements Store {
   private readonly items = new Map<string, StoredItem>();
   private readonly pages = new Map<string, PostHogPage>();
   private readonly claims: PostHogClaim[] = [];
+  private readonly quietDays = new Set<string>();
 
   async insertNewItems(items: CandidateItem[]): Promise<StoredItem[]> {
     const inserted: StoredItem[] = [];
@@ -66,6 +67,14 @@ export class MemoryStore implements Store {
   async getUnpostedAnalyses(): Promise<PendingPost[]> {
     // Analyses are never persisted here, so there is never a backlog.
     return [];
+  }
+
+  async quietDayNoteSent(day: string): Promise<boolean> {
+    return this.quietDays.has(day);
+  }
+
+  async recordQuietDayNote(day: string, _at: Date): Promise<void> {
+    this.quietDays.add(day);
   }
 
   async listPageMeta(): Promise<PageMeta[]> {
