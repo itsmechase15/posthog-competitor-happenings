@@ -754,7 +754,7 @@ const MAX_FEATURE_WORDS = 4;
  * the last resort so the reader still gets a noun rather than a search story.
  */
 export function equivalentFeature(
-  action: Pick<RecommendedAction, "feature" | "gap" | "detail">,
+  action: { feature?: string; gap?: string; detail?: string },
   evidence: NoActionEvidence[] = [],
 ): string | undefined {
   const named = action.feature?.trim();
