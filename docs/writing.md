@@ -110,9 +110,11 @@ is the specifics, so the answer is a verdict rather than a sentence: a kind that
 picks the title, one sentence that names the capability that shipped and what
 PostHog does about it, and the docs pages it rests on.
 
-- **None – PostHog already does this**, for a launch PostHog ships an answer
-  to. It carries one to three docs pages, each checked against the corpus like
-  any other quote.
+- **None – PostHog already has Feature flags**, for a launch PostHog ships an
+  answer to. The title names the equivalent product when it is known, and
+  falls back to **None – PostHog already does this**. The sentence names that
+  product. It carries one to three docs pages, each checked against the corpus
+  like any other quote.
 - **None – not a product gap**, for pricing, plans, company news, or something
   PostHog chose not to build. The sentence says which.
 - **None – the gap could not be confirmed**, for a claim that failed a check.

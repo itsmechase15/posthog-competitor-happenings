@@ -52,6 +52,13 @@ describe("noActionTitle", () => {
     expect(noActionTitle("already_covered")).toBe("None – PostHog already does this");
     expect(noActionTitle("already_covered")).not.toContain("—");
   });
+
+  it("names the equivalent feature when one is known", () => {
+    expect(noActionTitle("already_covered", "PostHog", "Feature flags")).toBe(
+      "None – PostHog already has Feature flags",
+    );
+    expect(noActionTitle("already_covered", "PostHog", "Feature flags")).not.toContain("—");
+  });
 });
 
 describe("renderNoAction", () => {
@@ -62,6 +69,16 @@ describe("renderNoAction", () => {
         covered.reason,
         "See: [Scheduled flag changes](https://posthog.com/docs/feature-flags/scheduled-flag-changes), [Managing the experiment lifecycle](https://posthog.com/docs/experiments/managing-lifecycle)",
       ].join("\n"),
+    );
+  });
+
+  it("names the equivalent feature in the title when the verdict carries one", () => {
+    const named = { ...covered, feature: "Feature flags" };
+    expect(renderNoAction(named, { flavor: "markdown" })).toContain(
+      "**None – PostHog already has Feature flags**",
+    );
+    expect(renderNoAction(named, { flavor: "slack" })).toContain(
+      "*None – PostHog already has Feature flags*",
     );
   });
 

@@ -306,7 +306,8 @@ describe("parseAnalysis", () => {
         actions: [],
         no_action: {
           kind: "already_covered",
-          reason: "PostHog schedules a flag change for a future date, and an experiment runs on a flag.",
+          feature: "Feature flags",
+          reason: "PostHog already has Feature flags – the equivalent of what this launch covers.",
           evidence: [
             {
               url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
@@ -318,6 +319,7 @@ describe("parseAnalysis", () => {
     );
 
     expect(analysis.noAction?.kind).toBe("already_covered");
+    expect(analysis.noAction?.feature).toBe("Feature flags");
     expect(analysis.noAction?.evidence).toEqual([
       {
         url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
@@ -1027,6 +1029,18 @@ describe("buildAnalysisPrompt", () => {
         "one to three docs pages in \"evidence\", each with the page URL and a quote copied from it verbatim",
       );
       expect(withRefs).toContain('"not_a_gap": the launch asks nothing of the product');
+    });
+
+    it("asks already_covered to name PostHog's equivalent feature, not a search story", () => {
+      expect(withRefs).toContain('Name PostHog\'s equivalent product or feature in "feature"');
+      expect(withRefs).toContain(
+        "PostHog already has Feature flags – the equivalent of what this launch covers.",
+      );
+      expect(withRefs).toContain('Never "already does this"');
+      expect(withRefs).toContain("Never a line about docs search ranking");
+      expect(withRefs).toContain(
+        '"feature": "string (the PostHog product or feature that already covers this; required for already_covered)"',
+      );
     });
   });
 

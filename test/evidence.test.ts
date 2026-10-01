@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  equivalentFeature,
   gapQuery,
   gateActions,
   isDocumentationOnlyAction,
@@ -296,7 +297,13 @@ describe("gateActions", () => {
     const result = gateActions(analysis({ actions: [wrongPage] }), context([LIFECYCLE]));
 
     expect(result.analysis.noAction?.kind).toBe("already_covered");
-    expect(result.analysis.noAction?.reason).toContain("PostHog documents this already");
+    expect(result.analysis.noAction?.feature).toBe("Session replay");
+    expect(result.analysis.noAction?.reason).toBe(
+      "PostHog already has Session replay – the equivalent of what this launch covers.",
+    );
+    expect(result.analysis.noAction?.reason).not.toMatch(
+      /documents this already|searching the docs|ranks |never opened/i,
+    );
     expect(result.analysis.noAction?.evidence.map((page) => page.url)).toContain(
       "https://posthog.com/docs/session-replay/privacy",
     );
@@ -593,7 +600,42 @@ describe("gateActions", () => {
       );
 
       expect(result.blocked[0]?.reason).toContain("already publishes");
+      expect(result.analysis.noAction?.kind).toBe("already_covered");
+      expect(result.analysis.noAction?.reason).toBe(
+        "PostHog already has a comparison page covering this – the equivalent of what this launch covers.",
+      );
     });
+  });
+
+  it("names the equivalent feature from the gap when the action did not", () => {
+    const unnamed: RecommendedAction = {
+      type: "consider_building",
+      detail: "Build masking for session recordings so nothing typed is captured.",
+      gap: "no way to mask inputs and text in a session recording",
+      evidenceUrl: LIFECYCLE,
+      evidenceQuote: "There is no end date field on an experiment",
+    };
+
+    const result = gateActions(analysis({ actions: [unnamed] }), context([LIFECYCLE]));
+
+    expect(result.analysis.noAction?.feature).toBe("Session replay");
+    expect(result.analysis.noAction?.reason).toContain("PostHog already has Session replay");
+  });
+
+  it("picks a catalog product name for the equivalent feature", () => {
+    expect(equivalentFeature({ feature: "feature flags" })).toBe("Feature flags");
+    expect(equivalentFeature({ feature: "Session replay" })).toBe("Session replay");
+    expect(
+      equivalentFeature(
+        { gap: "no way to mask inputs in a session recording" },
+        [
+          {
+            url: "https://posthog.com/docs/session-replay/privacy",
+            title: "Session replay privacy controls",
+          },
+        ],
+      ),
+    ).toBe("Session replay");
   });
 
   it("blocks every gap claim when the corpus is empty, because none can be checked", () => {

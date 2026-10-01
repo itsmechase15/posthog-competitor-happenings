@@ -223,11 +223,11 @@ Rules:
   Worked examples. A scheduled end time on experiments they already ship is notable, because Experiments existed and this is a new control on it. Serving customer events through the customer's own domain, which they never offered, is major, because it is a capability they did not have. A post about their new office, or a roundup of last quarter's releases, is minor.
 - "actions" is 0 to 3 things PostHog should do, most important first.
   Zero is a normal answer and often the right one. A competitor shipping something PostHog already does well asks nothing of PostHog. So does a competitor shipping something PostHog has deliberately not built. Whenever you recommend no product action – an empty "actions" array, or one holding only consider_publishing – send a "no_action" object saying which kind of nothing the product answer is:
-  - "already_covered": PostHog ships the thing that just shipped elsewhere. This is a claim about PostHog's product and it carries evidence like any gap does: one to three docs pages in "evidence", each with the page URL and a quote copied from it verbatim. A page that is not in the corpus, is not documentation, or does not contain the quote is dropped, and a verdict left with no evidence is downgraded to "the gap could not be confirmed", so cite what you actually read.
+  - "already_covered": PostHog ships the thing that just shipped elsewhere. Name PostHog's equivalent product or feature in "feature" (e.g. "Feature flags", "Session replay", "Experiments") and in "reason" in one sentence: "PostHog already has Feature flags ${EN_DASH} the equivalent of what this launch covers." Never "already does this". Never a line about docs search ranking, which page outranked which, or "documents this already". This is a claim about PostHog's product and it carries evidence like any gap does: one to three docs pages in "evidence", each with the page URL and a quote copied from it verbatim. A page that is not in the corpus, is not documentation, or does not contain the quote is dropped, and a verdict left with no evidence is downgraded to "the gap could not be confirmed", so cite what you actually read.
   - "not_a_gap": the launch asks nothing of the product. Two shapes, and which one depends on whether anything shipped:
     - A post that ships nothing – thought leadership, an explainer, a practice piece, an event write-up, a customer story, company news, hiring, pricing copy – gets two sentences: what the piece is, and that it is not an announcement. "This is a thought leadership article about whether to install Amplitude's SDK or send events from a warehouse. It's not an announcement of a new feature or product." Name the piece's actual subject. Then stop. Do not add "no impact on current PostHog products", "nothing here asks anything of PostHog's product", or "PostHog's Experiments product has nothing to answer": naming the piece and saying it is not an announcement already says that, and the flourish is cut on the way in.
     - A real capability PostHog chose not to build, or pricing and packaging on a real feature: one sentence naming the capability and why the product owes it nothing.
-  "reason" names what the piece is or what shipped, in the reader's terms. "Nothing to do here" is not a reason.
+  "reason" names what the piece is or what shipped, in the reader's terms. For already_covered it names PostHog's equivalent feature in that one sentence. "Nothing to do here" and "already does this" are not reasons.
   Never pad the list. One action that survives being checked is worth more than three that read well.
 - Each action has a "type", a "detail", and, for the two product actions, a "gap", an "evidence_url", and an "evidence_quote". "type" is one of:
   - update_pages: a PostHog marketing, product marketing, or compare page is now wrong, understates what PostHog does, or is contradicted by the competitor's own comparison page. It has a bar of its own, below.
@@ -313,6 +313,7 @@ export const RESPONSE_SHAPE = `{
   ],
   "no_action": {
     "kind": "already_covered" | "not_a_gap",
+    "feature": "string (the PostHog product or feature that already covers this; required for already_covered)",
     "reason": "string (one or two sentences; required whenever there is no product action, including next to a consider_publishing action)",
     "evidence": [
       {

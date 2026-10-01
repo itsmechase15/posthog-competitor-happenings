@@ -322,6 +322,9 @@ const noActionSchema = z
     kind: optionalText(60, "no_action.kind"),
     reason: optionalText(600, "no_action.reason"),
     no_action_reason: optionalText(600, "no_action.reason"),
+    feature,
+    posthog_feature: feature,
+    posthogFeature: feature,
     evidence: namedPages,
     marketing: marketingSchema,
     content: marketingSchema,
@@ -435,11 +438,14 @@ function readNoAction(parsed: z.infer<typeof analysisSchema>): NoAction {
   const reason = structured?.reason ?? structured?.no_action_reason ?? stated;
   const kind = NO_ACTION_KINDS.find((known) => known === structured?.kind?.trim());
   const marketing = readMarketing(structured?.marketing ?? structured?.content);
+  const named =
+    structured?.feature ?? structured?.posthog_feature ?? structured?.posthogFeature;
 
   return shapeNoAction({
     kind: kind ?? "unverified",
     reason: clean(reason ?? UNSTATED_NO_ACTION_REASON),
     evidence: readPages(structured?.evidence ?? []),
+    ...(named ? { feature: clean(named) } : {}),
     ...(marketing ? { marketing } : {}),
   });
 }

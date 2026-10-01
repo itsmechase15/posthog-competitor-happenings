@@ -21,10 +21,18 @@ export const UNSTATED_NO_ACTION_REASON =
   "The analysis recommended nothing and cited no PostHog page, so nothing here has been checked against what PostHog ships.";
 
 /** What the verdict is called, by kind. The product is named where it reads better. */
-export function noActionTitle(kind: NoActionKind, product = "PostHog"): string {
+export function noActionTitle(
+  kind: NoActionKind,
+  product = "PostHog",
+  feature?: string,
+): string {
   switch (kind) {
-    case "already_covered":
-      return `None${SPACED_EN_DASH}${product} already does this`;
+    case "already_covered": {
+      const named = feature?.trim();
+      return named
+        ? `None${SPACED_EN_DASH}${product} already has ${named}`
+        : `None${SPACED_EN_DASH}${product} already does this`;
+    }
     case "not_a_gap":
       return `None${SPACED_EN_DASH}not a product gap`;
     case "unverified":
@@ -124,6 +132,11 @@ export interface NoActionRenderOptions {
   /** Characters the reason is cut to. A Slack section stops rendering past 600. */
   maxChars?: number;
   product?: string;
+  /**
+   * The PostHog feature the already-covered title should name. Falls back to
+   * `noAction.feature` when left off, so Slack and GitHub stay in step.
+   */
+  feature?: string;
 }
 
 /** The label on an evidence link: the page's own title, or its path. */
@@ -139,7 +152,7 @@ export function evidenceLabel(evidence: NoActionEvidence): string {
  */
 export function renderNoAction(noAction: NoAction, options: NoActionRenderOptions): string {
   const escape = options.escape ?? ((text: string) => text);
-  const title = noActionTitle(noAction.kind, options.product);
+  const title = noActionTitle(noAction.kind, options.product, options.feature ?? noAction.feature);
   const reason = options.maxChars ? truncate(noAction.reason, options.maxChars) : noAction.reason;
 
   const heading = options.flavor === "slack" ? `*${escape(title)}*` : `**${title}**`;

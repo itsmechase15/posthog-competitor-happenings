@@ -633,6 +633,29 @@ describe("buildSlackMessage", () => {
       );
     });
 
+    it("names the equivalent feature in the None title when the verdict carries one", () => {
+      const message = buildSlackMessage({
+        ...nothing,
+        analysis: {
+          ...nothing.analysis,
+          noAction: {
+            kind: "already_covered",
+            feature: "Feature flags",
+            reason: "PostHog already has Feature flags – the equivalent of what this launch covers.",
+            evidence: [
+              {
+                url: "https://posthog.com/docs/feature-flags/scheduled-flag-changes",
+                title: "Scheduled flag changes",
+              },
+            ],
+          },
+        },
+      });
+      const rendered = JSON.stringify(message);
+      expect(rendered).toContain("*None – PostHog already has Feature flags*");
+      expect(rendered).not.toContain("*None – PostHog already does this*");
+    });
+
     it("titles each kind of nothing differently", () => {
       const titles = (
         [
