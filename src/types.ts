@@ -170,12 +170,18 @@ export interface NoActionEvidence {
  * The kind picks the title, the reason is the sentence under it, and the
  * evidence is the pages under that. A reason that names nothing concrete is
  * the failure this replaces, so `already_covered` is only allowed to say
- * PostHog ships something when it can name the page that says so.
+ * PostHog ships something when it can name the page that says so, and the
+ * sentence names the PostHog product or feature that already covers it.
  */
 export interface NoAction {
   kind: NoActionKind;
   /** One sentence: what the launch does, and what PostHog ships or why it does not matter. */
   reason: string;
+  /**
+   * The PostHog product or feature that already covers the launch, when known.
+   * Slack and GitHub titles use it: "None – PostHog already has Feature flags".
+   */
+  feature?: string;
   /**
    * The pages the verdict rests on, docs unless the answer is a page PostHog
    * publishes. Non-empty for `already_covered`, which is downgraded without

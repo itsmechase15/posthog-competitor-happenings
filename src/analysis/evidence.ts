@@ -1,5 +1,5 @@
 import { isMarketingTarget } from "../posthog/pages.js";
-import { matchProducts } from "../posthog/products.js";
+import { featureLabelFor, findProductByName, matchProducts } from "../posthog/products.js";
 import { terms, type CorpusIndex, type RetrievalHit } from "../posthog/retrieval.js";
 import {
   isContentAction,
@@ -12,7 +12,7 @@ import {
   type PostHogRef,
   type RecommendedAction,
 } from "../types.js";
-import { firstSentence, truncate } from "../util/text.js";
+import { firstSentence, SPACED_EN_DASH, truncate } from "../util/text.js";
 import { articleProblem, similarPieces } from "./article.js";
 import { evidenceFor, noActionOf, withNoAction } from "./noAction.js";
 import { proportionProblem } from "./proportion.js";
@@ -741,18 +741,66 @@ function kindForCause(cause: BlockCause): NoActionKind {
   }
 }
 
-/** What "PostHog already does this" rests on, in the words of the check that said so. */
-function coveredReason(entry: BlockedAction, evidence: NoActionEvidence[]): string {
-  const pages = evidence.map((page) => page.title ?? page.url).join(" and ");
-  const gap = truncate(entry.action.gap ?? "", 120);
+/** Words a compare-page title is made of, which are not a PostHog feature name. */
+const COMPARE_TITLE = /\bvs\.?\b|\bcompar/i;
+/** How many words a derived capability name may keep. */
+const MAX_FEATURE_WORDS = 4;
 
+/**
+ * PostHog's name for the thing an already-covered verdict is about.
+ *
+ * `action.feature` wins when the analyst named one. Otherwise the evidence
+ * pages and the gap are searched for a catalog product, and a short title is
+ * the last resort so the reader still gets a noun rather than a search story.
+ */
+export function equivalentFeature(
+  action: Pick<RecommendedAction, "feature" | "gap" | "detail">,
+  evidence: NoActionEvidence[] = [],
+): string | undefined {
+  const named = action.feature?.trim();
+  if (named) return findProductByName(named)?.label ?? named;
+
+  for (const page of evidence) {
+    const fromUrl = featureLabelFor(page.url);
+    if (fromUrl) return fromUrl;
+  }
+
+  const titleText = evidence
+    .map((page) => page.title ?? "")
+    .filter((title) => title && !COMPARE_TITLE.test(title))
+    .join(" ");
+  const fromTitles = titleText ? matchProducts(titleText, 1)[0]?.label : undefined;
+  if (fromTitles) return fromTitles;
+
+  const fromGap = matchProducts([action.gap, action.detail].filter(Boolean).join(" "), 1)[0]
+    ?.label;
+  if (fromGap) return fromGap;
+
+  const title = evidence.find((page) => page.title && !COMPARE_TITLE.test(page.title))?.title?.trim();
+  if (!title) return undefined;
+  const stripped = title
+    .replace(/\b(docs?|documentation|controls?|overview|guide|page)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (stripped || title).split(/\s+/).slice(0, MAX_FEATURE_WORDS).join(" ");
+}
+
+/**
+ * What "PostHog already has this" rests on, in the words a reader should see.
+ *
+ * The pages go under the sentence as See links. Naming search rank, the docs
+ * corpus, or a page nobody opened is the check talking, not the answer.
+ */
+function coveredReason(entry: BlockedAction, feature?: string): string {
   switch (entry.cause) {
     case "page_exists":
-      return "PostHog already publishes the comparison page this asks for, so there is nothing to write.";
-    case "wrong_page_ranked":
-      return `PostHog documents this already: searching the docs for "${gap}" ranks ${pages} above the page the analysis read it off.`;
+      return feature
+        ? `PostHog already has a comparison page for ${feature}${SPACED_EN_DASH}the equivalent of what this launch covers.`
+        : `PostHog already has a comparison page covering this${SPACED_EN_DASH}the equivalent of what this launch covers.`;
     default:
-      return `PostHog documents this already: the docs cover "${gap}" on ${pages}, which the analysis never opened.`;
+      return feature
+        ? `PostHog already has ${feature}${SPACED_EN_DASH}the equivalent of what this launch covers.`
+        : `PostHog already has the equivalent of what this launch covers.`;
   }
 }
 
@@ -785,7 +833,16 @@ export function noActionFrom(blocked: BlockedAction[], index: CorpusIndex): NoAc
 
   const first = covered[0];
   if (first && evidence.length > 0) {
-    return { kind: "already_covered", reason: coveredReason(first, evidence), evidence };
+    const feature =
+      first.cause === "page_exists"
+        ? equivalentFeature(first.action)
+        : equivalentFeature(first.action, evidence);
+    return {
+      kind: "already_covered",
+      reason: coveredReason(first, feature),
+      evidence,
+      ...(feature ? { feature } : {}),
+    };
   }
 
   if (blocked.every((entry) => kindForCause(entry.cause) === "not_a_gap")) {
@@ -875,7 +932,17 @@ export function checkNoActionEvidence(
   }
 
   if (kept.length > 0) {
-    return { analysis: withNoAction(analysis, { ...verdict, evidence: kept }), notes };
+    const feature = verdict.feature
+      ? (findProductByName(verdict.feature)?.label ?? verdict.feature)
+      : equivalentFeature({}, kept);
+    return {
+      analysis: withNoAction(analysis, {
+        ...verdict,
+        evidence: kept,
+        ...(feature ? { feature } : {}),
+      }),
+      notes,
+    };
   }
 
   const failed = verdict.evidence[0]?.url;
