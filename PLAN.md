@@ -422,6 +422,268 @@ marketing line under the None.
 A private channel first; a PostHog channel later. Whichever it is, the id lives
 in `SLACK_CHANNEL_ID`, never in the code.
 
+### Plan: a publishing brief a marketer reads without guessing
+
+Status: planned, not implemented. Prompt, docs, and tests only, plus one
+label constant and one rename at render time. Nothing here touches the draft,
+the pictures, the More-detail so-what from #103, or the issue order from #101.
+
+#### The problem, in Chase's words
+
+Live issue [#104](https://github.com/itsmechase15/posthog-competitor-happenings/issues/104),
+2026-09-23. The Recommended action read:
+
+```markdown
+**Consider publishing** – Publish a PostHog take on whether you need posthog-js or can send events from your warehouse, because PostHog's blog has nothing on that choice today. PostHog can own this because it ships both sides: data warehouse sources with hundreds of connectors plus the capture API, and the SDK that captures session replay, autocapture, and heatmaps.
+
+- Position against: the pitch that a vendor SDK is the one layer a warehouse cannot replace. PostHog's version does not argue for a side. It says which questions warehouse tables answer on their own, which ones need something on the page, and why.
+- Lead with: data warehouse sources and the capture API for teams that already have a pipeline, then session replay, autocapture, heatmaps, feature flags, and experiments for what needs the SDK. Use data warehouse metrics in experiments to show the two halves working together.
+- Draft covers:
+  - What warehouse sources and the capture API already answer, including money and entitlement data.
+  - What needs the SDK on the page: replay recordings, rage and dead clicks, heatmaps, and campaign properties on first visit.
+  - …
+```
+
+Two complaints, quoted:
+
+1. "PostHog can own this because it ships both sides" – he has no idea what
+   "this" refers to. Vague antecedents are banned.
+2. "Lead with:" before the colon is confusing – he cannot tell if it means
+   "the suggested article should open with…" or something else: products to
+   feature in the pitch, the Slack headline, and so on.
+
+The ask: make every `consider_publishing` Recommended action clear enough that
+a marketer or editor opening the issue knows exactly what to do without
+guessing.
+
+#### Where the words come from
+
+None of those strings is written by code. `SYSTEM_RULES` in
+[`src/analysis/prompt.ts`](./src/analysis/prompt.ts) (the `For
+consider_publishing, "detail" is the brief` rule, added in #103) gives the
+model a worked example that contains, verbatim, "PostHog can own this because
+it ships both sides", "Position against:", "Lead with:", and "Draft covers:".
+The analyst copied the example's shape faithfully. So the fix is the example,
+and the rule the example demonstrates.
+
+What the prompt meant by each label, read off the rule itself:
+
+| Label as filed | What the rule asked for | Why it confuses |
+| --- | --- | --- |
+| `Position against:` | "how PostHog should position the piece against what the competitor is selling, which is the pitch you named in the last key point" | Names neither whose pitch nor that the sentence after it is the draft's stance |
+| `Lead with:` | "which PostHog products the piece leads with, by the names the docs use" | Drops both nouns. Chase's guess, "the article leads with that", was the intended reading and the label gave him no way to know |
+| `Draft covers:` | "the draft, with its beats nested under that bullet" | Least ambiguous of the three, still a fragment with no article and no order |
+
+Two more places matter, or the fix does not hold:
+
+- The rewrite prompt in [`src/review/prompt.ts`](./src/review/prompt.ts) may
+  replace `detail` on a revise (`mergeRevision` in `src/review/schema.ts`
+  applies `revision.detail`), and it carries `ARTICLE_RULES` but no brief
+  shape at all. A revised piece would come back in whatever shape the writer
+  felt like.
+- `recommendedActionSection` in [`src/github/issue.ts`](./src/github/issue.ts)
+  re-renders the stored `detail` on every PATCH, including a revise of an
+  issue filed under the old prompt. #104 itself is that case.
+
+#### The rules the copy has to follow
+
+Three rules, each stated once in the prompt and once in `docs/writing.md`, and
+each with a test that greps for it.
+
+1. **Every sentence names what it is about.** "this", "that", "it", "both
+   sides", "the two halves", and "their" are allowed only when the noun they
+   stand for is in the same sentence. The reader is a marketer opening the
+   issue cold, so a pointer back to a sentence they may not have read is a
+   pointer to nothing. The second sentence of the lead names the angle again,
+   as its subject, and names the halves:
+   - Bad: "PostHog can own this because it ships both sides, warehouse sources
+     and the SDK."
+   - Good: "PostHog can own the warehouse-versus-SDK question because it ships
+     both halves: data warehouse sources and the capture API on the warehouse
+     side, and posthog-js on the SDK side."
+   Name the competitor too: "Amplitude says", never "their pitch".
+2. **A bullet label says what the bullet is.** Three labels, fixed, bold,
+   copied exactly, in this order, so nobody needs a legend:
+   - `**The pitch the draft answers:**` – first sentence is what the
+     competitor is selling in this piece, opening with the competitor's name
+     (it is the pitch the last key point named). Second sentence is the stance
+     the draft takes on it, opening with "The draft".
+   - `**PostHog products the draft leads with, in order:**` – the PostHog
+     products the draft features, by the names the docs use, in the order the
+     draft reaches them, each with the reader it is for.
+   - `**What the draft covers, in order:**` – three to five beats nested under
+     it, one line each, in the draft's own order.
+   The labels live in one constant so the prompt that asks for them, the
+   renderer that prints them, and the tests that check them cannot drift.
+3. **Slack is untouched.** The first sentence of `detail` stays the one Slack
+   shows, under `MAX_ACTION_CHARS`, leading with the piece to write and the
+   angle. Everything above applies from the second sentence on.
+
+#### Before and after, on #104
+
+Before is quoted above. After, in the new shape – the first sentence is
+unchanged, so the Slack line is unchanged:
+
+```markdown
+## Recommended action
+**Consider publishing** – Publish a PostHog take on whether you need posthog-js or can send events from your warehouse, because PostHog's blog has nothing on that choice today. PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources with hundreds of connectors and the capture API on the warehouse side, and posthog-js, which captures session replay, autocapture, and heatmaps, on the SDK side.
+
+- **The pitch the draft answers:** Amplitude says a vendor SDK is the one layer a warehouse cannot replace. The draft picks no side: it says which questions warehouse tables answer on their own, which need something on the page, and why.
+- **PostHog products the draft leads with, in order:** data warehouse sources and the capture API, for teams that already have a pipeline; then session replay, autocapture, heatmaps, feature flags, and experiments, for what needs posthog-js on the page; then data warehouse metrics in experiments, to show the two halves working together.
+- **What the draft covers, in order:**
+  - What warehouse sources and the capture API already answer, including money and entitlement data.
+  - What needs posthog-js on the page: replay recordings, rage and dead clicks, heatmaps, and campaign properties on first visit.
+  - A person join resolves at query time, so feature flags, experiments, and surveys never see it, and warehouse properties are the fix.
+  - Experiment metrics can read a warehouse table directly, so exposure stays client-side while the outcome stays in the warehouse.
+  - When warehouse-only is the right call, and the hybrid setup most teams land on.
+```
+
+Read as a marketer: the second sentence says which question PostHog can own
+and what the two halves are; the first bullet says whose argument the draft
+is responding to and what the draft's stance is; the second says which
+PostHog products the article features first; the third is the outline. No
+label needs the prompt to explain it.
+
+#### Steps, in order, each feeding the next
+
+1. **Put the three labels in one place.** New file `src/analysis/brief.ts`,
+   no imports, exporting `BRIEF_LABELS = { pitch, products, covers }` with the
+   three strings above, and `LEGACY_BRIEF_LABELS` mapping `"Position
+   against:"`, `"Lead with:"`, and `"Draft covers:"` onto them.
+   *Why:* the prompt, the renderer, the docs test, and the fixtures all need
+   the same strings, and #103 showed what happens when a label exists only
+   inside a prose example. *Feeds:* steps 2, 4, and 6 import from here rather
+   than retyping the labels.
+
+2. **Restate the brief rule to the analyst, with the fixed example.** In
+   `src/analysis/prompt.ts`, lift the `For consider_publishing, "detail" is
+   the brief` block out of `SYSTEM_RULES` into `export const
+   PUBLISHING_BRIEF_RULES`, the way `ARTICLE_RULES` and `PAGE_REWRITE_RULES`
+   already are, interpolate it back where it was, and rewrite it to:
+
+   ```text
+   - For consider_publishing, "detail" is the brief a marketer acts on. It is prose first and bullets after, with the line breaks written as \n inside the JSON string. The piece itself goes in "article_draft" and never in "detail", which is neither long enough to hold it nor where anything looks for it.
+     1. A prose lead of one or two sentences, with no bullets in it. The first names the piece to write and the angle, and stands alone, because Slack shows that sentence and nothing else. The second says why PostHog can own the angle, in what PostHog actually ships, and it names the angle again as its subject rather than pointing back at it: "PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js on the SDK side." Then stop – the lead is the ask and the reason, and nothing else belongs in it.
+     2. Every sentence in the brief says what it is about. "this", "that", "it", "both sides", "the two halves", and "their" are allowed only when the noun they stand for is in the same sentence, because the reader is a marketer opening the issue cold. "PostHog can own this because it ships both sides" fails twice – nothing in the sentence says what "this" is or what the sides are – and it is the sentence this rule exists for. Name the competitor: "Amplitude says", never "their pitch".
+     3. Then a blank line and three markdown bullets, each starting with "- " and a bold label copied exactly from this list, in this order. The label says what the bullet is, so nobody needs a legend:
+       - "**${BRIEF_LABELS.pitch}**" – what the competitor is selling in this piece, which is the pitch you named in the last key point, opening with the competitor's name; then the stance the draft takes on it, opening with "The draft".
+       - "**${BRIEF_LABELS.products}**" – the PostHog products the draft features, by the names the docs use, in the order the draft reaches them, each with the reader it is for.
+       - "**${BRIEF_LABELS.covers}**" – the draft's beats nested under the bullet as lines starting with two spaces and "- ". Three to five beats, one line each, in the draft's own order.
+     Beats, not the draft. A paragraph retelling the whole piece is what the bullets replace, and the piece is already in "article_draft".
+     Worked example, line breaks and all: "Publish a PostHog take on whether you need an SDK or can send events from your warehouse – Amplitude has one and PostHog's blog has nothing on the choice. PostHog can own the warehouse-versus-SDK question because it ships both halves: data warehouse sources and the capture API on the warehouse side, and posthog-js with session replay on the SDK side.\n\n- **The pitch the draft answers:** Amplitude says the SDK is the one layer a warehouse cannot replace. The draft picks no side: it names what the warehouse covers and what it does not.\n- **PostHog products the draft leads with, in order:** data warehouse sources and the capture API, for SQL-first teams; then session replay, surveys, and experiments, for what needs posthog-js on the page.\n- **What the draft covers, in order:**\n  - What warehouse sources and the capture API already answer.\n  - The three things that need posthog-js on the page, and why.\n  - A person join resolves at query time, so flags and experiments never see it.\n  - The hybrid setup most teams land on, and when warehouse-only is right."
+   ```
+
+   The `consider_publishing` line under "That opening sentence leads with the
+   work" keeps its Good and Bad; its closing sentence becomes "The pitch, the
+   PostHog products, and the draft's beats go in the labelled bullets under
+   it, never in this sentence."
+   *Why:* the model writes what the example shows, and today the example is
+   the bug. *Feeds:* step 3 reuses the constant unchanged, and step 6 greps
+   the prompt for these exact sentences.
+
+3. **Give the rewrite prompt the same rule.** In `src/review/prompt.ts`, add
+   `PUBLISHING_BRIEF_RULES` to the existing import from
+   `../analysis/prompt.js` and append it next to `ARTICLE_RULES` in the
+   `contentWork` branch of `buildRewritePrompt`. The `For a piece to publish
+   it names the piece and the angle` clause stays as it is.
+   *Why:* a revise may rewrite `detail`, and a writer told nothing about the
+   shape hands back whatever it likes, so the analyst-side fix would last
+   until the first revise. *Feeds:* step 6 asserts the rule is in the rewrite
+   prompt for a content action and absent for a product one.
+
+4. **Rename legacy labels at render time.** In `src/github/issue.ts`,
+   `recommendedActionSection` runs the `rest` block through a small
+   `normalizeBriefLabels(rest)` that, on a line opening `- `, replaces a
+   `LEGACY_BRIEF_LABELS` key (with or without `**`) or an unbolded
+   `BRIEF_LABELS` value with the bold new label. Nothing else on the line
+   moves.
+   *Why:* stored analyses written under the old prompt are re-rendered on
+   every PATCH, #104 among them, and a label rename invents no words, which
+   is the line `enforceActionLead` and `asQuestions` already stand on. It is
+   also the backstop for a model that drifts back to the old labels.
+   *Feeds:* step 6 renders the #104 detail through `buildIssueBody` and
+   expects the three new labels and none of the old.
+
+5. **Say it in the docs.** In `docs/writing.md`, rewrite the section "The
+   ask above that draft is a brief, not a retelling": keep the prose-then-
+   bullets split and the reason for it, add the antecedent rule with the same
+   Bad and Good pair as the prompt, replace the labels paragraph with the
+   three labels and what each means, and swap the fenced example for the
+   worked example in step 2 (with real line breaks). Add one line under
+   "Where this is enforced" naming `BRIEF_LABELS` in `src/analysis/brief.ts`
+   and the render-time rename. In this file, one sentence at the end of "The
+   marketing question" pointing at this section. In `AGENTS.md`, one sentence
+   in the `consider_publishing` house rule: the brief's labels live in
+   `src/analysis/brief.ts`, and a sentence in it never points at a noun
+   outside itself.
+   *Why:* the docs test reads `docs/writing.md`, and an agent that opens
+   `AGENTS.md` first should not reintroduce "Position against:" from memory.
+   *Feeds:* step 6's `docs/writing.md` tests assert the new section text.
+
+6. **Tests, in `test/publishing.test.ts` unless named otherwise.**
+   - Update `keeps the ask and the reason as prose, and starts the bullets
+     after them`: expect the new second-sentence example and the sentence
+     "names the angle again as its subject rather than pointing back at it".
+   - Update `asks the bullets for the positioning, the products, and the
+     draft's beats`: expect each of the three `BRIEF_LABELS` values inside
+     the prompt's bullet rule and inside the worked example (as
+     `\\n\\n- **The pitch the draft answers:**` and `- **What the draft
+     covers, in order:**\\n  - What warehouse sources`).
+   - New `states the antecedent rule, with the sentence it exists for`:
+     expect `"PostHog can own this because it ships both sides" fails twice`
+     and `Name the competitor: "Amplitude says", never "their pitch"`.
+   - New `never shows the model a vague lead as the good example`: the
+     prompt contains `can own this because` exactly once, and that once is
+     the Bad line `"PostHog can own this because it ships both sides" fails
+     twice`; it contains neither `- Position against:` nor `- Lead with:` nor
+     `- Draft covers:`. Same assertions against `docs/writing.md` in the
+     `docs/writing.md` describe block, alongside its updated `states the
+     split` test.
+   - Update the `brief` fixture to the new shape (the step 2 worked example,
+     real newlines), and with it `keeps the prose lead on the label's line
+     and the bullets in a block of their own`, `gives a list its own block
+     even when the model left no blank line before it`, and `shows Slack the
+     first sentence of a brief and none of the bullets` (Slack assertion adds
+     `not.toContain("The pitch the draft answers")`).
+   - New `renames the labels a brief filed under the old prompt used`: render
+     the #104 detail, verbatim from the Before block, through
+     `buildIssueBody` and expect `- **The pitch the draft answers:** the
+     pitch that a vendor SDK`, `- **PostHog products the draft leads with, in
+     order:** data warehouse sources`, `- **What the draft covers, in
+     order:**\n  - What warehouse sources`, and none of the three old labels.
+     Also assert the lead sentence is untouched, since the rename never
+     reaches prose.
+   - New in `test/review.prompt.test.ts`: `buildRewritePrompt` for a
+     `consider_publishing` action contains `**The pitch the draft answers:**`
+     and the antecedent rule; for a `consider_building` action it does not.
+   - `test/limits.test.ts` needs no change: its `LONG_DETAIL` fixture carries
+     no labels.
+   *Why:* the label strings are prose the model copies, and the only thing
+   that stops them drifting again is a test that fails when they do.
+
+#### Done when
+
+- `npm run typecheck && npm test` pass with the tests above in place.
+- `rg -n "Position against:|Lead with:|Draft covers:|own this because|ships both sides" src docs AGENTS.md README.md` returns only the quoted Bad lines
+  and the `LEGACY_BRIEF_LABELS` keys.
+- Optional confirmation with a key: `SKIP_POSTHOG_INDEX=true DRY_RUN=true
+  npm run run -- --url https://amplitude.com/blog/amplitude-sdk-or-not` prints
+  a brief whose second sentence names the angle and whose bullets carry the
+  three labels, with the Slack payload showing only the first sentence.
+
+#### Not in this change
+
+- No code check for vague antecedents in prose. Detecting "this" is cheap;
+  fixing it means writing the referent in, which is inventing the
+  recommendation, and dropping the action over it would lose a true
+  recommendation for a style slip. The prompt states the rule with the
+  offending sentence as the Bad example, the tests grep for it, and the review
+  pass stays "do not revise for style".
+- No change to `article_draft`, the staged pictures, the so-what key point,
+  the issue section order, or the Slack message. If a run shows the model
+  ignoring the labels after this lands, the next step is the same render-time
+  rename widened to cover the new variant, not a second model pass.
+
 ### Storage
 Supabase Postgres (`DATABASE_URL`). The project ref lives with the secret, not here.
 Tables: `items`, `analyses`, `pages`, `claims` (already migrated).
